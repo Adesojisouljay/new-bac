@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../../Ba-external-wallet"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../boilerplate-points"
+		}
+	],
+	"settings": {}
+}

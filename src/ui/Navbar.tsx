@@ -1,0 +1,132 @@
+import { Link } from 'react-router-dom';
+import { useCommunity } from '../features/community/context/CommunityContext';
+import { ThemeToggle } from './ThemeToggle';
+import { UserDropdown } from './UserDropdown';
+import { useState } from 'react';
+import { LoginModal } from '../features/auth/components/LoginModal';
+import { NotificationDropdown } from '../features/notifications/components/NotificationDropdown';
+import { accountManager, StoredAccount } from '../features/auth/services/authService';
+import { pointsService } from '../services/pointsService';
+import { OnboardingFlow } from '../features/auth/components/OnboardingFlow';
+
+export function Navbar() {
+    const { config } = useCommunity();
+    const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+    const [user, setUser] = useState<string | null>(accountManager.getActive());
+    const [accounts, setAccounts] = useState<StoredAccount[]>(accountManager.getAll());
+    const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+
+    const refreshAccounts = () => {
+        setAccounts(accountManager.getAll());
+        setUser(accountManager.getActive());
+    };
+
+    const handleLoginSuccess = (username: string) => {
+        accountManager.add(username, 'keychain');
+        refreshAccounts();
+        // Silently get a points JWT so we can award points for actions
+        const community = config?.id || 'hive-106130';
+        pointsService.loginToPointsBackend(username, community).catch(() => {/* ignore */ });
+    };
+
+    const handleSwitch = (username: string) => {
+        accountManager.setActive(username);
+        refreshAccounts();
+    };
+
+    const handleRemoveAccount = (username: string) => {
+        accountManager.remove(username);
+        refreshAccounts();
+    };
+
+    const handleLogout = () => {
+        accountManager.logout();
+        refreshAccounts();
+    };
+
+    return (
+        <>
+            <header className="fixed top-0 w-full border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/80 backdrop-blur-md z-50 transition-colors duration-300">
+                <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+                    {/* Logo Section */}
+                    <Link to="/" className="flex items-center gap-2">
+                        {config?.logo ? (
+                            <img src={config.logo} alt={config.name} className="h-8 w-8 rounded bg-gray-200 dark:bg-gray-700" />
+                        ) : (
+                            <div className="h-8 w-8 bg-[var(--primary-color)] rounded animate-pulse" />
+                        )}
+                        <span className="font-bold text-xl text-[var(--text-primary)]">{config?.name || 'Loading...'}</span>
+                    </Link>
+
+                    {/* Right Side Actions */}
+                    <div className="flex items-center gap-4">
+                        <ThemeToggle />
+
+                        {user ? (
+                            <div className="flex items-center gap-3">
+                                <Link
+                                    to="/submit"
+                                    className="px-4 py-2 text-sm font-medium bg-[var(--primary-color)] text-white rounded-lg hover:brightness-110 transition-all shadow-sm hidden md:block"
+                                >
+                                    Create Post
+                                </Link>
+                                <NotificationDropdown username={user} />
+                                <Link to="/messages" className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors relative" title="Messages">
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                    </svg>
+                                </Link>
+                                <Link to={`/${user}/wallet`} className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors relative" title="Wallet">
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                    </svg>
+                                </Link>
+                                <UserDropdown
+                                    username={user}
+                                    onLogout={handleLogout}
+                                    onAddAccount={() => setIsLoginModalOpen(true)}
+                                    onOnboard={() => setIsOnboardingOpen(true)}
+                                />
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-3">
+                                <button
+                                    onClick={() => setIsLoginModalOpen(true)}
+                                    className="px-4 py-2 text-sm font-medium text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors"
+                                >
+                                    Login
+                                </button>
+                                <button
+                                    onClick={() => setIsLoginModalOpen(true)}
+                                    className="px-4 py-2 text-sm font-medium bg-[var(--primary-color)] text-white rounded-lg hover:brightness-110 transition-all shadow-sm"
+                                >
+                                    Sign Up
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </header>
+
+            <LoginModal
+                isOpen={isLoginModalOpen}
+                onClose={() => setIsLoginModalOpen(false)}
+                onLoginSuccess={handleLoginSuccess}
+                activeUser={user}
+                savedAccounts={accounts}
+                onSwitch={handleSwitch}
+                onRemoveAccount={handleRemoveAccount}
+                onOpenOnboarding={() => {
+                    setIsLoginModalOpen(false);
+                    setIsOnboardingOpen(true);
+                }}
+            />
+
+            <OnboardingFlow
+                isOpen={isOnboardingOpen}
+                onClose={() => setIsOnboardingOpen(false)}
+                creator={user || undefined}
+            />
+        </>
+    );
+}

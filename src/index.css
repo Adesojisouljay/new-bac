@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Brand Colors (Dynamic via Context) */
+  --primary-color: #3b82f6;
+  --secondary-color: #64748b;
+  --accent-color: #f59e0b;
+
+  /* Semantic Light Values */
+  --bg-canvas: #f8fafc;
+  /* slate-50 */
+  --bg-card: #ffffff;
+  --text-primary: #0f172a;
+  /* slate-900 */
+  --text-secondary: #64748b;
+  /* slate-500 */
+  --border-color: #e2e8f0;
+  /* slate-200 */
+
+  --font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+.dark {
+  /* Semantic Dark Values */
+  --bg-canvas: #0f172a;
+  /* slate-900 */
+  --bg-card: #1e293b;
+  /* slate-800 */
+  --text-primary: #f8fafc;
+  /* slate-50 */
+  --text-secondary: #94a3b8;
+  /* slate-400 */
+  --border-color: #334155;
+  /* slate-700 */
+}
+
+/* Dark Mode Overrides for EasyMDE */
+.dark .EasyMDEContainer .editor-toolbar {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+.dark .EasyMDEContainer .editor-toolbar button {
+  color: var(--text-primary) !important;
+}
+
+.dark .EasyMDEContainer .editor-toolbar button:hover,
+.dark .EasyMDEContainer .editor-toolbar button.active {
+  background-color: var(--bg-canvas) !important;
+  border-color: var(--primary-color) !important;
+}
+
+.dark .EasyMDEContainer .CodeMirror {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.dark .EasyMDEContainer .CodeMirror-scroll {
+  background-color: var(--bg-card) !important;
+}
+
+.dark .EasyMDEContainer .editor-preview,
+.dark .EasyMDEContainer .editor-preview-side {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+/* Fix text color in preview */
+.dark .EasyMDEContainer .editor-preview h1,
+.dark .EasyMDEContainer .editor-preview h2,
+.dark .EasyMDEContainer .editor-preview h3,
+.dark .EasyMDEContainer .editor-preview p,
+.dark .EasyMDEContainer .editor-preview li {
+  color: var(--text-primary) !important;
+}
+
+.dark .EasyMDEContainer .editor-statusbar {
+  color: var(--text-secondary) !important;
+}
+
+.dark .EasyMDEContainer .CodeMirror-cursor {
+  border-left-color: var(--text-primary) !important;
+}
+
+/* Placeholder color */
+.dark .CodeMirror-placeholder {
+  color: var(--text-secondary) !important;
+}
+
+body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-family);
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+/* Fix fullscreen z-index if needed */
+.editor-toolbar.fullscreen,
+.CodeMirror-fullscreen {
+  z-index: 60 !important;
+  /* Above navbar */
+}
+
+/* Force CodeMirror to fit container for Split View */
+.EasyMDEContainer {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+}
+
+.CodeMirror {
+  flex: 1 !important;
+  height: auto !important;
+  /* Override default 300px or min-height */
+  min-height: 0 !important;
+}
+
+/* Toast Animations */
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-in.slide-in-from-right-full {
+  animation: slideInRight 0.3s ease-out forwards;
+}
+/* Date Picker Icon Fix */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: grayscale(1) brightness(0.8);
+  padding: 5px;
+  border-radius: 4px;
+}
+
+.dark input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) brightness(1.5);
+}
