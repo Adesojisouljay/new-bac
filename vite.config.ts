@@ -19,4 +19,13 @@ export default defineConfig({
       protocolImports: true,
     }),
   ],
+  build: {
+    target: 'esnext',
+    sourcemap: false,
+    minify: 'esbuild',
+    rollupOptions: {
+      cache: false,
+    },
+    chunkSizeWarningLimit: 2000,
+  }
 })

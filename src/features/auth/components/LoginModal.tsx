@@ -40,6 +40,8 @@ export function LoginModal({
     const [authorizing, setAuthorizing] = useState(false);
 
     const RELAY_ACCOUNT = 'breakaway.app';
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isInAppBrowser = !!(window as any).hive_keychain;
 
     // Show ALL logged-in accounts; active one gets a badge instead of a Switch button
     const allSavedAccounts = savedAccounts;
@@ -85,6 +87,10 @@ export function LoginModal({
                     ({ qr }) => {
                         setHasQR(qr);
                         setLoading(false);
+                        // Auto-redirect to deeplink on mobile
+                        if (isMobile) {
+                            window.location.href = qr;
+                        }
                     }
                 );
 
@@ -230,6 +236,19 @@ export function LoginModal({
                                             </button>
                                         </div>
 
+                                        {isInAppBrowser && method === 'hiveauth' && (
+                                            <div className="px-4 py-3 bg-[var(--primary-color)]/5 border border-[var(--primary-color)]/20 rounded-2xl text-[var(--primary-color)] text-xs font-semibold text-center animate-in fade-in slide-in-from-top-1">
+                                                You're in the Keychain Browser!
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setMethod('keychain')}
+                                                    className="ml-2 underline font-bold"
+                                                >
+                                                    Use Keychain method
+                                                </button> for a faster login.
+                                            </div>
+                                        )}
+
                                         <div>
                                             <label htmlFor="username" className="block text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2.5 ml-1 opacity-70">
                                                 Hive Username
@@ -254,6 +273,24 @@ export function LoginModal({
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                 </svg>
                                                 {error}
+                                            </div>
+                                        )}
+
+                                        {isMobile && !isInAppBrowser && method === 'keychain' && (
+                                            <div className="px-4 py-3 bg-[var(--primary-color)]/5 border border-[var(--primary-color)]/20 rounded-2xl text-center">
+                                                <p className="text-xs text-[var(--text-secondary)] mb-2">
+                                                    Using a mobile browser?
+                                                </p>
+                                                <a
+                                                    href={`keychain://browse/${window.location.hostname}${window.location.pathname}`}
+                                                    className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[var(--primary-color)] text-xs font-bold hover:brightness-110 active:scale-95 transition-all"
+                                                >
+                                                    <svg className="w-4 h-4" viewBox="0 0 100 100" fill="none">
+                                                        <path d="M18 22 C10 12 4 26 10 36 C14 44 26 44 36 36 C28 28 22 22 18 22 Z" fill="#E31337" />
+                                                        <path d="M34 38 C24 48 14 58 14 68 C14 76 22 80 30 72 C38 64 40 50 38 40 Z" fill="#E31337" />
+                                                    </svg>
+                                                    Open in Keychain Browser
+                                                </a>
                                             </div>
                                         )}
 
@@ -315,6 +352,21 @@ export function LoginModal({
                                         >
                                             Try another method
                                         </button>
+
+                                        {isMobile && hasQR && (
+                                            <div className="pt-2">
+                                                <a
+                                                    href={hasQR}
+                                                    className="inline-flex items-center gap-2 px-6 py-3 bg-[#E31337] text-white rounded-xl font-bold shadow-lg shadow-[#E31337]/20 hover:brightness-110 active:scale-95 transition-all text-sm"
+                                                >
+                                                    <svg className="w-5 h-5" viewBox="0 0 100 100" fill="none">
+                                                        <path d="M18 22 C10 12 4 26 10 36 C14 44 26 44 36 36 C28 28 22 22 18 22 Z" fill="white" />
+                                                        <path d="M34 38 C24 48 14 58 14 68 C14 76 22 80 30 72 C38 64 40 50 38 40 Z" fill="white" />
+                                                    </svg>
+                                                    Open Keychain App
+                                                </a>
+                                            </div>
+                                        )}
 
                                         <div className="flex items-center justify-center gap-3 pt-2">
                                             <span className="relative flex h-3 w-3">

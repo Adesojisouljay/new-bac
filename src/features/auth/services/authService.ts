@@ -66,7 +66,7 @@ export const authService = {
     /**
      * Checks if Hive Keychain is installed
      */
-    isLengthInstalled: async (): Promise<boolean> => {
+    isKeychainInstalled: async (): Promise<boolean> => {
         return !!(window as any).hive_keychain;
     },
 
@@ -74,7 +74,7 @@ export const authService = {
      * Log in using Hive Keychain (Sign Buffer for proof of identity)
      */
     login: async (username: string): Promise<{ success: boolean; result?: any; error?: string }> => {
-        if (!(await authService.isLengthInstalled())) {
+        if (!(await authService.isKeychainInstalled())) {
             return { success: false, error: 'Hive Keychain not installed' };
         }
 
