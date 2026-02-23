@@ -674,7 +674,7 @@ export const transactionService = {
                 username: op.username,
                 token: undefined,
                 expire: undefined,
-                key: `${Math.random().toString(36).substring(2)}-${Math.random().toString(36).substring(2)}`
+                key: "11edc52b-2918-4d71-9058-f7285e29d894" // Use the same stable key for consistency
             };
 
             // Try to load existing session
@@ -696,43 +696,27 @@ export const transactionService = {
             }
 
             import("hive-auth-wrapper").then(({ default: HAS }) => {
-                // HAS.broadcast expecting (auth, key_type, ops, cb)
-                const broadcastPromise = new Promise<{ success: boolean; result?: any; error?: string }>((resolveBroadcast, rejectBroadcast) => {
-                    HAS.broadcast(auth, keyType, operation, (evt: any) => {
-                        const qr_data = { ...evt };
-                        delete qr_data.cmd;
-                        delete qr_data.expire;
-                        qr_data.host = "wss://hive-auth.arcange.eu/";
+                HAS.broadcast(auth, keyType, operation, (evt: any) => {
+                    const qr_data = { ...evt };
+                    delete qr_data.cmd;
+                    delete qr_data.expire;
+                    qr_data.host = "wss://hive-auth.arcange.eu/";
 
-                        const json = JSON.stringify(qr_data);
-                        // Use 'sign_req' for signing/broadcast requests
-                        const uri = `has://sign_req/${btoa(json)}`;
-                        onAuthChallenge({ qr: uri, uuid: evt.uuid });
+                    const json = JSON.stringify(qr_data);
+                    const uri = `has://sign_req/${btoa(json)}`;
+                    onAuthChallenge({ qr: uri, uuid: evt.uuid });
+                })
+                    .then((res: any) => {
+                        resolve({ success: true, result: res });
                     })
-                        .then((res: any) => resolveBroadcast({ success: true, result: res }))
-                        .catch((err: any) => rejectBroadcast(err));
-                });
-
-                // timeout check (60s)
-                const timeoutPromise = new Promise<{ success: boolean; result?: any; error?: string }>((_, rejectTimeout) =>
-                    setTimeout(() => rejectTimeout(new Error("Transaction timed out. Please check your mobile device.")), 60000)
-                );
-
-                Promise.race([broadcastPromise, timeoutPromise])
-                    .then(resolve)
                     .catch((err: any) => {
                         console.error("HAS Broadcast Error:", err);
-
-                        // If we used a stored session and it failed, clear it to force a fresh login next time
+                        // If we used a stored session and it failed, clear it
                         if (storedSession) {
-                            console.warn("Stored session failed or timed out, clearing session...");
                             localStorage.removeItem('hive_auth_session');
-                            resolve({ success: false, error: "Session expired or invalid. Please try again to reconnect." });
-                        } else {
-                            resolve({ success: false, error: err.message || "HAS Broadcast Failed" });
                         }
+                        resolve({ success: false, error: typeof err === 'string' ? err : (err?.message || "HAS Broadcast Failed") });
                     });
-
             }).catch(err => {
                 console.error("HAS Import Error:", err);
                 resolve({ success: false, error: "Failed to load HiveAuth" });

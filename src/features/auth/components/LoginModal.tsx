@@ -31,17 +31,29 @@ export function LoginModal({
     onRemoveAccount,
     onOpenOnboarding
 }: LoginModalProps) {
+    const [isMobile, setIsMobile] = useState(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 1024);
+    const isInAppBrowser = !!(window as any).hive_keychain;
+
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 1024);
+        };
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+
     const [username, setUsername] = useState('');
-    const [method, setMethod] = useState<LoginMethod>('keychain');
+    const [method, setMethod] = useState<LoginMethod>(() => {
+        // Intelligent defaults for mobile vs desktop
+        if (isInAppBrowser) return 'keychain';
+        if (isMobile) return 'hiveauth';
+        return (localStorage.getItem('hive_auth_method') as LoginMethod) || 'keychain';
+    });
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [hasQR, setHasQR] = useState<string | null>(null);
-    const [showDelegationPrompt, setShowDelegationPrompt] = useState<{ username: string; method: LoginMethod } | null>(null);
-    const [authorizing, setAuthorizing] = useState(false);
 
-    const RELAY_ACCOUNT = 'breakaway.app';
-    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const isInAppBrowser = !!(window as any).hive_keychain;
 
     // Show ALL logged-in accounts; active one gets a badge instead of a Switch button
     const allSavedAccounts = savedAccounts;
@@ -86,11 +98,18 @@ export function LoginModal({
                     cleanUsername,
                     ({ qr }) => {
                         setHasQR(qr);
-                        setLoading(false);
-                        // Auto-redirect to deeplink on mobile
+                        // Auto-redirect to deeplink on mobile - do it IMMEDIATELY
                         if (isMobile) {
+                            // Try multiple ways to trigger redirect
                             window.location.href = qr;
+                            // Fallback for some browsers
+                            setTimeout(() => {
+                                if (document.hasFocus()) {
+                                    window.open(qr, '_self');
+                                }
+                            }, 500);
                         }
+                        setLoading(false);
                     }
                 );
 
@@ -104,15 +123,8 @@ export function LoginModal({
                     localStorage.setItem('hive_auth_session', JSON.stringify(sessionData));
                     localStorage.setItem('hive_auth_method', 'hiveauth');
 
-                    // Check for delegated authority to enable "One-Tap Voting"
-                    const isDelegated = await authService.checkDelegation(cleanUsername, RELAY_ACCOUNT);
-                    if (!isDelegated) {
-                        setShowDelegationPrompt({ username: cleanUsername, method: 'hiveauth' });
-                        setLoading(false);
-                    } else {
-                        onLoginSuccess(cleanUsername, 'hiveauth');
-                        onClose();
-                    }
+                    onLoginSuccess(cleanUsername, 'hiveauth');
+                    onClose();
                 } else {
                     setError(result.error || 'HiveAuth failed');
                     setHasQR(null);
@@ -326,7 +338,7 @@ export function LoginModal({
                                                     ) : (
                                                         <>
                                                             <img src={hiveauthLogo} alt="HiveAuth" className="w-7 h-7 object-contain brightness-0 invert" />
-                                                            <span>Generate QR Code</span>
+                                                            <span>{isMobile ? "Login with Keychain App" : "Generate QR Code"}</span>
                                                         </>
                                                     )}
                                                 </>
@@ -339,11 +351,33 @@ export function LoginModal({
                                             <QRCodeSVG value={hasQR} size={180} level="H" />
                                         </div>
 
-                                        <div className="space-y-2">
-                                            <h3 className="text-xl font-bold text-[var(--text-primary)]">Scan with Wallet</h3>
-                                            <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[240px] mx-auto opacity-80">
-                                                Open Keychain or any HAS compatible wallet to approve.
-                                            </p>
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <h3 className="text-xl font-bold text-[var(--text-primary)]">
+                                                    {isMobile ? "Authorize in Keychain" : "Scan with Wallet"}
+                                                </h3>
+                                                <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[240px] mx-auto opacity-80">
+                                                    {isMobile ? "Approve the request in your Keychain app." : "Open Keychain or any HAS compatible wallet to approve."}
+                                                </p>
+                                            </div>
+
+                                            {isMobile && (
+                                                <div className="animate-in slide-in-from-bottom-2 duration-300">
+                                                    <a
+                                                        href={hasQR}
+                                                        className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--primary-color)] text-white rounded-2xl font-bold shadow-lg active:scale-95 transition-all text-sm"
+                                                    >
+                                                        <svg className="w-4 h-4" viewBox="0 0 100 100" fill="none">
+                                                            <path d="M18 22 C10 12 4 26 10 36 C14 44 26 44 36 36 C28 28 22 22 18 22 Z" fill="white" />
+                                                            <path d="M34 38 C24 48 14 58 14 68 C14 76 22 80 30 72 C38 64 40 50 38 40 Z" fill="white" />
+                                                        </svg>
+                                                        Open Keychain App
+                                                    </a>
+                                                    <p className="text-[10px] text-[var(--text-secondary)] mt-2 opacity-60">
+                                                        Didn't open automatically? Click the button above.
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <button
@@ -353,21 +387,6 @@ export function LoginModal({
                                             Try another method
                                         </button>
 
-                                        {isMobile && hasQR && (
-                                            <div className="pt-2">
-                                                <a
-                                                    href={hasQR}
-                                                    className="inline-flex items-center gap-2 px-6 py-3 bg-[#E31337] text-white rounded-xl font-bold shadow-lg shadow-[#E31337]/20 hover:brightness-110 active:scale-95 transition-all text-sm"
-                                                >
-                                                    <svg className="w-5 h-5" viewBox="0 0 100 100" fill="none">
-                                                        <path d="M18 22 C10 12 4 26 10 36 C14 44 26 44 36 36 C28 28 22 22 18 22 Z" fill="white" />
-                                                        <path d="M34 38 C24 48 14 58 14 68 C14 76 22 80 30 72 C38 64 40 50 38 40 Z" fill="white" />
-                                                    </svg>
-                                                    Open Keychain App
-                                                </a>
-                                            </div>
-                                        )}
-
                                         <div className="flex items-center justify-center gap-3 pt-2">
                                             <span className="relative flex h-3 w-3">
                                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[var(--primary-color)] opacity-75"></span>
@@ -375,62 +394,6 @@ export function LoginModal({
                                             </span>
                                             <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-widest opacity-70">Awaiting Approval</span>
                                         </div>
-                                    </div>
-                                )}
-
-                                {showDelegationPrompt && (
-                                    <div className="text-center space-y-6 animate-in fade-in zoom-in-95 duration-300 w-full py-4">
-                                        <div className="w-16 h-16 bg-[var(--primary-color)]/10 text-[var(--primary-color)] rounded-full flex items-center justify-center mx-auto mb-4">
-                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                            </svg>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                            <h3 className="text-xl font-bold text-[var(--text-primary)]">Enable One-Tap Voting</h3>
-                                            <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[280px] mx-auto opacity-80">
-                                                Delegating "Posting Authority" allows the app to vote and post for you without wallet prompts.
-                                            </p>
-                                        </div>
-
-                                        <div className="flex flex-col gap-3">
-                                            <button
-                                                onClick={async () => {
-                                                    setAuthorizing(true);
-                                                    const res = await authService.authorizeRelay(showDelegationPrompt.username, RELAY_ACCOUNT);
-                                                    setAuthorizing(false);
-                                                    if (res.success) {
-                                                        onLoginSuccess(showDelegationPrompt.username, showDelegationPrompt.method);
-                                                        onClose();
-                                                    } else {
-                                                        setError(res.error || "Authorization failed");
-                                                        setShowDelegationPrompt(null);
-                                                    }
-                                                }}
-                                                disabled={authorizing}
-                                                className="w-full py-4 bg-[var(--primary-color)] text-white font-bold rounded-2xl hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
-                                            >
-                                                {authorizing ? (
-                                                    <div className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin" />
-                                                ) : (
-                                                    "Grant Authority"
-                                                )}
-                                            </button>
-
-                                            <button
-                                                onClick={() => {
-                                                    onLoginSuccess(showDelegationPrompt.username, showDelegationPrompt.method);
-                                                    onClose();
-                                                }}
-                                                className="w-full py-3 text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-sm font-bold transition-all"
-                                            >
-                                                Skip for now
-                                            </button>
-                                        </div>
-
-                                        <p className="text-[10px] text-[var(--text-secondary)] opacity-60">
-                                            Only allows posting-level actions. Your funds are safe and stay in your control.
-                                        </p>
                                     </div>
                                 )}
                             </div>
@@ -445,7 +408,7 @@ export function LoginModal({
                                         className="w-full py-3 bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--primary-color)] font-bold rounded-2xl hover:bg-[var(--primary-color)]/5 transition-all text-sm flex items-center justify-center gap-2"
                                     >
                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                         </svg>
                                         Create Account Natively
                                     </button>

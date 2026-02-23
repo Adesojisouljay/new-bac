@@ -28,6 +28,7 @@ export function WalletActionsModal({ isOpen, onClose, type, username, initialDat
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [hasQR, setHasQR] = useState<string | null>(null);
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 1024;
 
     // Reset state when modal opens/type changes
     useEffect(() => {
@@ -100,7 +101,10 @@ export function WalletActionsModal({ isOpen, onClose, type, username, initialDat
 
             const result = await transactionService.broadcast(op, ({ qr }) => {
                 setHasQR(qr);
-                // Don't stop loading, we are waiting for mobile confirmation
+                // Auto-redirect on mobile
+                if (isMobile) {
+                    window.location.href = qr;
+                }
             });
 
             if (result && result.success) {
@@ -144,12 +148,25 @@ export function WalletActionsModal({ isOpen, onClose, type, username, initialDat
 
                             <div>
                                 <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1">
-                                    {hasQR ? 'Confirm Transaction' : 'Check Your Device'}
+                                    {hasQR ? (isMobile ? 'Authorize in Keychain' : 'Confirm Transaction') : 'Check Your Device'}
                                 </h3>
                                 <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[260px] mx-auto">
-                                    {hasQR ? 'Scan with your Hive mobile wallet to sign and broadcast this transaction.' : 'Please approve the transaction request on your Hive mobile wallet.'}
+                                    {hasQR
+                                        ? (isMobile ? 'Approve the request in your Keychain app.' : 'Scan with your Hive mobile wallet to sign and broadcast this transaction.')
+                                        : 'Please approve the transaction request on your Hive mobile wallet.'}
                                 </p>
                             </div>
+
+                            {hasQR && isMobile && (
+                                <div className="py-2">
+                                    <a
+                                        href={hasQR}
+                                        className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--primary-color)] text-white rounded-xl font-bold shadow-lg active:scale-95 transition-all text-sm"
+                                    >
+                                        Open Keychain App
+                                    </a>
+                                </div>
+                            )}
 
                             {hasQR && (
                                 <button

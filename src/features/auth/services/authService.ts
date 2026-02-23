@@ -113,23 +113,23 @@ export const authService = {
         return new Promise((resolve) => {
             // App metadata
             const APP_META = {
-                name: "Breakaway",
-                description: "Breakaway Communities",
-                icon: "https://images.hive.blog/u/hive-106444/avatar/large"
+                name: "BAC",
+                description: "BAC",
+                icon: "https://breakaway-communities.netlify.app/logo192.png"
             };
 
             const auth = {
                 username,
                 token: undefined,
                 expire: undefined,
-                key: `${Math.random().toString(36).substring(2)}-${Math.random().toString(36).substring(2)}`
+                key: "11edc52b-2918-4d71-9058-f7285e29d894" // Stable key from working example
             };
 
             // Structured challenge object as per working example
             const messageObj: any = {
                 signed_message: {
                     type: "code",
-                    app: "breakaway.communities"
+                    app: "breakaway.app"
                 },
                 authors: [username],
                 timestamp: Date.now()
@@ -138,8 +138,7 @@ export const authService = {
             const challenge = JSON.stringify(messageObj);
 
             import("hive-auth-wrapper").then(({ default: HAS }) => {
-                HAS.authenticate(auth, APP_META, { challenge, key_type: "posting" }, (evt: any) => {
-                    // Extract data for the QR code as per the working example
+                HAS.authenticate(auth, APP_META, { challenge, key_type: "active" }, (evt: any) => {
                     const qr_data = { ...evt };
                     delete qr_data.cmd;
                     delete qr_data.expire;
@@ -150,13 +149,15 @@ export const authService = {
                     onChallenge({ qr: uri, uuid: evt.uuid });
                 })
                     .then((res: any) => {
-                        // Authentication successful
-                        // Return the auth object (with the key we generated) and the result (with token/expire)
+                        // Extract challenge signature if present
+                        if (res.data && res.data.challenge && res.data.challenge.challenge) {
+                            messageObj.signatures = [res.data.challenge.challenge];
+                        }
                         resolve({ success: true, result: res, session: auth });
                     })
                     .catch((err: any) => {
-                        console.error("HAS Rejected:", err);
-                        resolve({ success: false, error: typeof err === 'string' ? err : (err?.message || "HiveAuth rejected") });
+                        console.error("HAS Authentication error:", err);
+                        resolve({ success: false, error: typeof err === 'string' ? err : (err?.message || "HiveAuth failed") });
                     });
             }).catch(err => {
                 console.error("HAS Module Import Error:", err);
@@ -184,14 +185,6 @@ export const authService = {
      * Request the user to delegate Posting authority to the relay account
      */
     authorizeRelay: async (username: string, relayAccount: string): Promise<{ success: boolean; error?: string }> => {
-        // This requires an Active key operation usually, but Posting authority can be added via account_update2
-        // which requires Active key.
-
-        // Instead of manual JSON, better to use a specific SDK method or carefully merge.
-        // For simplicity and safety, we should use Keychain's addAccountAuth if available, 
-        // or a standard broadcast. 
-
-        // Actually, the easiest way to ADD an auth without wiping others is:
         return new Promise((resolve) => {
             const keychain = (window as any).hive_keychain;
             if (keychain) {
@@ -200,7 +193,6 @@ export const authService = {
                     else resolve({ success: false, error: response.message });
                 });
             } else {
-                // For HiveAuth, we'd need to construct a full account_update op which is risky to get right without full account state.
                 resolve({ success: false, error: "Relay authorization currently requires Hive Keychain. Please use a desktop browser to enable one-tap voting." });
             }
         });
