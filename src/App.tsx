@@ -21,7 +21,7 @@ const Layout = () => {
     <div className="min-h-screen bg-[var(--bg-canvas)] text-[var(--text-primary)] font-sans transition-colors duration-300">
       <Navbar />
 
-      <main className="container mx-auto px-4 pt-24 pb-12">
+      <main className="w-full pt-24 pb-12">
         <Suspense fallback={<div className="flex justify-center p-12 text-[var(--text-secondary)]">Loading...</div>}>
           <Outlet />
         </Suspense>

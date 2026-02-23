@@ -127,6 +127,22 @@ export const transactionService = {
     ): Promise<{ success: boolean; result?: any; error?: string }> => {
         // Detect login method from localStorage
         const method = localStorage.getItem('hive_auth_method') || 'keychain';
+        const username = op.username;
+
+        // Check if this is a Posting-level operation that can be relayed
+        const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc'];
+
+        if (postingOps.includes(op.type)) {
+            // Check if user has delegated posting authority to the relay account
+            const relayAccount = 'breakaway.app'; // Should ideally be dynamic from config
+            const { authService } = await import('../../auth/services/authService');
+            const isDelegated = await authService.checkDelegation(username, relayAccount);
+
+            if (isDelegated) {
+                console.log(`🚀 [Relay] Broadcasting ${op.type} via platform relay...`);
+                return transactionService.broadcastRelay(op);
+            }
+        }
 
         if (method === 'keychain') {
             return transactionService.broadcastKeychain(op);
@@ -135,6 +151,96 @@ export const transactionService = {
                 return { success: false, error: "HiveAuth requires a callback for QR code" };
             }
             return transactionService.broadcastHAS(op, onAuthChallenge);
+        }
+    },
+
+    /**
+     * Broadcasts using the platform's relay account
+     */
+    broadcastRelay: async (op: WalletOperation): Promise<{ success: boolean; result?: any; error?: string }> => {
+        try {
+            const token = localStorage.getItem('points_jwt');
+            if (!token) {
+                return { success: false, error: "Authentication token missing. Please try logging in again." };
+            }
+
+            // Convert WalletOperation to Hive Operation array
+            let hiveOps: any[] = [];
+            switch (op.type) {
+                case 'vote':
+                    hiveOps = [["vote", { voter: op.username, author: op.author, permlink: op.permlink, weight: op.weight }]];
+                    break;
+                case 'comment':
+                    const comment = ["comment", {
+                        parent_author: op.parent_author,
+                        parent_permlink: op.parent_permlink,
+                        author: op.username,
+                        permlink: op.permlink,
+                        title: op.title,
+                        body: op.body,
+                        json_metadata: op.json_metadata
+                    }];
+                    hiveOps = [comment];
+                    if (op.options) {
+                        hiveOps.push(["comment_options", {
+                            author: op.username,
+                            permlink: op.permlink,
+                            max_accepted_payout: op.options.max_accepted_payout,
+                            percent_hbd: op.options.percent_hbd,
+                            allow_votes: op.options.allow_votes,
+                            allow_curation_rewards: op.options.allow_curation_rewards,
+                            extensions: [[0, { beneficiaries: op.options.beneficiaries }]]
+                        }]);
+                    }
+                    break;
+                case 'reblog':
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [op.username],
+                        id: 'follow',
+                        json: JSON.stringify(['reblog', { account: op.username, author: op.author, permlink: op.permlink }])
+                    }]];
+                    break;
+                case 'profile_update':
+                    hiveOps = [["account_update2", {
+                        account: op.username,
+                        json_metadata: "",
+                        posting_json_metadata: JSON.stringify({ profile: op.profile })
+                    }]];
+                    break;
+                case 'delegate_rc':
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [op.username],
+                        id: "rc",
+                        json: JSON.stringify(["delegate_rc", { from: op.username, delegatees: [op.delegatee], max_rc: op.amount }])
+                    }]];
+                    break;
+                default:
+                    return { success: false, error: "Operation type not supported by relay" };
+            }
+
+            const response = await fetch(`${import.meta.env.VITE_POINTS_API_URL || 'http://localhost:4000'}/hive/relay`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    username: op.username,
+                    operations: hiveOps
+                })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                return { success: true, result: data.result };
+            } else {
+                return { success: false, error: data.error || "Relay broadcast failed" };
+            }
+        } catch (error: any) {
+            console.error("Relay Broadcast Error:", error);
+            return { success: false, error: error.message || "Network error during relay broadcast" };
         }
     },
 

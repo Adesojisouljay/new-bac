@@ -6,7 +6,7 @@ import hiveauthLogo from '../../../assets/hiveauth-logo.svg';
 interface LoginModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onLoginSuccess: (username: string) => void;
+    onLoginSuccess: (username: string, method: 'keychain' | 'hiveauth') => void;
     /** Currently active user (to exclude from "switch to" list) */
     activeUser?: string | null;
     /** All signed-in accounts */
@@ -36,6 +36,10 @@ export function LoginModal({
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [hasQR, setHasQR] = useState<string | null>(null);
+    const [showDelegationPrompt, setShowDelegationPrompt] = useState<{ username: string; method: LoginMethod } | null>(null);
+    const [authorizing, setAuthorizing] = useState(false);
+
+    const RELAY_ACCOUNT = 'breakaway.app';
 
     // Show ALL logged-in accounts; active one gets a badge instead of a Switch button
     const allSavedAccounts = savedAccounts;
@@ -64,7 +68,7 @@ export function LoginModal({
                 const result = await authService.login(cleanUsername);
                 if (result.success) {
                     localStorage.setItem('hive_auth_method', 'keychain');
-                    onLoginSuccess(cleanUsername);
+                    onLoginSuccess(cleanUsername, 'keychain');
                     onClose();
                 } else {
                     setError(result.error || 'Login failed');
@@ -93,8 +97,16 @@ export function LoginModal({
                     };
                     localStorage.setItem('hive_auth_session', JSON.stringify(sessionData));
                     localStorage.setItem('hive_auth_method', 'hiveauth');
-                    onLoginSuccess(cleanUsername);
-                    onClose();
+
+                    // Check for delegated authority to enable "One-Tap Voting"
+                    const isDelegated = await authService.checkDelegation(cleanUsername, RELAY_ACCOUNT);
+                    if (!isDelegated) {
+                        setShowDelegationPrompt({ username: cleanUsername, method: 'hiveauth' });
+                        setLoading(false);
+                    } else {
+                        onLoginSuccess(cleanUsername, 'hiveauth');
+                        onClose();
+                    }
                 } else {
                     setError(result.error || 'HiveAuth failed');
                     setHasQR(null);
@@ -313,6 +325,62 @@ export function LoginModal({
                                         </div>
                                     </div>
                                 )}
+
+                                {showDelegationPrompt && (
+                                    <div className="text-center space-y-6 animate-in fade-in zoom-in-95 duration-300 w-full py-4">
+                                        <div className="w-16 h-16 bg-[var(--primary-color)]/10 text-[var(--primary-color)] rounded-full flex items-center justify-center mx-auto mb-4">
+                                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                            </svg>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <h3 className="text-xl font-bold text-[var(--text-primary)]">Enable One-Tap Voting</h3>
+                                            <p className="text-sm text-[var(--text-secondary)] leading-relaxed max-w-[280px] mx-auto opacity-80">
+                                                Delegating "Posting Authority" allows the app to vote and post for you without wallet prompts.
+                                            </p>
+                                        </div>
+
+                                        <div className="flex flex-col gap-3">
+                                            <button
+                                                onClick={async () => {
+                                                    setAuthorizing(true);
+                                                    const res = await authService.authorizeRelay(showDelegationPrompt.username, RELAY_ACCOUNT);
+                                                    setAuthorizing(false);
+                                                    if (res.success) {
+                                                        onLoginSuccess(showDelegationPrompt.username, showDelegationPrompt.method);
+                                                        onClose();
+                                                    } else {
+                                                        setError(res.error || "Authorization failed");
+                                                        setShowDelegationPrompt(null);
+                                                    }
+                                                }}
+                                                disabled={authorizing}
+                                                className="w-full py-4 bg-[var(--primary-color)] text-white font-bold rounded-2xl hover:brightness-110 active:scale-95 transition-all shadow-lg flex items-center justify-center gap-3"
+                                            >
+                                                {authorizing ? (
+                                                    <div className="w-5 h-5 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                                                ) : (
+                                                    "Grant Authority"
+                                                )}
+                                            </button>
+
+                                            <button
+                                                onClick={() => {
+                                                    onLoginSuccess(showDelegationPrompt.username, showDelegationPrompt.method);
+                                                    onClose();
+                                                }}
+                                                className="w-full py-3 text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-sm font-bold transition-all"
+                                            >
+                                                Skip for now
+                                            </button>
+                                        </div>
+
+                                        <p className="text-[10px] text-[var(--text-secondary)] opacity-60">
+                                            Only allows posting-level actions. Your funds are safe and stay in your control.
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="mt-6 pt-6 border-t border-[var(--border-color)]/30">
@@ -354,6 +422,6 @@ export function LoginModal({
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

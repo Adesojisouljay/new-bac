@@ -21,8 +21,8 @@ export function Navbar() {
         setUser(accountManager.getActive());
     };
 
-    const handleLoginSuccess = (username: string) => {
-        accountManager.add(username, 'keychain');
+    const handleLoginSuccess = (username: string, method: 'keychain' | 'hiveauth') => {
+        accountManager.add(username, method);
         refreshAccounts();
         // Silently get a points JWT so we can award points for actions
         const community = config?.id || 'hive-106130';
@@ -47,7 +47,7 @@ export function Navbar() {
     return (
         <>
             <header className="fixed top-0 w-full border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/80 backdrop-blur-md z-50 transition-colors duration-300">
-                <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+                <div className="w-full max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between">
                     {/* Logo Section */}
                     <Link to="/" className="flex items-center gap-2">
                         {config?.logo ? (

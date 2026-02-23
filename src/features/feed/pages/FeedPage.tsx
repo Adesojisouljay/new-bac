@@ -16,11 +16,10 @@ export default function FeedPage() {
     const { sort: sortParam } = useParams();
     const location = useLocation();
 
-    // Derive active tab from path
-    const pathParts = location.pathname.split('/').filter(Boolean);
-    // Simple logic: if path starts with posts, about, etc. 
-    // Since we are at root level in App.tsx routes like /about, /posts etc.
-    const activeTab = pathParts[0] || 'posts';
+    // Derive active tab from path (look for the keyword anywhere to handle community params)
+    const activeTab = location.pathname.includes('/about') ? 'about' :
+        location.pathname.includes('/subscribers') ? 'subscribers' :
+            location.pathname.includes('/activities') ? 'activities' : 'posts';
 
     // Sort mapping: map url sort to API sort
     // trending -> trending, new -> created, hot -> hot
@@ -236,7 +235,7 @@ export default function FeedPage() {
     if (!config) return <div className="p-8 text-center text-[var(--text-secondary)]">Loading community configuration...</div>;
 
     return (
-        <div className="max-w-[1400px] mx-auto pb-12 px-4 md:px-6">
+        <div className="max-w-[1400px] mx-auto pb-12 px-4 md:px-8">
 
             {/* 1. Community Header (Banner & Stats) */}
             <div className="mt-6">
@@ -253,7 +252,7 @@ export default function FeedPage() {
             <div className="grid grid-cols-1 lg:grid-cols-4 xl:grid-cols-12 gap-8">
 
                 {/* Left Column - Sidebar (XL: 3 columns) */}
-                <div className="lg:col-span-1 xl:col-span-3 order-2 lg:order-1">
+                <div className={`lg:col-span-1 xl:col-span-3 order-2 lg:order-1 ${activeTab !== 'about' ? 'hidden lg:block' : 'block'}`}>
                     {community ? (
                         <CommunitySidebar community={community} showCreatePost={false} />
                     ) : (
@@ -412,18 +411,20 @@ export default function FeedPage() {
                 </div>
 
                 {/* Right Column - Leadership (XL: 3 columns) */}
-                <div className="lg:col-span-1 xl:col-span-3 order-3 space-y-6">
+                <div className={`lg:col-span-1 xl:col-span-3 order-3 space-y-6 ${activeTab !== 'about' ? 'hidden lg:block' : 'block'}`}>
                     {community ? (
                         <>
-                            <button
-                                onClick={() => navigate('/submit')}
-                                className="w-full py-3 bg-[var(--primary-color)] text-white rounded-lg font-bold shadow-lg hover:brightness-110 transition-all flex items-center justify-center gap-2"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                                </svg>
-                                Create Post
-                            </button>
+                            {!['activities', 'about'].includes(activeTab) && (
+                                <button
+                                    onClick={() => navigate('/submit')}
+                                    className="w-full py-3 bg-[var(--primary-color)] text-white rounded-lg font-bold shadow-lg hover:brightness-110 transition-all flex items-center justify-center gap-2 mb-6"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                                    </svg>
+                                    Create Post
+                                </button>
+                            )}
                             <CommunityLeadership community={community} />
                         </>
                     ) : (

@@ -29,6 +29,7 @@ export const accountManager = {
             accounts.push({ username, method });
             localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
         }
+        localStorage.setItem('hive_auth_method', method);
         this.setActive(username);
     },
 
@@ -161,6 +162,47 @@ export const authService = {
                 console.error("HAS Module Import Error:", err);
                 resolve({ success: false, error: "Failed to load HiveAuth wrapper" });
             });
+        });
+    },
+
+    /**
+     * Check if a user has delegated Posting authority to the platform relay account
+     */
+    checkDelegation: async (username: string, relayAccount: string): Promise<boolean> => {
+        try {
+            const { hiveClient } = await import('../../../services/hive/client');
+            const [account] = await hiveClient.database.getAccounts([username]);
+            if (!account) return false;
+            return account.posting.account_auths.some(auth => auth[0] === relayAccount);
+        } catch (error) {
+            console.error("Delegation check failed:", error);
+            return false;
+        }
+    },
+
+    /**
+     * Request the user to delegate Posting authority to the relay account
+     */
+    authorizeRelay: async (username: string, relayAccount: string): Promise<{ success: boolean; error?: string }> => {
+        // This requires an Active key operation usually, but Posting authority can be added via account_update2
+        // which requires Active key.
+
+        // Instead of manual JSON, better to use a specific SDK method or carefully merge.
+        // For simplicity and safety, we should use Keychain's addAccountAuth if available, 
+        // or a standard broadcast. 
+
+        // Actually, the easiest way to ADD an auth without wiping others is:
+        return new Promise((resolve) => {
+            const keychain = (window as any).hive_keychain;
+            if (keychain) {
+                keychain.requestAddAccountAuth(username, relayAccount, 'Posting', (response: any) => {
+                    if (response.success) resolve({ success: true });
+                    else resolve({ success: false, error: response.message });
+                });
+            } else {
+                // For HiveAuth, we'd need to construct a full account_update op which is risky to get right without full account state.
+                resolve({ success: false, error: "Relay authorization currently requires Hive Keychain. Please use a desktop browser to enable one-tap voting." });
+            }
         });
     }
 };
