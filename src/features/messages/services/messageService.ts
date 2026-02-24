@@ -8,7 +8,9 @@ export interface Message {
     timestamp: string;
     decrypted?: string;
     isEncrypted: boolean;
-    id?: string;
+    id?: string;       // trx_id (Hive transaction ID)
+    mongoId?: string;  // MongoDB _id (used for PATCH /api/messages/:id)
+    edited?: boolean;
 }
 
 export interface Conversation {
@@ -116,7 +118,9 @@ class MessageService {
                         message: m.message,
                         timestamp: m.timestamp,
                         isEncrypted: m.message.startsWith('#'),
-                        id: m.trx_id
+                        id: m.trx_id,
+                        mongoId: m._id,
+                        edited: m.edited
                     }));
                 }
             } catch (error) {

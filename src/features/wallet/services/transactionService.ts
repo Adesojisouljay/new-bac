@@ -245,7 +245,7 @@ export const transactionService = {
                     return { success: false, error: "Operation type not supported by relay" };
             }
 
-            const response = await fetch(`${import.meta.env.VITE_POINTS_API_URL || 'http://localhost:4000'}/hive/relay`, {
+            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/hive/relay`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

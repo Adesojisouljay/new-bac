@@ -35,6 +35,7 @@ const Layout = () => {
 import { NotificationProvider } from './contexts/NotificationContext';
 import { ConfigProvider, useConfig } from './contexts/ConfigContext';
 import { SocketProvider } from './contexts/SocketContext';
+import { ChatProvider } from './contexts/ChatContext';
 import { SetupPage } from './features/setup/SetupPage';
 
 const AppContent = () => {
@@ -85,9 +86,11 @@ function App() {
       <ConfigProvider>
         <NotificationProvider>
           <SocketProvider>
-            <CommunityProvider>
-              <AppContent />
-            </CommunityProvider>
+            <ChatProvider>
+              <CommunityProvider>
+                <AppContent />
+              </CommunityProvider>
+            </ChatProvider>
           </SocketProvider>
         </NotificationProvider>
       </ConfigProvider>

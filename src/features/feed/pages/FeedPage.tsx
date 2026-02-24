@@ -9,6 +9,7 @@ import { CommunityLeadership } from '../../community/components/CommunityLeaders
 import { SubscriberList } from '../../community/components/SubscriberList';
 import { ActivityList } from '../../community/components/ActivityList';
 import { Subscriber, Activity } from '../../../services/unified';
+import { StoryBar } from '../../stories/components/StoryBar';
 
 export default function FeedPage() {
     const { config } = useCommunity();
@@ -265,6 +266,7 @@ export default function FeedPage() {
 
                     {activeTab === 'posts' && (
                         <>
+                            <StoryBar />
                             {/* Sort Controls */}
                             <div className="flex items-center justify-between mb-6">
                                 <h2 className="text-xl font-bold text-[var(--text-primary)]">Community Posts</h2>
