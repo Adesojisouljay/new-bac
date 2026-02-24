@@ -67,42 +67,111 @@ export const pointsService = {
      */
     loginToPointsBackend: async (
         username: string,
-        community: string
+        community: string,
+        method: 'keychain' | 'hiveauth' = 'keychain',
+        preSigned?: { sig: string; ts?: string; message?: string }
     ): Promise<boolean> => {
         try {
+            if (preSigned) {
+                console.log(`[Points] Using pre-signed signature for ${username}, skipping prompt.`);
+                const ts = preSigned.ts || Date.now().toString();
+                const sig = preSigned.sig;
+                const messageArg = preSigned.message ? `&message=${encodeURIComponent(preSigned.message)}` : '';
+
+                const res = await fetch(
+                    `${POINTS_API_URL}/auth/login?username=${encodeURIComponent(username)}&ts=${ts}&sig=${encodeURIComponent(sig)}&community=${encodeURIComponent(community)}${messageArg}`
+                );
+
+                if (res.ok) {
+                    const data = await res.json();
+                    const token = data?.response?.token;
+                    if (token) {
+                        setPointsToken(token);
+                        return true;
+                    }
+                }
+                console.warn('[Points] Silent auth failed, falling back to prompt...');
+            }
+
+            console.log(`[Points] Attempting login for ${username} via ${method}...`);
             const ts = Date.now().toString();
             const message = `${username}${ts}`;
+            let signature: string;
 
-            // Use the Keychain browser extension directly
-            const keychain = (window as any).hive_keychain;
-            if (!keychain) return false;
+            if (method === 'keychain') {
+                const keychain = (window as any).hive_keychain;
+                if (!keychain) {
+                    console.error('[Points] Keychain not found');
+                    return false;
+                }
 
-            const signed = await new Promise<{ success: boolean; result: string }>((resolve) => {
-                keychain.requestSignBuffer(
+                const signed = await new Promise<{ success: boolean; result: string }>((resolve) => {
+                    keychain.requestSignBuffer(
+                        username,
+                        message,
+                        'Posting',
+                        (resp: any) => resolve(resp)
+                    );
+                });
+
+                if (!signed.success) {
+                    console.error('[Points] Keychain signature failed');
+                    return false;
+                }
+                signature = signed.result;
+            } else {
+                // HiveAuth support
+                const { default: HAS } = await import("hive-auth-wrapper");
+                const { HAS_SERVER, HAS_STATIC_KEY } = await import('../features/auth/services/authService');
+
+                const auth = {
                     username,
-                    message,
-                    'Posting',
-                    (resp: any) => resolve(resp)
-                );
-            });
+                    key: HAS_STATIC_KEY,
+                    host: HAS_SERVER
+                };
 
-            if (!signed.success) return false;
+                const challenge = {
+                    key_type: 'posting',
+                    challenge: message
+                };
 
+                const result = await new Promise<any>((resolve) => {
+                    HAS.challenge(auth, challenge, (evt: any) => {
+                        console.log("[Points] HiveAuth challenge event:", evt);
+                    })
+                        .then((res: any) => resolve({ success: true, result: res }))
+                        .catch((err: any) => resolve({ success: false, error: err }));
+                });
+
+                if (!result.success || !result.result?.data?.challenge?.sig) {
+                    console.error('[Points] HiveAuth signature failed:', result.error);
+                    return false;
+                }
+                signature = result.result.data.challenge.sig;
+            }
+
+            console.log(`[Points] Proof obtained, authenticating with backend...`);
             const res = await fetch(
-                `${POINTS_API_URL}/auth/login?username=${encodeURIComponent(username)}&ts=${ts}&sig=${encodeURIComponent(signed.result)}&community=${encodeURIComponent(community)}`
+                `${POINTS_API_URL}/auth/login?username=${encodeURIComponent(username)}&ts=${ts}&sig=${encodeURIComponent(signature)}&community=${encodeURIComponent(community)}`
             );
 
-            if (!res.ok) return false;
+            if (!res.ok) {
+                const errText = await res.text();
+                console.error(`[Points] Backend authentication failed (${res.status}):`, errText);
+                return false;
+            }
 
             const data = await res.json();
             const token = data?.response?.token;
             if (token) {
+                console.log('[Points] Successfully authenticated with backend.');
                 setPointsToken(token);
                 return true;
             }
+            console.error('[Points] Token missing in backend response');
             return false;
         } catch (e) {
-            console.error('[Points] Login failed:', e);
+            console.error('[Points] Login failed with error:', e);
             return false;
         }
     },

@@ -19,20 +19,49 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const fetchCurrentConfig = async () => {
         setLoading(true);
         const domain = window.location.hostname;
-        const data = await configService.fetchConfig(domain);
 
-        if (data) {
-            setConfig(data);
-            setIsConfigured(true);
+        try {
+            const data = await configService.fetchConfig(domain);
 
-            // Inject primary color into CSS
-            if (data.primaryColor) {
-                document.documentElement.style.setProperty('--primary-color', data.primaryColor);
+            if (data) {
+                console.log("ConfigContext: Loaded config from API for domain:", domain);
+                setConfig(data);
+                setIsConfigured(true);
+                if (data.primaryColor) {
+                    document.documentElement.style.setProperty('--primary-color', data.primaryColor);
+                }
+            } else {
+                // Fallback to Env variables if API returns null (domain not found)
+                console.log("ConfigContext: Domain not found in API, checking ENV fallback...");
+                checkEnvFallback();
             }
+        } catch (error) {
+            console.error("ConfigContext: API call failed, falling back to ENV:", error);
+            checkEnvFallback();
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const checkEnvFallback = () => {
+        const envCommunityId = import.meta.env.VITE_COMMUNITY_ID;
+        if (envCommunityId && envCommunityId !== 'YOUR_COMMUNITY_ID') {
+            const fallback: CommunityConfig = {
+                domain: window.location.hostname,
+                communityName: import.meta.env.VITE_COMMUNITY_NAME || 'Breakaway Community',
+                hiveCommunityId: envCommunityId,
+                logoUrl: import.meta.env.VITE_COMMUNITY_LOGO,
+                primaryColor: import.meta.env.VITE_THEME_PRIMARY || '#ff4400',
+                onboardingSats: parseInt(import.meta.env.VITE_ONBOARDING_SATS || '100'),
+                isConfigured: true
+            };
+            setConfig(fallback);
+            setIsConfigured(true);
+            document.documentElement.style.setProperty('--primary-color', fallback.primaryColor);
+            console.log("ConfigContext: Successfully loaded fallback from ENV");
         } else {
             setIsConfigured(false);
         }
-        setLoading(false);
     };
 
     useEffect(() => {

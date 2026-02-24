@@ -21,12 +21,12 @@ export function Navbar() {
         setUser(accountManager.getActive());
     };
 
-    const handleLoginSuccess = (username: string, method: 'keychain' | 'hiveauth') => {
+    const handleLoginSuccess = (username: string, method: 'keychain' | 'hiveauth', preSigned?: any) => {
         accountManager.add(username, method);
         refreshAccounts();
         // Silently get a points JWT so we can award points for actions
         const community = config?.id || 'hive-106130';
-        pointsService.loginToPointsBackend(username, community).catch(() => {/* ignore */ });
+        pointsService.loginToPointsBackend(username, community, method, preSigned).catch(() => {/* ignore */ });
     };
 
     const handleSwitch = (username: string) => {

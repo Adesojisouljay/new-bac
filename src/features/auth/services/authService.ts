@@ -16,6 +16,15 @@ export interface StoredAccount {
 const ACCOUNTS_KEY = 'hive_accounts';
 const ACTIVE_USER_KEY = 'hive_user';
 
+// Shared HiveAuth settings
+export const HAS_SERVER = "wss://hive-auth.arcange.eu/";
+export const HAS_STATIC_KEY = "11edc52b-2918-4d71-9058-f7285e29d894";
+export const APP_META = {
+    name: "BAC",
+    description: "BAC",
+    icon: "https://breakaway-communities.netlify.app/logo192.png"
+};
+
 export const accountManager = {
     getAll(): StoredAccount[] {
         try {
@@ -73,7 +82,7 @@ export const authService = {
     /**
      * Log in using Hive Keychain (Sign Buffer for proof of identity)
      */
-    login: async (username: string): Promise<{ success: boolean; result?: any; error?: string }> => {
+    login: async (username: string): Promise<{ success: boolean; result?: any; message?: string; error?: string }> => {
         if (!(await authService.isKeychainInstalled())) {
             return { success: false, error: 'Hive Keychain not installed' };
         }
@@ -90,7 +99,11 @@ export const authService = {
             } as any); // Type assertion needed due to SDK type limitations in some versions
 
             if (response.success) {
-                return { success: true, result: response };
+                return {
+                    success: true,
+                    result: response.result, // Use the inner result which contains the signature
+                    message: message // Return the string that was signed
+                };
             } else {
                 return { success: false, error: typeof response.error === 'string' ? response.error : 'Login failed' };
             }
@@ -109,7 +122,7 @@ export const authService = {
     loginWithHiveAuth: (
         username: string,
         onChallenge: (data: { qr: string; uuid: string }) => void
-    ): Promise<{ success: boolean; result?: any; session?: any; error?: string }> => {
+    ): Promise<{ success: boolean; result?: any; session?: any; challenge?: string; error?: string }> => {
         return new Promise((resolve) => {
             // App metadata
             const APP_META = {
@@ -122,7 +135,7 @@ export const authService = {
                 username,
                 token: undefined,
                 expire: undefined,
-                key: "11edc52b-2918-4d71-9058-f7285e29d894" // Stable key from working example
+                key: HAS_STATIC_KEY
             };
 
             // Structured challenge object as per working example
@@ -142,18 +155,19 @@ export const authService = {
                     const qr_data = { ...evt };
                     delete qr_data.cmd;
                     delete qr_data.expire;
-                    qr_data.host = "wss://hive-auth.arcange.eu/";
+                    qr_data.host = HAS_SERVER;
 
                     const json = JSON.stringify(qr_data);
                     const uri = `has://auth_req/${btoa(json)}`;
                     onChallenge({ qr: uri, uuid: evt.uuid });
                 })
                     .then((res: any) => {
-                        // Extract challenge signature if present
-                        if (res.data && res.data.challenge && res.data.challenge.challenge) {
-                            messageObj.signatures = [res.data.challenge.challenge];
-                        }
-                        resolve({ success: true, result: res, session: auth });
+                        resolve({
+                            success: true,
+                            result: res.data,
+                            session: auth,
+                            challenge: challenge // Return the JSON string that was signed
+                        });
                     })
                     .catch((err: any) => {
                         console.error("HAS Authentication error:", err);
@@ -171,10 +185,19 @@ export const authService = {
      */
     checkDelegation: async (username: string, relayAccount: string): Promise<boolean> => {
         try {
+            console.log(`Checking delegation for ${username} to ${relayAccount}`);
             const { hiveClient } = await import('../../../services/hive/client');
             const [account] = await hiveClient.database.getAccounts([username]);
-            if (!account) return false;
-            return account.posting.account_auths.some(auth => auth[0] === relayAccount);
+
+            if (!account) {
+                console.log("Account not found for delegation check");
+                return false;
+            }
+
+            console.log("Account posting auths:", JSON.stringify(account.posting.account_auths));
+            const isDelegated = account.posting.account_auths.some(auth => auth[0] === relayAccount);
+            console.log("Is delegated result:", isDelegated);
+            return isDelegated;
         } catch (error) {
             console.error("Delegation check failed:", error);
             return false;
@@ -184,16 +207,112 @@ export const authService = {
     /**
      * Request the user to delegate Posting authority to the relay account
      */
-    authorizeRelay: async (username: string, relayAccount: string): Promise<{ success: boolean; error?: string }> => {
-        return new Promise((resolve) => {
-            const keychain = (window as any).hive_keychain;
-            if (keychain) {
-                keychain.requestAddAccountAuth(username, relayAccount, 'Posting', (response: any) => {
-                    if (response.success) resolve({ success: true });
-                    else resolve({ success: false, error: response.message });
-                });
+    authorizeRelay: async (
+        username: string,
+        relayAccount: string,
+        method: 'keychain' | 'hiveauth',
+        onChallenge?: (data: { qr: string; uuid: string }) => void,
+        existingSession?: any
+    ): Promise<{ success: boolean; error?: string }> => {
+        return new Promise(async (resolve) => {
+            if (method === 'keychain') {
+                const keychain = (window as any).hive_keychain;
+                if (keychain) {
+                    console.log(`Keychain: Requesting add account authority for ${username} to ${relayAccount}`);
+                    keychain.requestAddAccountAuthority(username, relayAccount, 'Posting', 1, (response: any) => {
+                        console.log("Keychain response:", response);
+                        if (response.success) resolve({ success: true });
+                        else resolve({ success: false, error: response.message });
+                    });
+                } else {
+                    resolve({ success: false, error: "Hive Keychain not installed" });
+                }
             } else {
-                resolve({ success: false, error: "Relay authorization currently requires Hive Keychain. Please use a desktop browser to enable one-tap voting." });
+                if (!onChallenge) {
+                    resolve({ success: false, error: "HiveAuth requires challenge callback" });
+                    return;
+                }
+
+                try {
+                    const { hiveClient } = await import('../../../services/hive/client');
+                    const [account] = await hiveClient.database.getAccounts([username]);
+                    if (!account) {
+                        resolve({ success: false, error: "Account not found" });
+                        return;
+                    }
+
+                    // Prepare updated posting authority
+                    const posting = { ...account.posting };
+                    const exists = posting.account_auths.some(auth => auth[0] === relayAccount);
+
+                    if (exists) {
+                        resolve({ success: true });
+                        return;
+                    }
+
+                    posting.account_auths.push([relayAccount, 1]);
+                    // Sort to maintain consistency
+                    posting.account_auths.sort((a, b) => a[0].localeCompare(b[0]));
+
+                    const op = ["account_update", {
+                        account: username,
+                        posting: posting,
+                        memo_key: account.memo_key,
+                        json_metadata: account.json_metadata
+                    }];
+
+                    // Use HAS to broadcast account_update
+                    let auth = {
+                        username,
+                        token: undefined,
+                        expire: undefined,
+                        key: HAS_STATIC_KEY
+                    };
+
+                    // Use existing session if provided, otherwise check localStorage
+                    if (existingSession && existingSession.username === username) {
+                        auth = { ...existingSession };
+                    } else {
+                        const storedSession = localStorage.getItem('hive_auth_session');
+                        if (storedSession) {
+                            try {
+                                const session = JSON.parse(storedSession);
+                                if (session.username === username) {
+                                    auth.token = session.token;
+                                    auth.expire = session.expire;
+                                    auth.key = session.key;
+                                }
+                            } catch (e) { }
+                        }
+                    }
+
+                    if (!auth.token) {
+                        resolve({ success: false, error: "Session token missing. Please log in again." });
+                        return;
+                    }
+
+                    const { default: HAS } = await import("hive-auth-wrapper");
+                    HAS.broadcast(auth, 'active', [op], (evt: any) => {
+                        const qr_data = {
+                            account: auth.username,
+                            uuid: evt.uuid,
+                            key: auth.key,
+                            host: HAS_SERVER
+                        };
+                        const json = JSON.stringify(qr_data);
+                        const uri = `has://sign_req/${btoa(json)}`;
+                        onChallenge({ qr: uri, uuid: evt.uuid });
+                    })
+                        .then((res: any) => resolve({ success: true, result: res } as any))
+                        .catch((err: any) => {
+                            console.error("HAS Broadcast Error (Delegation):", err);
+                            resolve({ success: false, error: typeof err === 'string' ? err : (err?.message || "HAS Authorization Failed") });
+                        });
+
+                } catch (error: any) {
+                    console.error("Authorize Relay Error:", error);
+                    resolve({ success: false, error: error.message || "Authorization flow failed" });
+                }
             }
         });
     }
