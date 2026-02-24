@@ -133,14 +133,20 @@ export const transactionService = {
         const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc'];
 
         if (postingOps.includes(op.type)) {
-            // Check if user has delegated posting authority to the relay account
-            const relayAccount = 'breakaway.app'; // Should ideally be dynamic from config
+            const relayAccount = 'breakaway.app';
             const { authService } = await import('../../auth/services/authService');
+            console.log(`[Transaction] Checking delegation for ${username} to ${relayAccount}...`);
             const isDelegated = await authService.checkDelegation(username, relayAccount);
+            console.log(`[Transaction] isDelegated: ${isDelegated}`);
 
             if (isDelegated) {
-                console.log(`🚀 [Relay] Broadcasting ${op.type} via platform relay...`);
-                return transactionService.broadcastRelay(op);
+                console.log(`🚀 [Relay] Attempting broadcast for ${op.type} via platform relay...`);
+                const relayResult = await transactionService.broadcastRelay(op);
+                if (relayResult.success) {
+                    return relayResult;
+                }
+                console.warn(`[Relay] Relay failed, falling back to standard signature: ${relayResult.error}`);
+                // Continue to standard broadcast below
             }
         }
 
@@ -159,7 +165,8 @@ export const transactionService = {
      */
     broadcastRelay: async (op: WalletOperation): Promise<{ success: boolean; result?: any; error?: string }> => {
         try {
-            const token = localStorage.getItem('points_jwt');
+            const token = localStorage.getItem('points_auth_token');
+            console.log(`[Relay] Using token: ${token ? (token.substring(0, 10) + '...') : 'NULL'}`);
             if (!token) {
                 return { success: false, error: "Authentication token missing. Please try logging in again." };
             }
@@ -674,7 +681,7 @@ export const transactionService = {
                 username: op.username,
                 token: undefined,
                 expire: undefined,
-                key: "11edc52b-2918-4d71-9058-f7285e29d894" // Use the same stable key for consistency
+                key: "11edc52b-2918-4d71-9058-f7285e29d894" // HAS_STATIC_KEY
             };
 
             // Try to load existing session
@@ -697,11 +704,12 @@ export const transactionService = {
 
             import("hive-auth-wrapper").then(({ default: HAS }) => {
                 HAS.broadcast(auth, keyType, operation, (evt: any) => {
-                    const qr_data = { ...evt };
-                    delete qr_data.cmd;
-                    delete qr_data.expire;
-                    qr_data.host = "wss://hive-auth.arcange.eu/";
-
+                    const qr_data = {
+                        account: auth.username,
+                        uuid: evt.uuid,
+                        key: auth.key,
+                        host: "wss://hive-auth.arcange.eu/"
+                    };
                     const json = JSON.stringify(qr_data);
                     const uri = `has://sign_req/${btoa(json)}`;
                     onAuthChallenge({ qr: uri, uuid: evt.uuid });

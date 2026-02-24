@@ -15,11 +15,13 @@ const Governance = lazy(() => import('./features/governance/pages/GovernancePage
 const Messages = lazy(() => import('./features/messages/pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
 const Analytics = lazy(() => import('./features/analytics/pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
 const Wallet = lazy(() => import('./features/wallet/pages/WalletPage'));
+import { DelegationBanner } from './features/auth/components/DelegationBanner';
 
 const Layout = () => {
   return (
     <div className="min-h-screen bg-[var(--bg-canvas)] text-[var(--text-primary)] font-sans transition-colors duration-300">
       <Navbar />
+      <DelegationBanner />
 
       <main className="w-full pt-24 pb-12">
         <Suspense fallback={<div className="flex justify-center p-12 text-[var(--text-secondary)]">Loading...</div>}>

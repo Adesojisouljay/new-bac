@@ -6,7 +6,7 @@ import hiveauthLogo from '../../../assets/hiveauth-logo.svg';
 interface LoginModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onLoginSuccess: (username: string, method: 'keychain' | 'hiveauth') => void;
+    onLoginSuccess: (username: string, method: 'keychain' | 'hiveauth', preSigned?: any) => void;
     /** Currently active user (to exclude from "switch to" list) */
     activeUser?: string | null;
     /** All signed-in accounts */
@@ -80,9 +80,13 @@ export function LoginModal({
         if (method === 'keychain') {
             try {
                 const result = await authService.login(cleanUsername);
+
                 if (result.success) {
                     localStorage.setItem('hive_auth_method', 'keychain');
-                    onLoginSuccess(cleanUsername, 'keychain');
+                    onLoginSuccess(cleanUsername, 'keychain', {
+                        sig: result.result, // Keychain SDK returns sig in .result
+                        message: result.message
+                    });
                     onClose();
                 } else {
                     setError(result.error || 'Login failed');
@@ -123,7 +127,10 @@ export function LoginModal({
                     localStorage.setItem('hive_auth_session', JSON.stringify(sessionData));
                     localStorage.setItem('hive_auth_method', 'hiveauth');
 
-                    onLoginSuccess(cleanUsername, 'hiveauth');
+                    onLoginSuccess(cleanUsername, 'hiveauth', {
+                        sig: result.result.challenge.sig,
+                        message: result.challenge
+                    });
                     onClose();
                 } else {
                     setError(result.error || 'HiveAuth failed');
