@@ -103,7 +103,7 @@ export default function AdvancedSettingsModal({ isOpen, onClose, options, onSave
                                 type="text"
                                 placeholder="Username"
                                 value={newBeneficiary.account}
-                                onChange={(e) => setNewBeneficiary({ ...newBeneficiary, account: e.target.value })}
+                                onChange={(e) => setNewBeneficiary({ ...newBeneficiary, account: e.target.value.toLowerCase() })}
                                 className="flex-1 px-3 py-2 rounded-lg bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] outline-none focus:ring-2 focus:ring-[var(--primary-color)]"
                             />
                             <div className="relative w-24">

@@ -279,9 +279,10 @@ export function LoginModal({
                                                     type="text"
                                                     id="username"
                                                     value={username}
-                                                    onChange={(e) => setUsername(e.target.value)}
-                                                    placeholder="username"
-                                                    className="w-full pl-12 pr-5 py-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl text-[var(--text-primary)] focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] transition-all outline-none text-xl shadow-sm"
+                                                    onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                                                    placeholder="Hive username"
+                                                    className="w-full pl-12 pr-5 py-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl text-[var(--text-primary)] focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] transition-all outline-none text-xl shadow-sm placeholder:text-[var(--text-secondary)]/50"
+                                                    required
                                                 />
                                             </div>
                                         </div>

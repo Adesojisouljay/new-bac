@@ -200,7 +200,7 @@ export function WalletActionsModal({ isOpen, onClose, type, username, initialDat
                                     <input
                                         type="text"
                                         value={to}
-                                        onChange={(e) => setTo(e.target.value)}
+                                        onChange={(e) => setTo(e.target.value.toLowerCase())}
                                         disabled={isToDisabled || loading}
                                         className="w-full pl-8 pr-4 py-3 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary-color)]/20 focus:border-[var(--primary-color)] transition-all disabled:opacity-50"
                                         placeholder="username"

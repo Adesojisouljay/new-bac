@@ -23,6 +23,8 @@ import { SendModal } from '../components/SendModal';
 import { ImportModal } from '../components/ImportModal';
 import { Web3ActivityFeed } from '../components/Web3ActivityFeed';
 import { SwapModal } from '../components/SwapModal';
+import { QRCodeSVG } from 'qrcode.react';
+import { authService } from '../../auth/services/authService';
 
 // ─── Chain colour accents ────────────────────────────────────────────────────
 const CHAIN_ACCENT: Record<string, string> = {
@@ -57,6 +59,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const [swapTarget, setSwapTarget] = useState<Web3WalletInfo | null>(null);
     const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
     const [showImport, setShowImport] = useState(false);
+    const [authQR, setAuthQR] = useState<string | null>(null);
     const currentUser = localStorage.getItem('hive_user');
     const normalizedCurrentUser = currentUser?.replace(/^@/, '');
     const isOwner = normalizedCurrentUser === username;
@@ -185,23 +188,31 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         const salt = mnemonicStorage.getSalt(username);
         if (!encrypted || !salt) throw new Error('No encrypted wallet found');
 
-        return new Promise<void>((resolve, reject) => {
-            // @ts-ignore
-            window.hive_keychain.requestSignBuffer(username, UNLOCK_MESSAGE, 'Posting', async (response: any) => {
-                if (response.success) {
-                    try {
-                        const mnemonic = await decryptMnemonic(encrypted, salt, response.result);
-                        await deriveAndFetch(mnemonic);
-                        setIsLocked(false);
-                        resolve();
-                    } catch (err: any) {
-                        reject(new Error('Decryption failed. Please ensure you are using the correct Hive account.'));
-                    }
-                } else {
-                    reject(new Error(response.message || 'Signature request cancelled'));
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        try {
+            const signature = await authService.signMessage(
+                username,
+                UNLOCK_MESSAGE,
+                'Posting',
+                ({ qr }) => {
+                    setAuthQR(qr);
+                    if (isMobile) window.location.href = qr;
                 }
-            });
-        });
+            );
+
+            if (signature.success && signature.result) {
+                const mnemonic = await decryptMnemonic(encrypted, salt, signature.result);
+                await deriveAndFetch(mnemonic);
+                setIsLocked(false);
+                setAuthQR(null);
+            } else {
+                throw new Error(signature.error || 'Signature failed');
+            }
+        } catch (err: any) {
+            setAuthQR(null);
+            throw err;
+        }
     };
 
     // ── Generate a brand-new wallet ───────────────────────────────────────────
@@ -269,46 +280,50 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // ── Finalize Vault (shared by Generate & Import) ──────────────────────────
     const finalizeVault = async (mnemonic: string, updateHive: boolean) => {
         setGenerating(true);
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
         try {
-            await new Promise<void>((resolve, reject) => {
-                // @ts-ignore
-                window.hive_keychain.requestSignBuffer(username, UNLOCK_MESSAGE, 'Posting', async (response: any) => {
-                    if (!response.success) {
-                        return reject(new Error(response.message || 'Signature required to secure wallet'));
-                    }
+            const signature = await authService.signMessage(
+                username,
+                UNLOCK_MESSAGE,
+                'Posting',
+                ({ qr }) => {
+                    setAuthQR(qr);
+                    if (isMobile) window.location.href = qr;
+                }
+            );
 
-                    try {
-                        const { encrypted, salt } = await encryptMnemonic(mnemonic, response.result);
-                        mnemonicStorage.set(username, encrypted, salt);
+            if (!signature.success || !signature.result) {
+                throw new Error(signature.error || 'Signature required to secure wallet');
+            }
 
-                        const derived = await web3WalletService.deriveAddresses(mnemonic);
+            const { encrypted, salt } = await encryptMnemonic(mnemonic, signature.result);
+            mnemonicStorage.set(username, encrypted, salt);
 
-                        // Update local public address cache
-                        const publicCache: any = {};
-                        Object.entries(derived).forEach(([chain, data]) => {
-                            if (chain !== 'mnemonic') {
-                                publicCache[chain] = { address: (data as any).address, imageUrl: (data as any).imageUrl };
-                            }
-                        });
-                        addressStorage.set(username, publicCache);
+            const derived = await web3WalletService.deriveAddresses(mnemonic);
 
-                        if (updateHive) {
-                            const tokens = buildHiveWalletTokens(derived);
-                            await updateHiveMetadata(username, tokens);
-                        }
-
-                        setRawWallets(derived);
-                        fetchBalances(derived);
-                        setIsLocked(false);
-                        setPendingMnemonic(null);
-                        showNotification(updateHive ? 'Web3 Wallet initialized and linked!' : 'Local access secured!', 'success');
-                        resolve();
-                    } catch (err: any) {
-                        reject(err);
-                    }
-                });
+            // Update local public address cache
+            const publicCache: any = {};
+            Object.entries(derived).forEach(([chain, data]) => {
+                if (chain !== 'mnemonic') {
+                    publicCache[chain] = { address: (data as any).address, imageUrl: (data as any).imageUrl };
+                }
             });
+            addressStorage.set(username, publicCache);
+
+            if (updateHive) {
+                const tokens = buildHiveWalletTokens(derived);
+                await updateHiveMetadata(username, tokens);
+            }
+
+            setRawWallets(derived);
+            fetchBalances(derived);
+            setIsLocked(false);
+            setPendingMnemonic(null);
+            setAuthQR(null);
+            showNotification(updateHive ? 'Web3 Wallet initialized and linked!' : 'Local access secured!', 'success');
         } catch (err: any) {
+            setAuthQR(null);
             showNotification(err.message, 'error');
         } finally {
             setGenerating(false);
@@ -661,6 +676,27 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
             <div className="pt-8 border-t border-[var(--border-color)] mt-12">
                 <Web3ActivityFeed username={username} />
             </div>
+
+            {/* HiveAuth QR Overlay */}
+            {authQR && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center space-y-6">
+                        <div className="space-y-2">
+                            <h3 className="text-xl font-bold text-[var(--text-primary)]">Sign with Keychain</h3>
+                            <p className="text-xs text-[var(--text-secondary)]">Please scan or click the QR code to authorize with your Keychain mobile app.</p>
+                        </div>
+                        <div className="flex justify-center p-4 bg-white rounded-2xl mx-auto w-fit">
+                            <QRCodeSVG value={authQR} size={200} />
+                        </div>
+                        <button
+                            onClick={() => setAuthQR(null)}
+                            className="w-full py-3 text-sm font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

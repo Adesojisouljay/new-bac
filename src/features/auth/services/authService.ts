@@ -315,5 +315,77 @@ export const authService = {
                 }
             }
         });
+    },
+
+    /**
+     * Generic signature request for a buffer/message
+     */
+    signMessage: async (
+        username: string,
+        message: string,
+        keyType: 'Posting' | 'Active' | 'Memo' = 'Posting',
+        onChallenge?: (data: { qr: string; uuid: string }) => void
+    ): Promise<{ success: boolean; result?: string; error?: string }> => {
+        const method = localStorage.getItem('hive_auth_method') || 'keychain';
+
+        if (method === 'keychain') {
+            const keychain = (window as any).hive_keychain;
+            if (!keychain) return { success: false, error: 'Hive Keychain not installed' };
+
+            return new Promise((resolve) => {
+                keychain.requestSignBuffer(username, message, keyType, (response: any) => {
+                    if (response.success) resolve({ success: true, result: response.result });
+                    else resolve({ success: false, error: response.message });
+                });
+            });
+        } else {
+            console.log("[AuthService] signMessage using HiveAuth");
+            return new Promise((resolve) => {
+                const auth = {
+                    username,
+                    token: undefined,
+                    expire: undefined,
+                    key: HAS_STATIC_KEY
+                };
+
+                // Load existing session for HAS
+                const storedSession = localStorage.getItem('hive_auth_session');
+                if (storedSession) {
+                    try {
+                        const session = JSON.parse(storedSession);
+                        if (session.username === username) {
+                            auth.token = session.token;
+                            auth.expire = session.expire;
+                            auth.key = session.key;
+                        }
+                    } catch (e) { }
+                }
+
+                import("hive-auth-wrapper").then(({ default: HAS }) => {
+                    HAS.challenge(auth, { challenge: message, key_type: keyType.toLowerCase() as any }, (evt: any) => {
+                        const qr_data = {
+                            account: auth.username,
+                            uuid: evt.uuid,
+                            key: auth.key,
+                            host: HAS_SERVER
+                        };
+                        const json = JSON.stringify(qr_data);
+                        const uri = `has://sign_req/${btoa(json)}`;
+                        if (onChallenge) {
+                            onChallenge({ qr: uri, uuid: evt.uuid });
+                        }
+                    })
+                        .then((res: any) => {
+                            resolve({ success: true, result: res.data });
+                        })
+                        .catch((err: any) => {
+                            console.error("HAS Challenge error:", err);
+                            resolve({ success: false, error: typeof err === 'string' ? err : (err?.message || "HiveAuth failed") });
+                        });
+                }).catch(() => {
+                    resolve({ success: false, error: "Failed to load HiveAuth" });
+                });
+            });
+        }
     }
 };
