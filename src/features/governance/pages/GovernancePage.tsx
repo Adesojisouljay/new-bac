@@ -187,7 +187,11 @@ export function GovernancePage() {
                         type="text"
                         placeholder={activeTab === 'witnesses' ? "Search witness name..." : "Search proposal title or creator..."}
                         value={activeTab === 'witnesses' ? witnessSearch : proposalSearch}
-                        onChange={(e) => activeTab === 'witnesses' ? setWitnessSearch(e.target.value) : setProposalSearch(e.target.value)}
+                        onChange={(e) => {
+                            const val = e.target.value.toLowerCase();
+                            if (activeTab === 'witnesses') setWitnessSearch(val);
+                            else setProposalSearch(val);
+                        }}
                         className="w-full pl-12 pr-4 py-3 bg-[var(--bg-card)] border border-2 border-[var(--border-color)] rounded-2xl text-base shadow-sm focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] outline-none transition-all placeholder:text-[var(--text-secondary)]"
                     />
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl opacity-50">🔍</span>
@@ -310,8 +314,8 @@ export function GovernancePage() {
                                         <div className="bg-[var(--bg-canvas)] p-3 rounded-2xl border border-[var(--border-color)]">
                                             <span className="block text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest mb-1">Status</span>
                                             <span className={`text-sm font-bold capitalize ${p.status === 'active' ? 'text-green-500' :
-                                                    p.status === 'expired' ? 'text-gray-500' :
-                                                        'text-yellow-500'
+                                                p.status === 'expired' ? 'text-gray-500' :
+                                                    'text-yellow-500'
                                                 }`}>
                                                 {p.status}
                                             </span>

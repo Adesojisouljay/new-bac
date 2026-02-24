@@ -69,7 +69,7 @@ export function SetupPage() {
                                 type="text"
                                 placeholder="e.g. hive-123456"
                                 value={formData.hiveCommunityId}
-                                onChange={(e) => setFormData({ ...formData, hiveCommunityId: e.target.value })}
+                                onChange={(e) => setFormData({ ...formData, hiveCommunityId: e.target.value.toLowerCase() })}
                                 className="w-full px-5 py-4 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl text-[var(--text-primary)] focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] transition-all outline-none"
                             />
                         </div>

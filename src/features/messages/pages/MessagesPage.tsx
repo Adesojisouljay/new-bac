@@ -104,7 +104,7 @@ export function MessagesPage() {
                     <input
                         type="text"
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => setSearchQuery(e.target.value.toLowerCase())}
                         placeholder="Search users..."
                         className="w-full px-4 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-sm focus:ring-2 focus:ring-[var(--primary-color)] outline-none transition-all"
                     />
