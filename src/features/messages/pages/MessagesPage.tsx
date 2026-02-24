@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { messageService, Message, Conversation } from '../services/messageService';
 import { useNotification } from '../../../contexts/NotificationContext';
+import { socketService } from '../../../services/socketService';
+import { useSocket } from '../../../contexts/SocketContext';
 
 export function MessagesPage() {
     const [messages, setMessages] = useState<Message[]>([]);
@@ -10,11 +12,13 @@ export function MessagesPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState<string[]>([]);
     const [sending, setSending] = useState(false);
+    const [isSecure, setIsSecure] = useState(false); // Default to off for "normal" chat
     const [username] = useState(localStorage.getItem('hive_user'));
     const { showNotification } = useNotification();
     const chatEndRef = useRef<HTMLDivElement>(null);
+    const { onlineUsers } = useSocket();
 
-    const { hiveClient } = messageService; // Re-use client
+    const { hiveClient } = messageService;
 
     useEffect(() => {
         if (username) {
@@ -23,8 +27,38 @@ export function MessagesPage() {
     }, [username]);
 
     useEffect(() => {
+        const handleNewMessage = (rawMsg: any) => {
+            // Map the message properties from the backend
+            const msg: Message = {
+                ...rawMsg,
+                id: rawMsg.id || rawMsg.trx_id,
+                isEncrypted: rawMsg.message?.startsWith('#')
+            };
+
+            console.log(`✉️ Received message: ${msg.id} from ${msg.from}`);
+
+            if (msg.from === username || msg.to === username) {
+                setMessages(prev => {
+                    if (prev.some(m => m.id === msg.id)) return prev;
+                    const newMessages = [...prev, msg].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+                    // Update conversations too
+                    const convos = messageService.getConversations(newMessages, username!);
+                    setConversations(convos);
+
+                    return newMessages;
+                });
+            }
+        };
+
+        socketService.on('new_message', handleNewMessage);
+        return () => socketService.off('new_message', handleNewMessage);
+    }, [username]);
+
+    useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages, selectedUser]);
+
     useEffect(() => {
         if (searchQuery.length > 2) {
             const timer = setTimeout(async () => {
@@ -54,14 +88,19 @@ export function MessagesPage() {
 
         setSending(true);
         try {
-            const encrypted = await messageService.encryptMessage(username, selectedUser, newMessage);
-            await messageService.sendMessage(username, selectedUser, encrypted);
-            showNotification('Message sent!', 'success');
+            let finalMessage = newMessage;
+
+            if (isSecure) {
+                showNotification('Waiting for Keychain encryption...', 'info');
+                finalMessage = await messageService.encryptMessage(username, selectedUser, newMessage);
+            }
+
+            console.log(`🚀 Sending message to @${selectedUser} (Secure: ${isSecure})`);
+
+            // Send (Silent off-chain)
+            await messageService.sendMessage(username, selectedUser, finalMessage);
+
             setNewMessage('');
-            // Give the blockchain a second to index the transaction
-            setTimeout(() => {
-                loadMessages();
-            }, 2000);
         } catch (error: any) {
             const errorMsg = error?.message || (typeof error === 'string' ? error : 'Unknown error');
             showNotification(`Error: ${errorMsg}`, 'error');
@@ -74,10 +113,40 @@ export function MessagesPage() {
         if (!username || !msg.isEncrypted || msg.decrypted) return;
 
         try {
-            const decrypted = await messageService.decryptMessage(username, msg.message);
+            const decrypted = await messageService.decryptMessage(username, msg);
             setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, decrypted } : m));
         } catch (error: any) {
             showNotification(`Decryption failed: ${error.message}`, 'error');
+        }
+    };
+
+    const handleBulkDecrypt = async () => {
+        if (!username || !selectedUser) return;
+        const encrypted = filteredMessages.filter(m => m.isEncrypted && !m.decrypted);
+        if (encrypted.length === 0) {
+            showNotification('No messages to unlock.', 'info');
+            return;
+        }
+
+        showNotification(`Unlocking ${encrypted.length} messages...`, 'info');
+
+        let count = 0;
+        for (const msg of encrypted) {
+            try {
+                const decrypted = await messageService.decryptMessage(username, msg);
+                setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, decrypted } : m));
+                count++;
+            } catch (error: any) {
+                if (error.message?.includes('User denied')) {
+                    showNotification('Decryption paused.', 'warning');
+                    break;
+                }
+                console.error('Bulk decryption failed for msg:', msg.id, error);
+            }
+        }
+
+        if (count > 0) {
+            showNotification(`Unlocked ${count} messages!`, 'success');
         }
     };
 
@@ -122,11 +191,16 @@ export function MessagesPage() {
                                         onClick={() => { setSelectedUser(user); setSearchQuery(''); }}
                                         className="w-full p-4 flex items-center gap-3 hover:bg-[var(--primary-color)]/5 transition-all"
                                     >
-                                        <img
-                                            src={`https://images.hive.blog/u/${user}/avatar`}
-                                            alt={user}
-                                            className="w-10 h-10 rounded-xl"
-                                        />
+                                        <div className="relative">
+                                            <img
+                                                src={`https://images.hive.blog/u/${user}/avatar`}
+                                                alt={user}
+                                                className="w-10 h-10 rounded-xl"
+                                            />
+                                            {onlineUsers.includes(user) && (
+                                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 border-2 border-[var(--bg-canvas)] rounded-full" title="Online" />
+                                            )}
+                                        </div>
                                         <span className="font-bold">@{user}</span>
                                     </button>
                                 ))
@@ -145,16 +219,21 @@ export function MessagesPage() {
                                         onClick={() => setSelectedUser(convo.otherUser)}
                                         className={`w-full p-4 flex items-center gap-3 transition-all hover:bg-[var(--primary-color)]/5 border-l-4 ${selectedUser === convo.otherUser ? 'border-[var(--primary-color)] bg-[var(--primary-color)]/10' : 'border-transparent'}`}
                                     >
-                                        <img
-                                            src={`https://images.hive.blog/u/${convo.otherUser}/avatar`}
-                                            alt={convo.otherUser}
-                                            className="w-12 h-12 rounded-2xl shadow-sm"
-                                        />
+                                        <div className="relative">
+                                            <img
+                                                src={`https://images.hive.blog/u/${convo.otherUser}/avatar`}
+                                                alt={convo.otherUser}
+                                                className="w-12 h-12 rounded-2xl shadow-sm"
+                                            />
+                                            {onlineUsers.includes(convo.otherUser) && (
+                                                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-green-500 border-2 border-[var(--bg-card)] rounded-full" title="Online" />
+                                            )}
+                                        </div>
                                         <div className="flex-1 text-left min-w-0">
                                             <div className="font-bold text-[var(--text-primary)] truncate">@{convo.otherUser}</div>
                                             <div className="text-xs text-[var(--text-secondary)] truncate">
                                                 {convo.lastMessage.from === username ? 'You: ' : ''}
-                                                {convo.lastMessage.isEncrypted ? 'Locked Message' : convo.lastMessage.message}
+                                                {convo.lastMessage.isEncrypted && !convo.lastMessage.decrypted ? 'Locked Message' : (convo.lastMessage.decrypted || convo.lastMessage.message)}
                                             </div>
                                         </div>
                                     </button>
@@ -171,12 +250,38 @@ export function MessagesPage() {
                     <>
                         <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-card)] shadow-sm z-10">
                             <div className="flex items-center gap-3">
-                                <img
-                                    src={`https://images.hive.blog/u/${selectedUser}/avatar`}
-                                    alt={selectedUser}
-                                    className="w-10 h-10 rounded-xl"
-                                />
+                                <div className="relative">
+                                    <img
+                                        src={`https://images.hive.blog/u/${selectedUser}/avatar`}
+                                        alt={selectedUser}
+                                        className="w-10 h-10 rounded-xl"
+                                    />
+                                    {onlineUsers.includes(selectedUser) && (
+                                        <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-[var(--bg-card)] rounded-full" title="Online" />
+                                    )}
+                                </div>
                                 <span className="font-black text-lg">@{selectedUser}</span>
+                                {onlineUsers.includes(selectedUser) && (
+                                    <span className="text-[10px] bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Online</span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setIsSecure(!isSecure)}
+                                    className={`px-4 py-2 border rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${isSecure
+                                        ? 'bg-blue-500/10 border-blue-500/50 text-blue-500'
+                                        : 'bg-[var(--bg-canvas)] border-[var(--border-color)] text-[var(--text-secondary)]'
+                                        }`}
+                                    title={isSecure ? "End-to-end encrypted (Keychain required)" : "Standard chat (Fast, no popups)"}
+                                >
+                                    {isSecure ? '🔒 Secure' : '🔓 Fast'}
+                                </button>
+                                <button
+                                    onClick={handleBulkDecrypt}
+                                    className="px-4 py-2 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl text-xs font-bold hover:bg-[var(--primary-color)]/5 transition-all flex items-center gap-2"
+                                >
+                                    🔓 Unlock All
+                                </button>
                             </div>
                         </div>
 
@@ -195,7 +300,7 @@ export function MessagesPage() {
                                         {msg.isEncrypted && !msg.decrypted ? (
                                             <button
                                                 onClick={() => handleDecryptMessage(msg)}
-                                                className="flex items-center gap-2 text-sm font-bold opacity-80 hover:opacity-100"
+                                                className="flex items-center gap-2 text-sm font-bold opacity-80 hover:opacity-100 py-1"
                                             >
                                                 <span>🔒</span>
                                                 Decrypt Message
@@ -231,6 +336,11 @@ export function MessagesPage() {
                                     <span>🚀</span>
                                 </button>
                             </div>
+                            <p className="text-[10px] text-[var(--text-secondary)] mt-2 italic text-center">
+                                {isSecure
+                                    ? "* Secure mode encrypts messages with Hive Memo keys (1 popup per send)."
+                                    : "* Fast mode delivers messages instantly without popups."}
+                            </p>
                         </form>
                     </>
                 ) : (

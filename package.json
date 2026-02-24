@@ -45,6 +45,7 @@
     "rehype-raw": "^7.0.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "socket.io-client": "^4.8.3",
     "stream-browserify": "^3.0.0",
     "tiny-secp256k1": "^2.2.4",
     "tronweb": "^6.2.0",
