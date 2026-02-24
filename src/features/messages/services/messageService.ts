@@ -20,7 +20,7 @@ export interface Conversation {
 }
 
 class MessageService {
-    private readonly CUSTOM_JSON_ID = 'messaging';
+
     private readonly BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
     public readonly hiveClient = hiveClient;
 
@@ -87,7 +87,12 @@ class MessageService {
     /**
      * Send a message off-chain via Socket.io
      */
-    async sendMessage(sender: string, receiver: string, encryptedMessage: string): Promise<any> {
+    async sendMessage(_sender: string, receiver: string, encryptedMessage: string): Promise<any> {
+        if (!socketService.isConnected) {
+            console.warn(`⚠️ [MessageService] Cannot send message to @${receiver}: Socket disconnected`);
+            throw new Error('Chat server is currently offline. Please try again in a moment.');
+        }
+
         console.log(`📡 [MessageService] Emitting send_message to @${receiver}`);
 
         // Emit directly via Socket for total confidentiality (Off-Chain)
@@ -109,9 +114,12 @@ class MessageService {
         // 1. Fetch only from the private backend API (Off-Chain)
         if (this.BACKEND_URL) {
             try {
+                console.log(`📡 [MessageService] Fetching history from: ${this.BACKEND_URL}/api/messages?account=${username}`);
                 const response = await fetch(`${this.BACKEND_URL}/api/messages?account=${username}&limit=${limit}`);
+
                 if (response.ok) {
                     const data = await response.json();
+                    console.log(`✅ [MessageService] Fetched ${data.messages?.length || 0} messages`);
                     history = data.messages.map((m: any) => ({
                         from: m.from,
                         to: m.to,
@@ -122,9 +130,12 @@ class MessageService {
                         mongoId: m._id,
                         edited: m.edited
                     }));
+                } else {
+                    const errorText = await response.text().catch(() => 'No error text');
+                    console.error(`❌ [MessageService] Backend fetch failed (${response.status}):`, errorText);
                 }
-            } catch (error) {
-                console.error('Backend history fetch failed:', error);
+            } catch (error: any) {
+                console.error('❌ [MessageService] Backend history fetch error:', error.message || error);
             }
         }
 

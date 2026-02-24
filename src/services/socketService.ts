@@ -9,15 +9,25 @@ class SocketService {
 
         this.socket = io(this.BACKEND_URL, {
             query: { username },
-            transports: ['websocket']
+            transports: ['websocket', 'polling'], // Prefer WebSockets for production performance
+            reconnectionAttempts: 10,
+            timeout: 10000
         });
 
         this.socket.on('connect', () => {
-            console.log('📡 Connected to chat server');
+            console.log('📡 [Socket] Connected to chat server as @' + username);
         });
 
-        this.socket.on('disconnect', () => {
-            console.log('🔌 Disconnected from chat server');
+        this.socket.on('connect_error', (error) => {
+            console.error('❌ [Socket] Connection Error:', error.message);
+        });
+
+        this.socket.on('reconnect_attempt', (attempt) => {
+            console.log(`🔄 [Socket] Reconnection attempt #${attempt}...`);
+        });
+
+        this.socket.on('disconnect', (reason) => {
+            console.log('🔌 [Socket] Disconnected:', reason);
         });
     }
 

@@ -16,15 +16,23 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     useEffect(() => {
         if (username) {
             socketService.connect(username);
-            setIsConnected(true);
 
+            const handleConnect = () => setIsConnected(true);
+            const handleDisconnect = () => setIsConnected(false);
             const handleOnlineUsers = (users: string[]) => {
                 setOnlineUsers(users);
             };
 
+            socketService.on('connect', handleConnect);
+            socketService.on('disconnect', handleDisconnect);
             socketService.on('online_users', handleOnlineUsers);
 
+            // Sync initial state if already connected
+            if (socketService.isConnected) setIsConnected(true);
+
             return () => {
+                socketService.off('connect', handleConnect);
+                socketService.off('disconnect', handleDisconnect);
                 socketService.off('online_users', handleOnlineUsers);
                 socketService.disconnect();
                 setIsConnected(false);

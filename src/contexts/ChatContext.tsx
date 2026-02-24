@@ -31,7 +31,7 @@ export const ChatProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }, [isMessagesPage, unreadCount, resetUnreadCount]);
 
     useEffect(() => {
-        const handleNewMessage = (msg: any) => {
+        const handleNewMessage = (_msg: any) => {
             // Only increment if we are NOT on the messages page
             if (!isMessagesPage) {
                 setUnreadCount(prev => {

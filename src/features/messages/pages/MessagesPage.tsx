@@ -6,7 +6,7 @@ import { useSocket } from '../../../contexts/SocketContext';
 import { cloudinaryService } from '../../../services/cloudinaryService';
 import { useChat } from '../../../contexts/ChatContext';
 import { fixWebmDuration } from '../../../utils/fixWebmDuration';
-import { Image, Loader2, Send, Mic, Square } from 'lucide-react';
+import { Image, Loader2, Send, Mic, Square, ArrowLeft } from 'lucide-react';
 import { VoiceNotePlayer } from '../../../components/VoiceNotePlayer';
 import { EmojiPicker } from '../../../components/EmojiPicker';
 import { StickerPicker } from '../../../components/StickerPicker';
@@ -519,9 +519,9 @@ export function MessagesPage() {
     }
 
     return (
-        <div className="flex h-[calc(100vh-160px)] bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] overflow-hidden shadow-2xl">
+        <div className="flex flex-col md:flex-row h-[calc(100vh-160px)] bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] overflow-hidden shadow-2xl relative">
             {/* Sidebar */}
-            <div className="w-80 border-r border-[var(--border-color)] flex flex-col bg-[var(--bg-canvas)]/50">
+            <div className={`w-full md:w-80 border-r border-[var(--border-color)] flex flex-col bg-[var(--bg-canvas)]/50 ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
                 <div className="p-6 border-b border-[var(--border-color)]">
                     <h2 className="text-xl font-black tracking-tight">Messages</h2>
                 </div>
@@ -601,11 +601,18 @@ export function MessagesPage() {
             </div>
 
             {/* Main Chat Area */}
-            <div className="flex-1 flex flex-col bg-[var(--bg-card)]">
+            <div className={`flex-1 flex flex-col bg-[var(--bg-card)] ${!selectedUser ? 'hidden md:flex' : 'flex'}`}>
                 {selectedUser ? (
                     <>
                         <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-card)] shadow-sm z-10">
                             <div className="flex items-center gap-3">
+                                {/* Mobile Back Button */}
+                                <button
+                                    onClick={() => setSelectedUser(null)}
+                                    className="md:hidden p-2 -ml-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-all"
+                                >
+                                    <ArrowLeft size={24} />
+                                </button>
                                 <div className="relative">
                                     <img
                                         src={`https://images.hive.blog/u/${selectedUser}/avatar`}
@@ -616,10 +623,16 @@ export function MessagesPage() {
                                         <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-[var(--bg-card)] rounded-full" title="Online" />
                                     )}
                                 </div>
-                                <span className="font-black text-lg">@{selectedUser}</span>
-                                {onlineUsers.includes(selectedUser) && (
-                                    <span className="text-[10px] bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Online</span>
-                                )}
+                                <div className="flex flex-col">
+                                    <span className="font-black text-lg leading-tight">@{selectedUser}</span>
+                                    {!socketService.isConnected ? (
+                                        <span className="text-[10px] text-red-500 font-bold uppercase tracking-wider animate-pulse">Connecting...</span>
+                                    ) : onlineUsers.includes(selectedUser) ? (
+                                        <span className="text-[10px] text-green-500 font-bold uppercase tracking-wider">Online</span>
+                                    ) : (
+                                        <span className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider opacity-60">Offline</span>
+                                    )}
+                                </div>
                             </div>
                             <div className="flex items-center gap-2">
                                 <button
@@ -654,7 +667,7 @@ export function MessagesPage() {
                                 >
                                     {/* Message bubble */}
                                     <div
-                                        className={`max-w-[65%] p-4 rounded-3xl shadow-sm transition-all ${msg.from === username
+                                        className={`max-w-[85%] md:max-w-[65%] p-4 rounded-3xl shadow-sm transition-all ${msg.from === username
                                             ? 'bg-[#2a3a52] text-white rounded-tr-none'
                                             : 'bg-[var(--bg-canvas)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-tl-none'
                                             }`}
@@ -716,7 +729,7 @@ export function MessagesPage() {
 
                         <form
                             onSubmit={handleSendMessage}
-                            className="p-6 border-t border-[var(--border-color)] bg-[var(--bg-canvas)]/30 relative"
+                            className="p-3 md:p-6 border-t border-[var(--border-color)] bg-[var(--bg-canvas)]/30 relative"
                             onDragOver={onDragOver}
                         >
                             {/* Reply / Edit context bar */}
@@ -800,7 +813,7 @@ export function MessagesPage() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="flex gap-4 items-center">
+                                <div className="flex gap-2 md:gap-4 items-center">
                                     <button
                                         type="button"
                                         onClick={() => fileInputRef.current?.click()}
@@ -876,8 +889,9 @@ export function MessagesPage() {
                                     ) : (
                                         <button
                                             type="submit"
-                                            disabled={sending || uploadingImage || !newMessage.trim()}
+                                            disabled={sending || uploadingImage || !newMessage.trim() || !socketService.isConnected}
                                             className="px-8 py-3 bg-[var(--primary-color)] text-white font-bold rounded-2xl shadow-lg hover:shadow-[var(--primary-color)]/20 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
+                                            title={!socketService.isConnected ? "Connecting to chat server..." : "Send message"}
                                         >
                                             {sending ? 'Sending...' : 'Send'}
                                             <Send size={18} />
