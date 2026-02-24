@@ -599,11 +599,11 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                                         </button>
                                         {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20'].includes(card.chain) && (
                                             <button
-                                                onClick={() => setSwapTarget(card as any)}
-                                                disabled={!isLocked && !rawWallets}
-                                                className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--primary-color)]/10 border border-[var(--primary-color)]/20 text-[var(--primary-color)] hover:bg-[var(--primary-color)]/20 transition-all disabled:opacity-30"
+                                                disabled
+                                                className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed flex items-center justify-center gap-1.5"
                                             >
                                                 Swap
+                                                <span className="px-1.5 py-0.5 rounded-md bg-[var(--primary-color)]/10 text-[var(--primary-color)] text-[8px]">Soon</span>
                                             </button>
                                         )}
                                     </>
