@@ -101,11 +101,11 @@ export const authService = {
             if (response.success) {
                 return {
                     success: true,
-                    result: response.result, // Use the inner result which contains the signature
-                    message: message // Return the string that was signed
+                    result: response.result,
+                    message: message
                 };
             } else {
-                return { success: false, error: typeof response.error === 'string' ? response.error : 'Login failed' };
+                return { success: false, error: response.error };
             }
 
         } catch (error: any) {

@@ -86,11 +86,15 @@ export const pointsService = {
                     const data = await res.json();
                     const token = data?.response?.token;
                     if (token) {
+                        console.log(`✅ [Points] Silent auth successful for @${username}`);
                         setPointsToken(token);
                         return true;
                     }
+                } else {
+                    const errText = await res.text().catch(() => 'No error text');
+                    console.warn(`[Points] Silent auth failed (${res.status}): ${errText}`);
                 }
-                console.warn('[Points] Silent auth failed, falling back to prompt...');
+                console.warn('[Points] Falling back to prompt-based auth...');
             }
 
             console.log(`[Points] Attempting login for ${username} via ${method}...`);

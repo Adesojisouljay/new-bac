@@ -28,7 +28,10 @@ export function Navbar() {
         refreshAccounts();
         // Silently get a points JWT so we can award points for actions
         const community = config?.id || 'hive-106130';
-        pointsService.loginToPointsBackend(username, community, method, preSigned).catch(() => {/* ignore */ });
+        pointsService.loginToPointsBackend(username, community, method, preSigned)
+            .catch((err) => {
+                console.error(`❌ [Navbar] Points backend login failed for @${username}:`, err);
+            });
     };
 
     const handleSwitch = (username: string) => {
