@@ -11,6 +11,9 @@ export interface Message {
     id?: string;       // trx_id (Hive transaction ID)
     mongoId?: string;  // MongoDB _id (used for PATCH /api/messages/:id)
     edited?: boolean;
+    status?: 'uploading' | 'sent' | 'failed';
+    localUrl?: string;
+    caption?: string;
 }
 
 export interface Conversation {
@@ -172,6 +175,32 @@ class MessageService {
         });
 
         return Object.values(convos);
+    }
+
+    /**
+     * Fetch user profile data from Hive
+     */
+    async getUserProfile(username: string): Promise<any> {
+        try {
+            const [account] = await this.hiveClient.database.getAccounts([username]);
+            if (!account) return null;
+
+            let metadata = {};
+            try {
+                metadata = JSON.parse(account.posting_json_metadata || account.json_metadata || '{}');
+            } catch { }
+
+            return {
+                username: account.name,
+                profile: (metadata as any).profile || {},
+                reputation: account.reputation,
+                postCount: account.post_count,
+                created: account.created
+            };
+        } catch (error) {
+            console.error('❌ [MessageService] Failed to fetch user profile:', error);
+            return null;
+        }
     }
 }
 

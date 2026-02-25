@@ -453,7 +453,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const totalUsd = walletInfo.reduce((sum, w) => sum + (w.usdValue || 0), 0);
 
     return (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="space-y-8">
             {/* Portfolio Header */}
             <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm overflow-hidden relative">
                 <div className="absolute top-0 right-0 p-12 opacity-[0.03] scale-150 rotate-12 pointer-events-none text-9xl">🔗</div>

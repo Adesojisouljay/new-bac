@@ -566,7 +566,7 @@ KEEP THIS SECURE! If you lose this password or your keys, you lose access to you
                 );
             case 'processing':
                 return (
-                    <div className="py-20 flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-500">
+                    <div className="py-20 flex flex-col items-center justify-center space-y-8">
                         <div className="relative">
                             <div className="w-24 h-24 border-4 border-[var(--primary-color)]/10 border-t-[var(--primary-color)] rounded-full animate-spin" />
                             <div className="absolute inset-0 flex items-center justify-center text-3xl">🐝</div>
@@ -579,7 +579,7 @@ KEEP THIS SECURE! If you lose this password or your keys, you lose access to you
                 );
             case 'success':
                 return (
-                    <div className="py-12 flex flex-col items-center justify-center space-y-8 animate-in zoom-in-95 duration-500">
+                    <div className="py-12 flex flex-col items-center justify-center space-y-8">
                         <div className="w-24 h-24 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center text-5xl">✅</div>
                         <div className="text-center">
                             <h3 className="text-3xl font-black text-[var(--text-primary)] tracking-tight">Success!</h3>

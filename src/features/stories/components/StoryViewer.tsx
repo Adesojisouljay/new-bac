@@ -13,10 +13,17 @@ interface StoryViewerProps {
     onClose: () => void;
     onNext?: () => void;
     onPrev?: () => void;
+    initialStoryId?: string;
 }
 
-export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext, onPrev }) => {
-    const [currentIndex, setCurrentIndex] = useState(0);
+export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext, onPrev, initialStoryId }) => {
+    const [currentIndex, setCurrentIndex] = useState(() => {
+        if (initialStoryId) {
+            const idx = group.stories.findIndex(s => s._id === initialStoryId);
+            return idx !== -1 ? idx : 0;
+        }
+        return 0;
+    });
     const [voting, setVoting] = useState(false);
     const [voted, setVoted] = useState(false);
     const [showTipModal, setShowTipModal] = useState(false);
@@ -29,11 +36,16 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
     const story = group.stories[currentIndex];
     const username = localStorage.getItem('hive_user');
 
-    // Reset index when group changes
+    // Reset index when group changes or initialStoryId changes
     useEffect(() => {
-        setCurrentIndex(0);
+        if (initialStoryId) {
+            const idx = group.stories.findIndex(s => s._id === initialStoryId);
+            setCurrentIndex(idx !== -1 ? idx : 0);
+        } else {
+            setCurrentIndex(0);
+        }
         setVoted(false);
-    }, [group.username]);
+    }, [group.username, initialStoryId]);
 
     // Keyboard navigation
     useEffect(() => {
@@ -113,23 +125,21 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
 
         setSendingReply(true);
         try {
-            const context = `Replying to your story: "${story.content.text || 'Image story'}"\n\n`;
-            const fullMessage = context + replyContent.trim();
+            // Send as a structured JSON envelope: {"_s": {...}, "_t": "..."}
+            const storyRef = {
+                id: story._id,
+                text: story.content.text || 'Image story',
+                type: story.content.type,
+                username: group.username
+            };
 
-            // Stories use off-chain private chat
-            // For now we send as a private message. 
-            // In the future we can use a dedicated 'replies' collection.
+            const payload = JSON.stringify({
+                _s: storyRef,
+                _t: replyContent.trim()
+            });
 
-            // Encrypt if possible or just send plain off-chain
-            // Our messageService handles encryption withKeychain
-            let finalMessage = fullMessage;
-            try {
-                finalMessage = await messageService.encryptMessage(username, group.username, fullMessage);
-            } catch (e) {
-                console.warn("Encryption failed, sending plain", e);
-            }
-
-            await messageService.sendMessage(username, group.username, finalMessage);
+            // Send directly off-chain (Fast mode) without forced Keychain encryption
+            await messageService.sendMessage(username, group.username, payload);
 
             showNotification('Reply sent!', 'success');
             setReplyContent('');
@@ -228,7 +238,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
 
                 {/* Reply Input Area */}
                 {isReplying && (
-                    <div className="w-full max-w-md px-6 pb-6 animate-in slide-in-from-bottom-4 duration-200">
+                    <div className="w-full max-w-md px-6 pb-6">
                         <div className="relative">
                             <input
                                 type="text"

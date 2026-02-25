@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Smile, Sticker, Clock, Star, TrendingUp, Search } from 'lucide-react';
+import { Smile, Clock, Star, TrendingUp, Search } from 'lucide-react';
 
 const EMOJI_CATEGORIES: { label: string; emojis: string[] }[] = [
     {
@@ -98,7 +98,7 @@ export const MediaPicker: React.FC<MediaPickerProps> = ({
                 <Smile size={24} />
             </button>
 
-            <div className="absolute bottom-12 right-0 w-[320px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl shadow-2xl z-[100] overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
+            <div className="absolute bottom-12 right-0 w-[320px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl shadow-2xl z-[100] overflow-hidden">
                 {/* Search Header */}
                 <div className="p-3 border-b border-[var(--border-color)]">
                     <div className="relative">
@@ -118,8 +118,8 @@ export const MediaPicker: React.FC<MediaPickerProps> = ({
                             key={tab}
                             onClick={() => { setActiveTab(tab); setActiveCategory(0); }}
                             className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${activeTab === tab
-                                    ? 'bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm'
-                                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                ? 'bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm'
+                                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                                 }`}
                         >
                             {tab}s
@@ -135,8 +135,8 @@ export const MediaPicker: React.FC<MediaPickerProps> = ({
                                 key={i}
                                 onClick={() => setActiveCategory(i)}
                                 className={`px-2 py-1.5 text-xs font-bold whitespace-nowrap rounded-t-lg transition-all flex-shrink-0 ${activeCategory === i
-                                        ? 'text-[var(--primary-color)] border-b-2 border-[var(--primary-color)]'
-                                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                    ? 'text-[var(--primary-color)] border-b-2 border-[var(--primary-color)]'
+                                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                                     }`}
                             >
                                 {cat.label.split(' ')[0]}
