@@ -11,9 +11,11 @@ import { Send, ChevronLeft, ChevronRight } from 'lucide-react';
 interface StoryViewerProps {
     group: GroupedStory;
     onClose: () => void;
+    onNext?: () => void;
+    onPrev?: () => void;
 }
 
-export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose }) => {
+export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext, onPrev }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [voting, setVoting] = useState(false);
     const [voted, setVoted] = useState(false);
@@ -27,16 +29,28 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose }) => {
     const story = group.stories[currentIndex];
     const username = localStorage.getItem('hive_user');
 
+    // Reset index when group changes
+    useEffect(() => {
+        setCurrentIndex(0);
+        setVoted(false);
+    }, [group.username]);
+
     // Keyboard navigation
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (showTipModal || isReplying) return;
 
             if (e.key === 'ArrowLeft') {
-                if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+                if (currentIndex > 0) {
+                    setCurrentIndex(currentIndex - 1);
+                } else if (onPrev) {
+                    onPrev();
+                }
             } else if (e.key === 'ArrowRight') {
                 if (currentIndex < group.stories.length - 1) {
                     setCurrentIndex(currentIndex + 1);
+                } else if (onNext) {
+                    onNext();
                 } else {
                     onClose();
                 }
@@ -47,7 +61,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose }) => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentIndex, group.stories.length, onClose, showTipModal, isReplying]);
+    }, [currentIndex, group.stories.length, onClose, onNext, onPrev, showTipModal, isReplying]);
 
     // Auto-advance
     useEffect(() => {
@@ -57,13 +71,15 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose }) => {
             if (currentIndex < group.stories.length - 1) {
                 setCurrentIndex(currentIndex + 1);
                 setVoted(false); // Reset vote state for next story
+            } else if (onNext) {
+                onNext();
             } else {
                 onClose();
             }
         }, 5000); // 5 seconds per story
 
         return () => clearTimeout(timer);
-    }, [currentIndex, group.stories.length, onClose, showTipModal, isReplying]);
+    }, [currentIndex, group.stories.length, onClose, onNext, showTipModal, isReplying]);
 
     if (!story) return null;
 
