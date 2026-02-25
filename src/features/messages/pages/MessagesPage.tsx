@@ -72,7 +72,6 @@ export function MessagesPage() {
                     // Update conversations too
                     const convos = messageService.getConversations(newMessages, username!);
                     setConversations(convos);
-
                     // Reset count if we are actively viewing this conversation or just seeing the list
                     resetUnreadCount();
                     return newMessages;
@@ -107,7 +106,11 @@ export function MessagesPage() {
         const convos = messageService.getConversations(history, username);
         setConversations(convos);
         if (convos.length > 0 && !selectedUser) {
-            setSelectedUser(convos[0].otherUser);
+            // On mobile, don't auto-select a chat so the list view is shown first
+            const isMobile = window.innerWidth < 1024;
+            if (!isMobile) {
+                setSelectedUser(convos[0].otherUser);
+            }
         }
     };
 
@@ -519,7 +522,7 @@ export function MessagesPage() {
     }
 
     return (
-        <div className="flex flex-col md:flex-row h-[calc(100vh-160px)] bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] overflow-hidden shadow-2xl relative">
+        <div className="flex flex-col md:flex-row h-[calc(100dvh-64px)] fixed inset-x-0 bottom-0 top-16 md:max-w-[1400px] md:mx-auto md:left-0 md:right-0 md:border-x md:border-[var(--border-color)] md:shadow-2xl z-40 bg-[var(--bg-canvas)] md:bg-[var(--bg-card)]">
             {/* Sidebar */}
             <div className={`w-full md:w-80 border-r border-[var(--border-color)] flex flex-col bg-[var(--bg-canvas)]/50 ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
                 <div className="p-6 border-b border-[var(--border-color)]">
@@ -601,10 +604,10 @@ export function MessagesPage() {
             </div>
 
             {/* Main Chat Area */}
-            <div className={`flex-1 flex flex-col bg-[var(--bg-card)] ${!selectedUser ? 'hidden md:flex' : 'flex'}`}>
+            <div className={`flex-1 flex flex-col bg-[var(--bg-card)] h-full overflow-hidden ${!selectedUser ? 'hidden md:flex' : 'flex'}`}>
                 {selectedUser ? (
                     <>
-                        <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-card)] shadow-sm z-10">
+                        <div className="p-4 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-card)]/95 backdrop-blur-md shadow-sm z-30 sticky top-0">
                             <div className="flex items-center gap-3">
                                 {/* Mobile Back Button */}
                                 <button
@@ -729,7 +732,7 @@ export function MessagesPage() {
 
                         <form
                             onSubmit={handleSendMessage}
-                            className="p-3 md:p-6 border-t border-[var(--border-color)] bg-[var(--bg-canvas)]/30 relative"
+                            className="p-2 md:p-6 border-t border-[var(--border-color)] bg-[var(--bg-canvas)]/30 relative"
                             onDragOver={onDragOver}
                         >
                             {/* Reply / Edit context bar */}
@@ -813,53 +816,57 @@ export function MessagesPage() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="flex gap-2 md:gap-4 items-center">
+                                <div className="flex gap-1.5 md:gap-4 items-center">
                                     <button
                                         type="button"
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="p-3 bg-[var(--bg-card)] border border-2 border-[var(--border-color)] rounded-2xl hover:bg-[var(--primary-color)]/5 transition-all text-[var(--text-secondary)] hover:text-[var(--primary-color)]"
+                                        className="p-2 md:p-3 bg-[var(--bg-card)] border-2 border-[var(--border-color)] rounded-xl md:rounded-2xl hover:bg-[var(--primary-color)]/5 transition-all text-[var(--text-secondary)] hover:text-[var(--primary-color)]"
                                         title="Attach image"
                                         disabled={isRecording}
                                     >
-                                        <Image size={24} />
+                                        <Image size={20} className="md:w-6 md:h-6" />
                                     </button>
                                     <EmojiPicker onSelect={(emoji) => setNewMessage(prev => prev + emoji)} />
-                                    <StickerPicker onSelect={sendSticker} />
+                                    <div className="hidden sm:block">
+                                        <StickerPicker onSelect={sendSticker} />
+                                    </div>
 
                                     {isRecording ? (
-                                        <div className="flex-1 flex items-center justify-between px-6 py-2 bg-red-500/10 border-2 border-red-500/30 rounded-2xl animate-pulse">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-2 h-2 bg-red-500 rounded-full" />
-                                                <span className="font-mono font-bold text-red-500">
+                                        <div className="flex-1 flex items-center justify-between px-3 md:px-6 py-2 bg-red-500/10 border-2 border-red-500/30 rounded-xl md:rounded-2xl animate-pulse min-w-0">
+                                            <div className="flex items-center gap-2 md:gap-3 overflow-hidden">
+                                                <div className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0" />
+                                                <span className="font-mono font-bold text-red-500 text-sm md:text-base">
                                                     {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
                                                 </span>
                                             </div>
                                             <button
                                                 type="button"
                                                 onClick={stopRecording}
-                                                className="p-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all"
+                                                className="p-1.5 md:p-2 bg-red-500 text-white rounded-lg md:rounded-xl hover:bg-red-600 transition-all flex-shrink-0"
                                             >
-                                                <Square size={20} fill="currentColor" />
+                                                <Square className="w-4 h-4 md:w-5 md:h-5" fill="currentColor" />
                                             </button>
                                         </div>
                                     ) : recordedBlobUrl ? (
                                         /* Voice preview stage */
-                                        <div className="flex-1 flex items-center gap-2 px-3 py-1 bg-[#2a3a52] border-2 border-blue-500/30 rounded-2xl">
-                                            <VoiceNotePlayer src={recordedBlobUrl} />
+                                        <div className="flex-1 flex items-center gap-2 px-2 py-1 bg-[#2a3a52] border-2 border-blue-500/30 rounded-xl md:rounded-2xl min-w-0">
+                                            <div className="flex-1 min-w-0">
+                                                <VoiceNotePlayer src={recordedBlobUrl} />
+                                            </div>
                                             <div className="flex flex-col gap-1 ml-1 flex-shrink-0">
                                                 <button
                                                     type="button"
                                                     onClick={sendRecordedAudio}
                                                     disabled={uploadingImage}
-                                                    className="px-3 py-1.5 bg-[var(--primary-color)] text-white text-xs font-bold rounded-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-1"
+                                                    className="px-2 md:px-3 py-1 bg-[var(--primary-color)] text-white text-[10px] md:text-xs font-bold rounded-lg md:rounded-xl hover:brightness-110 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-1"
                                                 >
-                                                    <Send size={12} /> Send
+                                                    <Send size={10} className="md:w-3 md:h-3" /> Send
                                                 </button>
                                                 <button
                                                     type="button"
                                                     onClick={discardRecording}
                                                     disabled={uploadingImage}
-                                                    className="px-3 py-1.5 bg-white/10 text-white/70 text-xs font-bold rounded-xl hover:bg-white/20 active:scale-95 transition-all"
+                                                    className="px-2 md:px-3 py-1 bg-white/10 text-white/70 text-[10px] md:text-xs font-bold rounded-lg md:rounded-xl hover:bg-white/20 active:scale-95 transition-all"
                                                 >
                                                     Discard
                                                 </button>
@@ -871,8 +878,8 @@ export function MessagesPage() {
                                             type="text"
                                             value={newMessage}
                                             onChange={(e) => setNewMessage(e.target.value)}
-                                            placeholder={editingMessage ? 'Edit your message...' : 'Type a secure message...'}
-                                            className="flex-1 px-6 py-3 bg-[var(--bg-card)] border border-2 border-[var(--border-color)] rounded-2xl focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] outline-none transition-all placeholder:text-[var(--text-secondary)]"
+                                            placeholder={editingMessage ? 'Edit...' : 'Type...'}
+                                            className="flex-1 min-w-0 px-3 md:px-6 py-2 md:py-3 bg-[var(--bg-card)] border-2 border-[var(--border-color)] rounded-xl md:rounded-2xl focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] outline-none transition-all placeholder:text-[var(--text-secondary)] text-sm md:text-base"
                                             disabled={sending || uploadingImage}
                                         />
                                     )}
@@ -882,18 +889,18 @@ export function MessagesPage() {
                                             type="button"
                                             onClick={startRecording}
                                             disabled={uploadingImage}
-                                            className="p-4 bg-[var(--bg-card)] border-2 border-[var(--border-color)] text-[var(--text-secondary)] rounded-2xl hover:bg-[var(--primary-color)]/5 hover:text-[var(--primary-color)] hover:border-[var(--primary-color)] transition-all"
+                                            className="p-3 md:p-4 bg-[var(--bg-card)] border-2 border-[var(--border-color)] text-[var(--text-secondary)] rounded-xl md:rounded-2xl hover:bg-[var(--primary-color)]/5 hover:text-[var(--primary-color)] hover:border-[var(--primary-color)] transition-all flex-shrink-0"
                                         >
-                                            <Mic size={24} />
+                                            <Mic size={20} className="md:w-6 md:h-6" />
                                         </button>
                                     ) : (
                                         <button
                                             type="submit"
                                             disabled={sending || uploadingImage || !newMessage.trim() || !socketService.isConnected}
-                                            className="px-8 py-3 bg-[var(--primary-color)] text-white font-bold rounded-2xl shadow-lg hover:shadow-[var(--primary-color)]/20 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2"
-                                            title={!socketService.isConnected ? "Connecting to chat server..." : "Send message"}
+                                            className="px-4 md:px-8 py-2 md:py-3 bg-[var(--primary-color)] text-white font-bold rounded-xl md:rounded-2xl shadow-lg hover:shadow-[var(--primary-color)]/20 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-2 flex-shrink-0"
+                                            title={!socketService.isConnected ? "Connecting..." : "Send"}
                                         >
-                                            {sending ? 'Sending...' : 'Send'}
+                                            <span className="hidden md:inline">{sending ? 'Sending...' : 'Send'}</span>
                                             <Send size={18} />
                                         </button>
                                     )}

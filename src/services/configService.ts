@@ -9,6 +9,8 @@ export interface CommunityConfig {
     logoUrl?: string;
     primaryColor: string;
     onboardingSats: number;
+    communityDescription?: string;
+    communityDescriptionExtra?: string;
     isConfigured: boolean;
 }
 

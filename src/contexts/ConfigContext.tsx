@@ -43,6 +43,42 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
     };
 
+    useEffect(() => {
+        if (config) {
+            // Update Title
+            document.title = config.communityName;
+
+            // Update Meta Tags
+            const description = config.communityDescription || "A decentralized community powered by Breakaway.";
+            const logo = config.logoUrl || `${window.location.origin}/vite.svg`;
+
+            updateMetaTag('description', description);
+
+            // OpenGraph
+            updateMetaTag('og:title', config.communityName, 'property');
+            updateMetaTag('og:description', description, 'property');
+            updateMetaTag('og:image', logo, 'property');
+            updateMetaTag('og:type', 'website', 'property');
+            updateMetaTag('og:url', window.location.href, 'property');
+
+            // Twitter
+            updateMetaTag('twitter:card', 'summary_large_image');
+            updateMetaTag('twitter:title', config.communityName);
+            updateMetaTag('twitter:description', description);
+            updateMetaTag('twitter:image', logo);
+        }
+    }, [config]);
+
+    const updateMetaTag = (name: string, content: string, attr: 'name' | 'property' = 'name') => {
+        let element = document.querySelector(`meta[${attr}="${name}"]`);
+        if (!element) {
+            element = document.createElement('meta');
+            element.setAttribute(attr, name);
+            document.head.appendChild(element);
+        }
+        element.setAttribute('content', content);
+    };
+
     const checkEnvFallback = () => {
         const envCommunityId = import.meta.env.VITE_COMMUNITY_ID;
         if (envCommunityId && envCommunityId !== 'YOUR_COMMUNITY_ID') {
@@ -53,6 +89,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 logoUrl: import.meta.env.VITE_COMMUNITY_LOGO,
                 primaryColor: import.meta.env.VITE_THEME_PRIMARY || '#ff4400',
                 onboardingSats: parseInt(import.meta.env.VITE_ONBOARDING_SATS || '100'),
+                communityDescription: import.meta.env.VITE_COMMUNITY_DESCRIPTION,
                 isConfigured: true
             };
             setConfig(fallback);
