@@ -3,7 +3,7 @@ import { KeychainSDK } from 'keychain-sdk';
 const keychain = new KeychainSDK(window);
 
 // Types for wallet operations
-export type OperationType = 'transfer' | 'power_up' | 'power_down' | 'delegate' | 'delegate_rc' | 'deposit_savings' | 'withdraw_savings' | 'vote' | 'comment' | 'reblog' | 'limit_order_create' | 'limit_order_cancel' | 'witness_vote' | 'proposal_vote';
+export type OperationType = 'transfer' | 'power_up' | 'power_down' | 'delegate' | 'delegate_rc' | 'deposit_savings' | 'withdraw_savings' | 'vote' | 'comment' | 'reblog' | 'limit_order_create' | 'limit_order_cancel' | 'witness_vote' | 'proposal_vote' | 'messaging';
 
 interface BaseOperation {
     username: string;
@@ -115,7 +115,13 @@ interface ProposalVoteOperation extends BaseOperation {
     approve: boolean;
 }
 
-export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation;
+interface MessagingOperation extends BaseOperation {
+    type: 'messaging';
+    to: string;
+    message: string;
+}
+
+export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation;
 
 export const transactionService = {
     /**
@@ -130,7 +136,7 @@ export const transactionService = {
         const username = op.username;
 
         // Check if this is a Posting-level operation that can be relayed
-        const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc'];
+        const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc', 'messaging'];
 
         if (postingOps.includes(op.type)) {
             const relayAccount = 'breakaway.app';
@@ -215,19 +221,31 @@ export const transactionService = {
                         posting_json_metadata: JSON.stringify({ profile: op.profile })
                     }]];
                     break;
-                case 'delegate_rc':
+                case 'delegate_rc': {
+                    const delegateOp = op as DelegateRCOperation;
                     hiveOps = [["custom_json", {
                         required_auths: [],
                         required_posting_auths: [op.username],
                         id: "rc",
-                        json: JSON.stringify(["delegate_rc", { from: op.username, delegatees: [op.delegatee], max_rc: op.amount }])
+                        json: JSON.stringify(["delegate_rc", { from: op.username, delegatees: [delegateOp.delegatee], max_rc: delegateOp.amount }])
                     }]];
                     break;
+                }
+                case 'messaging': {
+                    const msgOp = op as MessagingOperation;
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [op.username],
+                        id: "messaging",
+                        json: JSON.stringify(["message", { to: msgOp.to, message: msgOp.message, v: '1.0' }])
+                    }]];
+                    break;
+                }
                 default:
                     return { success: false, error: "Operation type not supported by relay" };
             }
 
-            const response = await fetch(`${import.meta.env.VITE_POINTS_API_URL || 'http://localhost:4000'}/hive/relay`, {
+            const response = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'}/hive/relay`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -499,6 +517,16 @@ export const transactionService = {
                         method: "Active" as any
                     });
                     break;
+                case 'messaging':
+                    const msgJson = JSON.stringify(["message", { to: op.to, message: op.message, v: '1.0' }]);
+                    result = await keychain.custom({
+                        username: op.username,
+                        id: 'messaging',
+                        method: 'Posting' as any,
+                        json: msgJson,
+                        display_msg: 'Send Private Message'
+                    });
+                    break;
             }
 
             return result as { success: boolean; result?: any; error?: string };
@@ -671,6 +699,15 @@ export const transactionService = {
                     extensions: []
                 }]];
                 keyType = 'active';
+                break;
+            case 'messaging':
+                operation = [["custom_json", {
+                    required_auths: [],
+                    required_posting_auths: [op.username],
+                    id: 'messaging',
+                    json: JSON.stringify(["message", { to: op.to, message: op.message, v: '1.0' }])
+                }]];
+                keyType = 'posting';
                 break;
             default:
                 return { success: false, error: "Unsupported operation" };

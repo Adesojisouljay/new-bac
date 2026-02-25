@@ -3,14 +3,15 @@ import { useConfig } from '../../contexts/ConfigContext';
 import { toast } from 'react-hot-toast';
 
 export function SetupPage() {
-    const { updateConfig } = useConfig();
+    const { config, updateConfig } = useConfig();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
-        communityName: '',
-        hiveCommunityId: '',
-        logoUrl: '',
-        primaryColor: '#ff4400',
-        onboardingSats: 100,
+        communityName: config?.communityName || '',
+        hiveCommunityId: config?.hiveCommunityId || '',
+        logoUrl: config?.logoUrl || '',
+        primaryColor: config?.primaryColor || '#ff4400',
+        onboardingSats: config?.onboardingSats || 100,
+        communityDescription: config?.communityDescription || 'A decentralized community powered by Breakaway.',
     });
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -20,8 +21,7 @@ export function SetupPage() {
         try {
             const success = await updateConfig(formData);
             if (success) {
-                toast.success('Community configured successfully! Launching...');
-                // The ConfigContext update will trigger a re-render in App.tsx
+                toast.success('Community configured successfully!');
             } else {
                 toast.error('Failed to save configuration. Please try again.');
             }
@@ -57,6 +57,18 @@ export function SetupPage() {
                                 value={formData.communityName}
                                 onChange={(e) => setFormData({ ...formData, communityName: e.target.value })}
                                 className="w-full px-5 py-4 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl text-[var(--text-primary)] focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] transition-all outline-none"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2 ml-1">
+                                Community Description (SEO)
+                            </label>
+                            <textarea
+                                placeholder="Describe your community for social sharing and search engines..."
+                                value={formData.communityDescription}
+                                onChange={(e) => setFormData({ ...formData, communityDescription: e.target.value })}
+                                className="w-full px-5 py-4 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl text-[var(--text-primary)] focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] transition-all outline-none min-h-[100px] resize-none"
                             />
                         </div>
 

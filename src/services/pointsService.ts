@@ -1,4 +1,4 @@
-const POINTS_API_URL = import.meta.env.VITE_POINTS_API_URL || 'http://localhost:4000';
+const POINTS_API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,11 +86,15 @@ export const pointsService = {
                     const data = await res.json();
                     const token = data?.response?.token;
                     if (token) {
+                        console.log(`✅ [Points] Silent auth successful for @${username}`);
                         setPointsToken(token);
                         return true;
                     }
+                } else {
+                    const errText = await res.text().catch(() => 'No error text');
+                    console.warn(`[Points] Silent auth failed (${res.status}): ${errText}`);
                 }
-                console.warn('[Points] Silent auth failed, falling back to prompt...');
+                console.warn('[Points] Falling back to prompt-based auth...');
             }
 
             console.log(`[Points] Attempting login for ${username} via ${method}...`);
@@ -242,5 +246,35 @@ export const pointsService = {
         }
         const data = await res.json();
         return data.data.pointsHistory as PointsHistoryEntry[];
+    },
+    /**
+     * Transfer points to another user.
+     * POST /transactions/transfer { senderUsername, receiverUsername, community, amount }
+     */
+    transferPoints: async (
+        senderUsername: string,
+        receiverUsername: string,
+        community: string,
+        amount: number
+    ): Promise<{ success: boolean; message?: string; error?: string }> => {
+        try {
+            const res = await fetch(`${POINTS_API_URL}/transactions/transfer`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ senderUsername, receiverUsername, community, amount }),
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                return { success: true, message: data.message };
+            } else {
+                return { success: false, error: data.message || 'Transfer failed' };
+            }
+        } catch (e) {
+            console.error('[Points] Transfer failed:', e);
+            return { success: false, error: 'Network error or server unavailable' };
+        }
     },
 };

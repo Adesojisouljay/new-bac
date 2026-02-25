@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const POINTS_API_URL = import.meta.env.VITE_POINTS_API_URL || 'http://localhost:4000';
+const POINTS_API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
 
 export interface CommunityConfig {
     domain: string;
@@ -9,6 +9,8 @@ export interface CommunityConfig {
     logoUrl?: string;
     primaryColor: string;
     onboardingSats: number;
+    communityDescription?: string;
+    communityDescriptionExtra?: string;
     isConfigured: boolean;
 }
 
