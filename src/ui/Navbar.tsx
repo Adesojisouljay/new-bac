@@ -9,10 +9,13 @@ import { accountManager, StoredAccount } from '../features/auth/services/authSer
 import { pointsService } from '../services/pointsService';
 import { OnboardingFlow } from '../features/auth/components/OnboardingFlow';
 import { useChat } from '../contexts/ChatContext';
+import { Search, Hexagon } from 'lucide-react';
+import { SearchModal } from '../features/feed/components/SearchModal';
 
 export function Navbar() {
     const { config } = useCommunity();
     const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
     const [user, setUser] = useState<string | null>(accountManager.getActive());
     const [accounts, setAccounts] = useState<StoredAccount[]>(accountManager.getAll());
     const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
@@ -52,45 +55,69 @@ export function Navbar() {
     return (
         <>
             <header className="fixed top-0 w-full border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/80 backdrop-blur-md z-50 transition-colors duration-300">
-                <div className="w-full max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between">
+                <div className="w-full max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between gap-8">
                     {/* Logo Section */}
-                    <Link to="/" className="flex items-center gap-2">
-                        {config?.logo ? (
-                            <img src={config.logo} alt={config.name} className="h-8 w-8 rounded bg-gray-200 dark:bg-gray-700" />
+                    <Link to="/" className="flex items-center gap-2 flex-shrink-0">
+                        {config?.id === 'global' ? (
+                            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[var(--primary-color)] to-purple-600 flex items-center justify-center shadow-lg shadow-[var(--primary-color)]/20">
+                                <Hexagon size={20} className="text-white fill-white/20" />
+                            </div>
                         ) : (
-                            <div className="h-8 w-8 bg-[var(--primary-color)] rounded animate-pulse" />
+                            <img src={(!config?.logo || config.logo.includes('vite.svg')) ? `https://images.hive.blog/u/${config?.id}/avatar` : config.logo} alt={config?.name || 'Community'} className="h-8 w-8 rounded-full bg-[var(--bg-canvas)] object-cover border border-[var(--border-color)]" />
                         )}
-                        <span className="font-bold text-xl text-[var(--text-primary)]">{config?.name || 'Loading...'}</span>
+                        <span className="font-bold text-xl text-[var(--text-primary)] hidden sm:block">{config?.name || 'Loading...'}</span>
                     </Link>
 
+                    {/* Central Search Bar */}
+                    <div className="flex-grow max-w-md hidden md:block">
+                        <button
+                            onClick={() => setIsSearchModalOpen(true)}
+                            className="w-full h-10 px-4 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl flex items-center gap-3 text-[var(--text-secondary)] hover:border-[var(--primary-color)]/50 transition-all group"
+                        >
+                            <Search size={18} className="group-hover:text-[var(--primary-color)] transition-colors" />
+                            <span className="text-sm font-medium">Search the Hive...</span>
+                        </button>
+                    </div>
+
                     {/* Right Side Actions */}
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-4 flex-shrink-0">
+                        {/* Mobile Search Icon (Hidden since it's on BottomNav) */}
+                        <button
+                            onClick={() => setIsSearchModalOpen(true)}
+                            className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors hidden"
+                        >
+                            <Search size={22} />
+                        </button>
+
                         <ThemeToggle />
 
                         {user ? (
                             <div className="flex items-center gap-3">
-                                <Link
-                                    to="/submit"
-                                    className="px-4 py-2 text-sm font-medium bg-[var(--primary-color)] text-white rounded-lg hover:brightness-110 transition-all shadow-sm hidden md:block"
-                                >
-                                    Create Post
-                                </Link>
-                                <NotificationDropdown username={user} />
-                                <Link to="/messages" className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors relative" title="Messages">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                                    </svg>
-                                    {unreadCount > 0 && (
-                                        <span className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-[var(--bg-canvas)] shadow-sm animate-in zoom-in duration-200">
-                                            {unreadCount > 99 ? '99+' : unreadCount}
-                                        </span>
-                                    )}
-                                </Link>
-                                <Link to={`/${user}/wallet`} className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors relative" title="Wallet">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                                    </svg>
-                                </Link>
+                                {/* Desktop Only Controls */}
+                                <div className="hidden md:flex items-center gap-3">
+                                    <Link
+                                        to="/submit"
+                                        className="px-4 py-2 text-sm font-bold bg-[var(--primary-color)] text-white rounded-lg hover:brightness-110 transition-all shadow-sm hidden lg:block uppercase tracking-widest"
+                                    >
+                                        Post
+                                    </Link>
+                                    <NotificationDropdown username={user} />
+                                    <Link to="/messages" className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors relative" title="Messages">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                        </svg>
+                                        {unreadCount > 0 && (
+                                            <span className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-[var(--bg-canvas)] shadow-sm animate-in zoom-in duration-200">
+                                                {unreadCount > 99 ? '99+' : unreadCount}
+                                            </span>
+                                        )}
+                                    </Link>
+                                    <Link to={`/${user}/wallet`} className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors relative" title="Wallet">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                        </svg>
+                                    </Link>
+                                </div>
                                 <UserDropdown
                                     username={user}
                                     onLogout={handleLogout}
@@ -117,6 +144,11 @@ export function Navbar() {
                     </div>
                 </div>
             </header>
+
+            <SearchModal
+                isOpen={isSearchModalOpen}
+                onClose={() => setIsSearchModalOpen(false)}
+            />
 
             <LoginModal
                 isOpen={isLoginModalOpen}

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { CommunityConfig } from '../types';
 import { useConfig } from '../../../contexts/ConfigContext';
+import { useLocation } from 'react-router-dom';
 
 interface CommunityContextType {
     config: CommunityConfig | null;
@@ -14,11 +15,11 @@ const CommunityContext = createContext<CommunityContextType | undefined>(undefin
 
 // Default configuration loaded from environment variables
 const DEFAULT_CONFIG: CommunityConfig = {
-    id: import.meta.env.VITE_COMMUNITY_ID || 'hive-106130',
-    name: import.meta.env.VITE_COMMUNITY_NAME || 'SpenfHbd',
+    id: import.meta.env.VITE_COMMUNITY_ID || 'global',
+    name: import.meta.env.VITE_COMMUNITY_NAME || 'Breakaway',
     domain: window.location.hostname,
-    description: import.meta.env.VITE_COMMUNITY_DESCRIPTION || 'SpenfHbd Community',
-    logo: import.meta.env.VITE_COMMUNITY_LOGO || 'https://images.hive.blog/u/hive-106130/avatar',
+    description: import.meta.env.VITE_COMMUNITY_DESCRIPTION || 'Hive Global Feed',
+    logo: import.meta.env.VITE_COMMUNITY_LOGO || '',
     theme: {
         primaryColor: import.meta.env.VITE_THEME_PRIMARY || '#e11d48',
         secondaryColor: import.meta.env.VITE_THEME_SECONDARY || '#475569',
@@ -72,14 +73,23 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
     };
 
     const { config: dynamicConfig, loading: configLoading } = useConfig();
+    const location = useLocation();
 
     useEffect(() => {
         if (configLoading) return;
 
+        let overrideCommunityId = null;
+        if (location.pathname.startsWith('/c/')) {
+            const parts = location.pathname.split('/');
+            if (parts.length > 2 && parts[2]) {
+                overrideCommunityId = parts[2];
+            }
+        }
+
         if (dynamicConfig) {
             const mergedConfig: CommunityConfig = {
                 ...DEFAULT_CONFIG,
-                id: dynamicConfig.hiveCommunityId,
+                id: overrideCommunityId || dynamicConfig.hiveCommunityId || DEFAULT_CONFIG.id,
                 name: dynamicConfig.communityName,
                 logo: dynamicConfig.logoUrl || DEFAULT_CONFIG.logo,
                 theme: {
@@ -91,11 +101,15 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
             applyTheme(mergedConfig.theme);
             setIsLoading(false);
         } else {
-            setConfig(DEFAULT_CONFIG);
-            applyTheme(DEFAULT_CONFIG.theme);
+            const finalConfig = {
+                ...DEFAULT_CONFIG,
+                id: overrideCommunityId || DEFAULT_CONFIG.id
+            };
+            setConfig(finalConfig);
+            applyTheme(finalConfig.theme);
             setIsLoading(false);
         }
-    }, [dynamicConfig, configLoading]);
+    }, [dynamicConfig, configLoading, location.pathname]);
 
     const applyTheme = (theme: CommunityConfig['theme']) => {
         const root = document.documentElement;

@@ -138,91 +138,114 @@ export function PostCard({ post }: PostCardProps) {
     };
 
     return (
-        <article className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col md:flex-row">
+        <article className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:shadow-xl hover:border-[var(--primary-color)]/30 transition-all duration-300 overflow-hidden flex flex-col md:flex-row group">
             {/* Thumbnail */}
-            <div className="md:w-48 h-48 md:h-auto flex-shrink-0 bg-gray-100 dark:bg-gray-800 relative">
+            <div className="md:w-56 h-48 md:h-auto flex-shrink-0 bg-gray-100 dark:bg-gray-800 relative overflow-hidden">
                 <Link to={`/post/${post.author}/${post.permlink}`} className="block h-full w-full">
                     <img
                         src={thumbnail}
                         alt={post.title}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                         loading="lazy"
                         onError={(e) => { (e.target as HTMLImageElement).src = 'https://placehold.co/600x400?text=No+Image'; }}
                     />
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                 </Link>
+
+                {/* Community Badge Overlay (Top Right of Image) - More Subtle Design */}
+                {post.community && config?.id === 'global' && (
+                    <Link
+                        to={`/c/${post.community}`}
+                        className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-black/40 backdrop-blur-xl text-white text-[9px] font-black uppercase tracking-[0.1em] border border-white/10 hover:bg-[var(--primary-color)] hover:border-[var(--primary-color)] transition-all"
+                    >
+                        {post.community}
+                    </Link>
+                )}
             </div>
 
             {/* Content */}
             <div className="p-6 flex flex-col justify-between flex-grow">
                 <div>
-                    <div className="flex items-center gap-2 mb-2">
-                        <img
-                            src={`https://images.hive.blog/u/${post.author}/avatar/small`}
-                            alt={post.author}
-                            className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700"
-                        />
-                        <Link to={`/@${post.author}`} className="font-medium text-sm text-[var(--text-primary)] hover:underline hover:text-[var(--primary-color)]">
-                            @{post.author} ({post.author_reputation || 25})
-                        </Link>
-                        <span className="text-xs text-[var(--text-secondary)]">• {formatRelativeTime(post.created)}</span>
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <img
+                                src={`https://images.hive.blog/u/${post.author}/avatar/small`}
+                                alt={post.author}
+                                className="w-8 h-8 rounded-full border-2 border-[var(--bg-canvas)] shadow-sm"
+                            />
+                            <div className="flex flex-col">
+                                <Link to={`/@${post.author}`} className="font-bold text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors leading-tight">
+                                    {post.author} <span className="text-[var(--text-secondary)] font-normal ml-0.5">({post.author_reputation || 25})</span>
+                                </Link>
+                                <span className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tight">{formatRelativeTime(post.created)}</span>
+                            </div>
+                        </div>
                     </div>
 
                     <Link to={`/post/${post.author}/${post.permlink}`}>
-                        <h2 className="text-xl font-bold mb-2 text-[var(--text-primary)] line-clamp-2 hover:text-[var(--primary-color)] transition-colors">
+                        <h2 className="text-xl font-black mb-3 text-[var(--text-primary)] line-clamp-2 leading-tight group-hover:text-[var(--primary-color)] transition-colors">
                             {post.title}
                         </h2>
                     </Link>
 
-                    <p className="text-[var(--text-secondary)] text-sm line-clamp-3 mb-4">
+                    <p className="text-[var(--text-secondary)] text-sm line-clamp-2 mb-6 leading-relaxed">
                         {post.body.replace(/<[^>]*>?/gm, '').substring(0, 150)}...
                     </p>
                 </div>
 
-                {/* Footer Stats */}
-                <div className="flex items-center justify-between text-sm text-[var(--text-secondary)] border-t border-[var(--border-color)] pt-4 mt-2">
-                    <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-1">
+                {/* Footer Action Bar (Modern Pill Style) */}
+                <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]/50">
+                    <div className="flex items-center gap-2">
+                        {/* Vote Pill */}
+                        <div className="flex items-center bg-[var(--bg-canvas)] rounded-full border border-[var(--border-color)] p-1">
                             <button
                                 onClick={(e) => { e.preventDefault(); handleVote(10000); }}
                                 disabled={voting || voted || downvoting || downvoted}
-                                className={`p-1 rounded hover:bg-red-500/10 hover:text-red-500 transition-colors ${voted ? 'text-red-500' : ''}`}
+                                className={`p-1.5 rounded-full transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'hover:bg-red-500/10 hover:text-red-500 text-[var(--text-secondary)]'}`}
                                 title="Upvote"
                             >
                                 {voting ? (
-                                    <div className="animate-spin h-4 w-4 border-2 border-red-500 rounded-full border-t-transparent" />
+                                    <div className="animate-spin h-4 w-4 border-2 border-current rounded-full border-t-transparent" />
                                 ) : (
-                                    <ThumbsUp size={18} fill={voted ? "currentColor" : "none"} />
+                                    <ThumbsUp size={16} fill={voted ? "currentColor" : "none"} />
                                 )}
                             </button>
-                            <span>{post.active_votes?.length || 0}</span>
+                            <span className="px-3 text-xs font-bold text-[var(--text-primary)]">{post.active_votes?.length || 0}</span>
                             <button
                                 onClick={(e) => { e.preventDefault(); handleVote(-10000); }}
                                 disabled={voting || voted || downvoting || downvoted}
-                                className={`p-1 rounded hover:bg-red-500/10 hover:text-red-500 transition-colors ${downvoted ? 'text-red-500' : ''}`}
+                                className={`p-1.5 rounded-full transition-all ${downvoted ? 'bg-gray-700 text-white' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-[var(--text-secondary)]'}`}
                                 title="Downvote"
                             >
-                                {downvoting ? <div className="animate-spin h-4 w-4 border-2 border-red-500 rounded-full border-t-transparent" /> : <ThumbsDown size={18} />}
+                                {downvoting ? <div className="animate-spin h-4 w-4 border-2 border-current rounded-full border-t-transparent" /> : <ThumbsDown size={14} />}
                             </button>
                         </div>
 
+                        {/* Reblog/Reply Pills */}
                         <button
                             onClick={(e) => { e.preventDefault(); handleReblog(); }}
                             disabled={reblogging || reblogged}
-                            className={`flex items-center gap-1 hover:text-[var(--primary-color)] transition-colors ${reblogged ? 'text-[var(--primary-color)]' : ''}`}
-                            title="Reblog"
+                            className={`flex items-center gap-2 h-9 px-4 rounded-full border border-[var(--border-color)] bg-[var(--bg-canvas)] text-xs font-bold transition-all ${reblogged ? 'bg-[var(--primary-color)] text-white' : 'hover:border-[var(--primary-color)] text-[var(--text-secondary)]'}`}
                         >
-                            {reblogging ? <div className="animate-spin h-4 w-4 border-2 border-[var(--primary-color)] rounded-full border-t-transparent" /> : <Repeat size={18} />}
+                            {reblogging ? <div className="animate-spin h-3 w-3 border-2 border-current rounded-full border-t-transparent" /> : <Repeat size={14} />}
+                            <span className="hidden sm:inline">Reblog</span>
                         </button>
 
-                        <Link to={`/post/${post.author}/${post.permlink}#comments`} className="flex items-center gap-1 hover:text-[var(--primary-color)] transition-colors">
-                            <MessageSquare size={18} />
+                        <Link
+                            to={`/post/${post.author}/${post.permlink}#comments`}
+                            className="flex items-center gap-2 h-9 px-4 rounded-full border border-[var(--border-color)] bg-[var(--bg-canvas)] text-xs font-bold text-[var(--text-secondary)] hover:border-[var(--primary-color)] transition-all"
+                        >
+                            <MessageSquare size={14} />
                             <span>{post.children}</span>
                         </Link>
                     </div>
 
-                    <span className="font-medium text-[var(--primary-color)]">
-                        ${payout}
-                    </span>
+                    <div className="text-right">
+                        <div className="text-[10px] uppercase font-bold text-[var(--text-secondary)] mb-0.5">Earnings</div>
+                        <div className="text-sm font-black text-[var(--primary-color)]">
+                            ${payout}
+                        </div>
+                    </div>
                 </div>
             </div>
         </article>

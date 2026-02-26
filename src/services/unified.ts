@@ -57,6 +57,11 @@ export interface MarketTrade {
     open_pays: string;
 }
 
+export interface TrendingTag {
+    id: string;
+    title: string;
+}
+
 export interface OpenOrder {
     id: number;
     orderid: number;
@@ -67,6 +72,7 @@ export interface OpenOrder {
 }
 
 export interface CommunityDetails {
+    id: string;
     title: string;
     about: string;
     subscribers: number;
@@ -111,6 +117,7 @@ export const UnifiedDataService = {
             }
 
             return {
+                id: name,
                 title: bridgeData.title,
                 about: bridgeData.about,
                 subscribers: bridgeData.subscribers,
@@ -138,7 +145,7 @@ export const UnifiedDataService = {
      */
     getCommunityFeed: async (
         tag: string,
-        sort: 'trending' | 'created' | 'hot' = 'created',
+        sort: 'trending' | 'created' | 'hot' | 'promoted' | 'payout' | 'muted' = 'created',
         limit: number = 20,
         start_author?: string,
         start_permlink?: string
@@ -151,7 +158,7 @@ export const UnifiedDataService = {
             // 2. Fallback to Hive Bridge API
             try {
                 const params: any = {
-                    tag,
+                    tag: tag === 'global' ? '' : tag,
                     sort,
                     limit: limit, // Strict limit of 20 for Bridge API
                 };
@@ -202,6 +209,64 @@ export const UnifiedDataService = {
             }
         }
     },
+
+    /**
+     * Fetches the following feed (posts from people the user follows)
+     */
+    getFollowingFeed: async (
+        username: string,
+        limit: number = 20,
+        start_author?: string,
+        start_permlink?: string
+    ): Promise<Post[]> => {
+        try {
+            const params: any = {
+                account: username,
+                sort: 'feed',
+                limit
+            };
+
+            if (start_author && start_permlink) {
+                params.start_author = start_author;
+                params.start_permlink = start_permlink;
+            }
+
+            const result = await hiveClient.call('bridge', 'get_account_posts', params);
+
+            if (!result || !Array.isArray(result)) return [];
+
+            let posts = result;
+            if (start_author && start_permlink && posts.length > 0) {
+                if (posts[0].author === start_author && posts[0].permlink === start_permlink) {
+                    posts = posts.slice(1);
+                }
+            }
+
+            return posts.map((post: any) => ({
+                id: `${post.author}/${post.permlink}`,
+                author: post.author,
+                permlink: post.permlink,
+                title: post.title,
+                body: post.body,
+                created: post.created,
+                json_metadata: post.json_metadata,
+                pending_payout_value: post.pending_payout_value,
+                total_payout_value: post.total_payout_value,
+                curator_payout_value: post.curator_payout_value,
+                active_votes: post.active_votes || [],
+                children: post.children,
+                stats: post.stats,
+                reblogged_by: post.reblogged_by || [],
+                community: post.community,
+                category: post.category,
+                author_reputation: UnifiedDataService.formatReputation(post.author_reputation)
+            }));
+        } catch (error) {
+            console.error('Failed to fetch following feed:', error);
+            return [];
+        }
+    },
+
 
     /**
      * Fetches a post.
@@ -821,6 +886,140 @@ export const UnifiedDataService = {
             return await hiveClient.call('condenser_api', 'get_open_orders', [username]);
         } catch (error) {
             console.error(`Failed to fetch open orders for ${username}:`, error);
+            return [];
+        }
+    },
+
+    /**
+     * Fetches a list of trending/active communities.
+     */
+    getTrendingCommunities: async (limit: number = 10, query: string = ''): Promise<CommunityDetails[]> => {
+        try {
+            const params: any = {
+                limit,
+                sort: 'rank'
+            };
+
+            if (query.trim()) {
+                params.query = query.trim();
+            }
+
+            const result = await hiveClient.call('bridge', 'list_communities', params);
+
+            if (!result || !Array.isArray(result)) return [];
+
+            return result.map((c: any) => ({
+                id: c.name,
+                name: c.name,
+                title: c.title,
+                about: c.about,
+                subscribers: c.subscribers,
+                pending_rewards: c.sum_pending,
+                authors: c.num_authors,
+                team: [], // list_communities doesn't return team
+                avatar_url: `https://images.hive.blog/u/${c.name}/avatar/small`,
+            }));
+        } catch (error) {
+            console.error('Failed to fetch trending communities:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Fetches global Hive market data.
+     */
+    getHiveGlobals: async () => {
+        try {
+            const ticker = await UnifiedDataService.getMarketTicker();
+            const props = await hiveClient.database.getDynamicGlobalProperties();
+
+            return {
+                ticker,
+                props
+            };
+        } catch (error) {
+            console.error('Failed to fetch hive globals:', error);
+            return null;
+        }
+    },
+
+    /**
+     * Fetches suggested users to follow based on trending activity.
+     */
+    getSuggestedUsers: async (limit: number = 5): Promise<{ username: string; reputation: number; avatar_url: string }[]> => {
+        try {
+            const trendingPosts = await UnifiedDataService.getCommunityFeed('global', 'trending', 20);
+            const uniqueAuthors = new Map<string, { username: string; reputation: number; avatar_url: string }>();
+
+            for (const post of trendingPosts) {
+                if (!uniqueAuthors.has(post.author) && uniqueAuthors.size < limit) {
+                    uniqueAuthors.set(post.author, {
+                        username: post.author,
+                        reputation: post.author_reputation || 25,
+                        avatar_url: `https://images.hive.blog/u/${post.author}/avatar/small`
+                    });
+                }
+            }
+
+            return Array.from(uniqueAuthors.values());
+        } catch (error) {
+            console.error('Failed to fetch suggested users:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Searches for Hive profiles by username prefix.
+     */
+    searchProfiles: async (query: string, limit: number = 10): Promise<{ username: string; reputation: number; avatar_url: string }[]> => {
+        try {
+            if (!query.trim()) return [];
+            const usernames = await hiveClient.call('condenser_api', 'lookup_accounts', [query.toLowerCase().trim(), limit]);
+
+            if (!Array.isArray(usernames)) return [];
+
+            // For now, return basic info. We could fetch full accounts here if needed,
+            // but for a search list, username and avatar (generated) are often enough.
+            return usernames.map(username => ({
+                username,
+                reputation: 25, // Default or fetch if needed
+                avatar_url: `https://images.hive.blog/u/${username}/avatar/small`
+            }));
+        } catch (error) {
+            console.error('Failed to search profiles:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Fetches trending topics (tags).
+     */
+    getTrendingTags: async (limit: number = 20): Promise<TrendingTag[]> => {
+        try {
+            const result = await hiveClient.call('bridge', 'get_trending_topics', {
+                limit,
+                observer: ''
+            });
+
+            if (!result || !Array.isArray(result)) return [];
+
+            // Map the [id, title] array format seen in logs
+            return result.map((item: any) => {
+                if (Array.isArray(item) && item.length >= 2) {
+                    return { id: item[0], title: item[1] };
+                }
+                if (typeof item === 'string') {
+                    return { id: item, title: item };
+                }
+                if (item && typeof item === 'object') {
+                    const id = item.name || item.word || item.tag || '';
+                    const title = item.title || id;
+                    return { id, title };
+                }
+                return { id: '', title: '' };
+            }).filter(t => t.id !== '');
+        } catch (error) {
+            console.error('Failed to fetch trending tags:', error);
             return [];
         }
     }

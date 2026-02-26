@@ -81,7 +81,8 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     const checkEnvFallback = () => {
         const envCommunityId = import.meta.env.VITE_COMMUNITY_ID;
-        if (envCommunityId && envCommunityId !== 'YOUR_COMMUNITY_ID') {
+
+        if (envCommunityId && envCommunityId !== 'YOUR_COMMUNITY_ID' && envCommunityId !== 'global') {
             const fallback: CommunityConfig = {
                 domain: window.location.hostname,
                 communityName: import.meta.env.VITE_COMMUNITY_NAME || 'Breakaway Community',
@@ -97,7 +98,32 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             document.documentElement.style.setProperty('--primary-color', fallback.primaryColor);
             console.log("ConfigContext: Successfully loaded fallback from ENV");
         } else {
-            setIsConfigured(false);
+            // Check if we should fallback to Global mode or enter Setup mode
+            const hostname = window.location.hostname;
+            const isGlobalDomain =
+                hostname === '127.0.0.1' ||
+                hostname === 'app.breakaway.community' ||
+                import.meta.env.VITE_GLOBAL_MODE === 'true';
+
+            if (isGlobalDomain) {
+                console.log("ConfigContext: Global domain detected, enabling GLOBAL mode");
+                const globalFallback: CommunityConfig = {
+                    domain: hostname,
+                    communityName: 'Breakaway',
+                    hiveCommunityId: 'global',
+                    logoUrl: '/vite.svg',
+                    primaryColor: '#e11d48',
+                    onboardingSats: 100,
+                    communityDescription: 'Decentralized Hive Global Feed',
+                    isConfigured: true
+                };
+                setConfig(globalFallback);
+                setIsConfigured(true);
+                document.documentElement.style.setProperty('--primary-color', globalFallback.primaryColor);
+            } else {
+                console.log("ConfigContext: White-label domain detected. Prompting for setup.");
+                setIsConfigured(false);
+            }
         }
     };
 

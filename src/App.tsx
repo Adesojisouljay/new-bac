@@ -16,6 +16,7 @@ const Messages = lazy(() => import('./features/messages/pages/MessagesPage').the
 const Analytics = lazy(() => import('./features/analytics/pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
 const Wallet = lazy(() => import('./features/wallet/pages/WalletPage'));
 import { DelegationBanner } from './features/auth/components/DelegationBanner';
+import { BottomNav } from './ui/BottomNav';
 
 const Layout = () => {
   return (
@@ -23,11 +24,13 @@ const Layout = () => {
       <Navbar />
       <DelegationBanner />
 
-      <main className="w-full pt-24 pb-12">
+      <main className="w-full pt-20 pb-24 lg:pb-12">
         <Suspense fallback={<div className="flex justify-center p-12 text-[var(--text-secondary)]">Loading...</div>}>
           <Outlet />
         </Suspense>
       </main>
+
+      <BottomNav />
     </div>
   );
 };
@@ -50,18 +53,32 @@ const AppContent = () => {
   }
 
   if (!isConfigured) {
-    return <SetupPage />;
+    return (
+      <Routes>
+        <Route path="/setup" element={<SetupPage />} />
+        <Route path="*" element={<SetupPage />} />
+      </Routes>
+    );
   }
 
   return (
     <Routes>
+      <Route path="/setup" element={<SetupPage />} />
       <Route path="/" element={<Layout />}>
         <Route index element={<Feed />} />
         <Route path="posts" element={<Feed />} />
         <Route path="posts/:sort" element={<Feed />} />
+        <Route path="posts/:sort/:tag" element={<Feed />} />
         <Route path="about" element={<Feed />} />
-        <Route path="subscribers" element={<Feed />} />
         <Route path="activities" element={<Feed />} />
+
+        {/* Dynamic Community Routes */}
+        <Route path="c/:communityId" element={<Feed />} />
+        <Route path="c/:communityId/posts" element={<Feed />} />
+        <Route path="c/:communityId/posts/:sort" element={<Feed />} />
+        <Route path="c/:communityId/about" element={<Feed />} />
+        <Route path="c/:communityId/subscribers" element={<Feed />} />
+        <Route path="c/:communityId/activities" element={<Feed />} />
 
         <Route path=":username" element={<Profile />} />
         <Route path=":username/:section" element={<Profile />} />
