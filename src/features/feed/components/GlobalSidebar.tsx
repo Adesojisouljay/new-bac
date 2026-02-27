@@ -4,8 +4,13 @@ import { UnifiedDataService, CommunityDetails } from '../../../services/unified'
 import { Users, PlusCircle, ExternalLink, Globe, Search, ArrowRight } from 'lucide-react';
 import { SearchModal } from './SearchModal';
 
-export function GlobalSidebar() {
+interface GlobalSidebarProps {
+    isStandalone?: boolean;
+}
+
+export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
     const navigate = useNavigate();
+    const currentUsername = localStorage.getItem('hive_user');
     const [stats, setStats] = useState<any>(null);
     const [suggestedUsers, setSuggestedUsers] = useState<{ username: string; reputation: number; avatar_url: string }[]>([]);
     const [suggestedCommunities, setSuggestedCommunities] = useState<CommunityDetails[]>([]);
@@ -13,18 +18,49 @@ export function GlobalSidebar() {
     const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
     const [initialSearchTab, setInitialSearchTab] = useState<'people' | 'communities'>('people');
 
+    // Action States
+    const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+    const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set());
+    const [joinedCommunities, setJoinedCommunities] = useState<Set<string>>(new Set());
+
     useEffect(() => {
         async function loadSidebarData() {
             setLoading(true);
             try {
-                const [globals, users, communities] = await Promise.all([
-                    UnifiedDataService.getHiveGlobals(),
-                    UnifiedDataService.getSuggestedUsers(5),
-                    UnifiedDataService.getTrendingCommunities(5)
+                // Determine if we should load user-specific states
+                const globalsPromise = UnifiedDataService.getHiveGlobals();
+                const usersPromise = UnifiedDataService.getSuggestedUsers(10); // Fetch a bit more to filter out already followed
+                const communitiesPromise = UnifiedDataService.getTrendingCommunities(10);
+
+                let followingPromise: Promise<string[]> = Promise.resolve([]);
+                let subscriptionsPromise: Promise<string[]> = Promise.resolve([]);
+
+                if (currentUsername) {
+                    followingPromise = UnifiedDataService.getFollowing(currentUsername);
+                    subscriptionsPromise = UnifiedDataService.getSubscriptions(currentUsername);
+                }
+
+                const [globals, users, communities, followingList, subscriptionsList] = await Promise.all([
+                    globalsPromise,
+                    usersPromise,
+                    communitiesPromise,
+                    followingPromise,
+                    subscriptionsPromise
                 ]);
+
                 setStats(globals);
-                setSuggestedUsers(users);
-                setSuggestedCommunities(communities);
+
+                // Initialize states
+                const followingSet = new Set(followingList);
+                const subscriptionsSet = new Set(subscriptionsList);
+                setFollowedUsers(followingSet);
+                setJoinedCommunities(subscriptionsSet);
+
+                // Filter out already followed/joined from suggestions (optional, but good UX)
+                // For now, we'll keep them but show the "Following" state, limiting to 5 visually
+                setSuggestedUsers(users.slice(0, 5));
+                setSuggestedCommunities(communities.slice(0, 5));
+
             } catch (error) {
                 console.error('Failed to load global sidebar data:', error);
             } finally {
@@ -32,135 +68,230 @@ export function GlobalSidebar() {
             }
         }
         loadSidebarData();
-    }, []);
+    }, [currentUsername]);
 
     const openSearch = (tab: 'people' | 'communities') => {
         setInitialSearchTab(tab);
         setIsSearchModalOpen(true);
     };
 
+    const handleFollow = async (targetUser: string, isFollowing: boolean) => {
+        if (!currentUsername) {
+            alert("Please log in to follow users.");
+            return;
+        }
+
+        setActionLoading(prev => ({ ...prev, [`follow_${targetUser}`]: true }));
+        try {
+            // If isFollowing is true, we want to unfollow (false pass to UnifiedDataService)
+            const success = await UnifiedDataService.followUser(currentUsername, targetUser, !isFollowing);
+            if (success) {
+                setFollowedUsers(prev => {
+                    const newSet = new Set(prev);
+                    if (isFollowing) {
+                        newSet.delete(targetUser);
+                    } else {
+                        newSet.add(targetUser);
+                    }
+                    return newSet;
+                });
+            }
+        } finally {
+            setActionLoading(prev => ({ ...prev, [`follow_${targetUser}`]: false }));
+        }
+    };
+
+    const handleJoin = async (communityId: string, isJoined: boolean) => {
+        if (!currentUsername) {
+            alert("Please log in to join communities.");
+            return;
+        }
+
+        setActionLoading(prev => ({ ...prev, [`join_${communityId}`]: true }));
+        try {
+            let success = false;
+            if (isJoined) {
+                success = await UnifiedDataService.unsubscribeCommunity(currentUsername, communityId);
+            } else {
+                success = await UnifiedDataService.subscribeCommunity(currentUsername, communityId);
+            }
+
+            if (success) {
+                setJoinedCommunities(prev => {
+                    const newSet = new Set(prev);
+                    if (isJoined) {
+                        newSet.delete(communityId);
+                    } else {
+                        newSet.add(communityId);
+                    }
+                    return newSet;
+                });
+            }
+        } finally {
+            setActionLoading(prev => ({ ...prev, [`join_${communityId}`]: false }));
+        }
+    };
+
     return (
         <div className="space-y-6">
-            {/* 1. Who to Follow */}
-            <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] flex items-center gap-2">
-                        <Users size={14} className="text-orange-500" />
-                        Who to Follow
-                    </h3>
-                </div>
-                <div className="space-y-4">
-                    {loading ? (
-                        [1, 2, 3, 4, 5].map(i => (
-                            <div key={i} className="flex items-center gap-3 animate-pulse">
-                                <div className="w-10 h-10 bg-[var(--bg-canvas)] rounded-full" />
-                                <div className="flex-grow space-y-2">
-                                    <div className="h-3 bg-[var(--bg-canvas)] rounded w-2/3" />
-                                    <div className="h-2 bg-[var(--bg-canvas)] rounded w-1/3" />
+            {/* 1. Who to Follow - Only on Global */}
+            {!isStandalone && (
+                <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm mb-6">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] flex items-center gap-2">
+                            <Users size={14} className="text-orange-500" />
+                            Who to Follow
+                        </h3>
+                    </div>
+                    <div className="space-y-4">
+                        {loading ? (
+                            [1, 2, 3, 4, 5].map(i => (
+                                <div key={i} className="flex items-center gap-3 animate-pulse">
+                                    <div className="w-10 h-10 bg-[var(--bg-canvas)] rounded-full" />
+                                    <div className="flex-grow space-y-2">
+                                        <div className="h-3 bg-[var(--bg-canvas)] rounded w-2/3" />
+                                        <div className="h-2 bg-[var(--bg-canvas)] rounded w-1/3" />
+                                    </div>
                                 </div>
-                            </div>
-                        ))
-                    ) : (
-                        <>
-                            {suggestedUsers.map(user => (
-                                <div key={user.username} className="flex items-center justify-between group">
-                                    <Link to={`/@${user.username}`} className="flex items-center gap-3 min-w-0">
-                                        <img
-                                            src={user.avatar_url}
-                                            alt={user.username}
-                                            className="w-10 h-10 rounded-full object-cover border border-[var(--border-color)] group-hover:border-[var(--primary-color)] transition-colors"
-                                        />
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-sm font-black text-[var(--text-primary)] truncate group-hover:text-[var(--primary-color)] transition-colors">
-                                                @{user.username}
-                                            </span>
-                                            <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-tight">
-                                                Rep: {user.reputation}
-                                            </span>
+                            ))
+                        ) : (
+                            <>
+                                {suggestedUsers.map(user => {
+                                    const isFollowing = followedUsers.has(user.username);
+                                    const isLoading = actionLoading[`follow_${user.username}`];
+
+                                    return (
+                                        <div key={user.username} className="flex items-center justify-between group">
+                                            <Link to={`/@${user.username}`} className="flex items-center gap-3 min-w-0">
+                                                <img
+                                                    src={user.avatar_url}
+                                                    alt={user.username}
+                                                    className="w-10 h-10 rounded-full object-cover border border-[var(--border-color)] group-hover:border-[var(--primary-color)] transition-colors"
+                                                />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-sm font-black text-[var(--text-primary)] truncate group-hover:text-[var(--primary-color)] transition-colors">
+                                                        @{user.username}
+                                                    </span>
+                                                    <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-tight">
+                                                        Rep: {user.reputation}
+                                                    </span>
+                                                </div>
+                                            </Link>
+                                            <button
+                                                onClick={() => handleFollow(user.username, isFollowing)}
+                                                disabled={isLoading}
+                                                className={`min-w-[70px] px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${isFollowing
+                                                    ? 'bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:bg-rose-500/10 hover:text-rose-500 border border-[var(--border-color)] hover:border-rose-500/30'
+                                                    : 'bg-[var(--primary-color)]/10 text-[var(--primary-color)] hover:bg-[var(--primary-color)] hover:text-white border border-transparent'
+                                                    }`}
+                                            >
+                                                {isLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
+                                            </button>
                                         </div>
-                                    </Link>
-                                    <button className="px-3 py-1 rounded-lg bg-[var(--primary-color)]/10 text-[var(--primary-color)] text-[10px] font-black uppercase tracking-widest hover:bg-[var(--primary-color)] hover:text-white transition-all">
-                                        Follow
-                                    </button>
-                                </div>
-                            ))}
+                                    )
+                                })}
 
-                            <button
-                                onClick={() => openSearch('people')}
-                                className="w-full mt-2 py-3 px-4 flex items-center justify-center gap-2 rounded-xl bg-[var(--bg-canvas)] border border-dashed border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--primary-color)] hover:border-[var(--primary-color)]/50 transition-all group"
-                            >
-                                <Search size={14} className="group-hover:scale-110 transition-transform" />
-                                <span className="text-[10px] font-black uppercase tracking-widest">Find more users</span>
-                                <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                            </button>
-                        </>
-                    )}
+                                <button
+                                    onClick={() => openSearch('people')}
+                                    className="w-full mt-2 py-3 px-4 flex items-center justifycenter gap-2 rounded-xl bg-[var(--bg-canvas)] border border-dashed border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--primary-color)] hover:border-[var(--primary-color)]/50 transition-all group"
+                                >
+                                    <Search size={14} className="group-hover:scale-110 transition-transform" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Find more users</span>
+                                    <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                                </button>
+                            </>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
-            {/* 2. Suggested Communities */}
-            <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] flex items-center gap-2">
-                        <PlusCircle size={14} className="text-green-500" />
-                        Suggested Communities
-                    </h3>
-                </div>
-                <div className="space-y-4">
-                    {loading ? (
-                        [1, 2, 3, 4, 5].map(i => (
-                            <div key={i} className="flex items-center gap-3 animate-pulse">
-                                <div className="w-10 h-10 bg-[var(--bg-canvas)] rounded-xl" />
-                                <div className="flex-grow space-y-2">
-                                    <div className="h-3 bg-[var(--bg-canvas)] rounded w-2/3" />
-                                    <div className="h-2 bg-[var(--bg-canvas)] rounded w-1/3" />
+            {/* 2. Suggested Communities - Only on Global */}
+            {!isStandalone && (
+                <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm mb-6">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] flex items-center gap-2">
+                            <PlusCircle size={14} className="text-green-500" />
+                            Suggested Communities
+                        </h3>
+                    </div>
+                    <div className="space-y-4">
+                        {loading ? (
+                            [1, 2, 3, 4, 5].map(i => (
+                                <div key={i} className="flex items-center gap-3 animate-pulse">
+                                    <div className="w-10 h-10 bg-[var(--bg-canvas)] rounded-xl" />
+                                    <div className="flex-grow space-y-2">
+                                        <div className="h-3 bg-[var(--bg-canvas)] rounded w-2/3" />
+                                        <div className="h-2 bg-[var(--bg-canvas)] rounded w-1/3" />
+                                    </div>
                                 </div>
-                            </div>
-                        ))
-                    ) : (
-                        <>
-                            {suggestedCommunities.map(community => (
-                                <div key={community.id} className="flex items-center justify-between group">
-                                    <Link to={`/c/${community.id}`} className="flex items-center gap-3 min-w-0">
-                                        <img
-                                            src={community.avatar_url}
-                                            alt={community.title}
-                                            className="w-10 h-10 rounded-xl object-cover border border-[var(--border-color)] group-hover:border-[var(--primary-color)] transition-colors"
-                                        />
-                                        <div className="flex flex-col min-w-0">
-                                            <span className="text-sm font-black text-[var(--text-primary)] truncate group-hover:text-[var(--primary-color)] transition-colors">
-                                                {community.title}
-                                            </span>
-                                            <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-tight">
-                                                {community.subscribers.toLocaleString()} Members
-                                            </span>
+                            ))
+                        ) : (
+                            <>
+                                {suggestedCommunities.map(community => {
+                                    const isJoined = joinedCommunities.has(community.id);
+                                    const isLoading = actionLoading[`join_${community.id}`];
+
+                                    return (
+                                        <div key={community.id} className="flex items-center justify-between group">
+                                            <Link to={`/c/${community.id}`} className="flex items-center gap-3 min-w-0">
+                                                <img
+                                                    src={community.avatar_url}
+                                                    alt={community.title}
+                                                    className="w-10 h-10 rounded-xl object-cover border border-[var(--border-color)] group-hover:border-[var(--primary-color)] transition-colors"
+                                                />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="text-sm font-black text-[var(--text-primary)] truncate group-hover:text-[var(--primary-color)] transition-colors">
+                                                        {community.title}
+                                                    </span>
+                                                    <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-tight">
+                                                        {community.subscribers.toLocaleString()} Members
+                                                    </span>
+                                                </div>
+                                            </Link>
+                                            <button
+                                                onClick={() => handleJoin(community.id, isJoined)}
+                                                disabled={isLoading}
+                                                className={`min-w-[70px] px-3 py-1 rounded-lg border text-[10px] font-black uppercase tracking-widest transition-all ${isJoined
+                                                    ? 'border-[var(--border-color)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-500'
+                                                    : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--primary-color)] hover:text-[var(--primary-color)]'
+                                                    }`}
+                                            >
+                                                {isLoading ? '...' : isJoined ? 'Joined' : 'Join'}
+                                            </button>
                                         </div>
-                                    </Link>
-                                    <button className="px-3 py-1 rounded-lg border border-[var(--border-color)] text-[var(--text-secondary)] text-[10px] font-black uppercase tracking-widest hover:border-[var(--primary-color)] hover:text-[var(--primary-color)] transition-all">
-                                        Join
-                                    </button>
-                                </div>
-                            ))}
+                                    )
+                                })}
 
-                            <button
-                                onClick={() => openSearch('communities')}
-                                className="w-full mt-2 py-3 px-4 flex items-center justify-center gap-2 rounded-xl bg-[var(--bg-canvas)] border border-dashed border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--primary-color)] hover:border-[var(--primary-color)]/50 transition-all group"
-                            >
-                                <Search size={14} className="group-hover:scale-110 transition-transform" />
-                                <span className="text-[10px] font-black uppercase tracking-widest">Find more communities</span>
-                                <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
-                            </button>
-                        </>
-                    )}
+                                <button
+                                    onClick={() => openSearch('communities')}
+                                    className="w-full mt-2 py-3 px-4 flex items-center justify-center gap-2 rounded-xl bg-[var(--bg-canvas)] border border-dashed border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--primary-color)] hover:border-[var(--primary-color)]/50 transition-all group"
+                                >
+                                    <Search size={14} className="group-hover:scale-110 transition-transform" />
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Find more communities</span>
+                                    <ArrowRight size={14} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                                </button>
+                            </>
+                        )}
+                    </div>
                 </div>
-            </div>
+            )}
 
             {/* 3. Market Stats */}
             <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
-                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] mb-6 flex items-center gap-2">
-                    <Globe size={14} className="text-blue-500" />
-                    Market
-                </h3>
+                <div className="flex items-center justify-between mb-6">
+                    <Link to="/market" className="inline-flex items-center gap-2 group">
+                        <Globe size={14} className="text-blue-500 group-hover:scale-110 transition-transform duration-300" />
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] group-hover:text-[var(--primary-color)] transition-colors">
+                            Market
+                        </h3>
+                    </Link>
+                    <Link
+                        to="/market"
+                        className="px-3 py-1.5 rounded-lg bg-[var(--primary-color)]/10 text-[var(--primary-color)] hover:bg-[var(--primary-color)] hover:text-white border border-transparent text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
+                    >
+                        Buy / Sell
+                    </Link>
+                </div>
 
                 <div className="space-y-4">
                     {/* HIVE Stats */}

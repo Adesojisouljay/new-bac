@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useCommunity } from '../../community/context/CommunityContext';
+import { useConfig } from '../../../contexts/ConfigContext';
 import { UnifiedDataService, Post, CommunityDetails } from '../../../services/unified';
 import { CommunityHeader } from '../../community/components/CommunityHeader';
 import { CommunitySidebar } from '../../community/components/CommunitySidebar';
-import { CommunityLeadership } from '../../community/components/CommunityLeadership';
 import { SubscriberList } from '../../community/components/SubscriberList';
 import { ActivityList } from '../../community/components/ActivityList';
 import { Subscriber, Activity } from '../../../services/unified';
@@ -15,8 +15,10 @@ import { PostCard } from '../components/PostCard';
 
 export default function FeedPage() {
     const { config } = useCommunity();
+    const { config: dynamicConfig } = useConfig();
     const navigate = useNavigate();
-    const { sort: sortParam, tag: tagParam } = useParams();
+    const { sort: sortParam, tag, communityId } = useParams();
+    const tagParam = tag || communityId;
     const location = useLocation();
 
     // Derive active tab from path (look for the keyword anywhere to handle community params)
@@ -63,23 +65,25 @@ export default function FeedPage() {
 
     // Fetch Community Details
     useEffect(() => {
+        let isMounted = true;
         async function fetchDetails() {
             if (!config) return;
 
-            // If global mode and we have a tag, try to fetch community details for that tag
+            // If global mode and we explicitly have `communityId` from the route params (/c/:communityId)
             // Otherwise if not global, fetch for the config.id (unless tag is a special sort or friends)
             const isSpecialTag = ['friends', 'payout', 'muted', 'promoted'].includes(tagParam || '') || ['friends', 'payout', 'muted', 'promoted'].includes(sortParam || '');
-            const targetId = (config.id === 'global' && tagParam && !isSpecialTag) ? tagParam :
+            const targetId = (config.id === 'global' && communityId && !isSpecialTag) ? communityId :
                 (config.id !== 'global' ? config.id : null);
 
             if (targetId && targetId !== 'global') {
                 const details = await UnifiedDataService.getCommunityDetails(targetId);
-                setCommunity(details);
+                if (isMounted) setCommunity(details);
             } else {
-                setCommunity(null);
+                if (isMounted) setCommunity(null);
             }
         }
         fetchDetails();
+        return () => { isMounted = false; };
     }, [config, tagParam, sortParam]);
 
     const [excludeReblogs, setExcludeReblogs] = useState(false);
@@ -294,40 +298,64 @@ export default function FeedPage() {
 
     if (!config) return <div className="p-8 text-center text-[var(--text-secondary)]">Loading configuration...</div>;
 
-    const isGlobal = config.id === 'global';
+    // Determine if the APP INSTANCE is Global (not just the current route)
+    const isGlobal = dynamicConfig?.hiveCommunityId === 'global' || (!dynamicConfig && config?.id === 'global');
+
+    // Determine if we are explicitly viewing a community page (e.g., /c/:communityId)
+    const isExplicitCommunityRoute = !!communityId;
 
     return (
         <div className="max-w-[1400px] mx-auto pb-12 px-4 md:px-8">
 
-            {/* 1. Community Header (Banner & Stats) */}
-            {!isGlobal && (
-                <div>
-                    {community ? (
-                        <CommunityHeader
-                            community={community}
-                        />
-                    ) : (
-                        // Skeleton Header
-                        <div className="h-64 bg-gray-200 dark:bg-gray-800 rounded-xl animate-pulse mb-6" />
-                    )}
-                </div>
-            )}
+
 
             <div className={`grid grid-cols-1 ${!isGlobal ? 'lg:grid-cols-4 xl:grid-cols-12' : 'lg:grid-cols-12'} gap-8`}>
 
                 {/* Left Column - Sidebar (Community or Topics) */}
-                <div className={`${!isGlobal ? 'lg:col-span-1 xl:col-span-3 lg:block' : 'hidden xl:block xl:col-span-2'} order-2 lg:order-1 ${activeTab !== 'about' ? 'hidden' : 'block'}`}>
-                    {isGlobal ? (
+                <div className={`${!isGlobal ? 'lg:col-span-1 xl:col-span-3 block' : community || isExplicitCommunityRoute ? 'lg:col-span-3 block' : 'hidden xl:block xl:col-span-2'} order-2 lg:order-1`}>
+                    {community ? (
+                        <CommunitySidebar community={community} />
+                    ) : isExplicitCommunityRoute ? (
+                        <div className="h-[600px] bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] shadow-sm animate-pulse" />
+                    ) : isGlobal ? (
                         <TopicSidebar />
-                    ) : community ? (
-                        <CommunitySidebar community={community} showCreatePost={false} />
                     ) : (
                         <div className="h-96 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
                     )}
                 </div>
 
                 {/* Center Column - Main Feed */}
-                <div className={`${!isGlobal ? 'lg:col-span-2 xl:col-span-6' : 'lg:col-span-12 xl:col-span-7'} order-1 lg:order-2`}>
+                <div className={`${!isGlobal ? 'lg:col-span-3 xl:col-span-6' : community || isExplicitCommunityRoute ? 'lg:col-span-9' : 'lg:col-span-8 xl:col-span-7'} order-1 lg:order-2`}>
+
+                    {community ? (
+                        <div className="mb-6">
+                            <CommunityHeader
+                                community={community}
+                                isBaseRoute={!isGlobal}
+                            />
+                        </div>
+                    ) : isExplicitCommunityRoute && (
+                        <div className="mb-6 w-full h-[320px] bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] overflow-hidden shadow-sm animate-pulse relative">
+                            {/* Banner skeleton */}
+                            <div className="w-full h-48 bg-[var(--bg-canvas)]" />
+                            {/* Content skeleton */}
+                            <div className="px-8 pb-6 bg-[var(--bg-card)] relative">
+                                <div className="absolute -top-12 left-8 w-24 h-24 rounded-full bg-[var(--bg-card)] p-1">
+                                    <div className="w-full h-full rounded-full bg-[var(--bg-canvas)]" />
+                                </div>
+                                <div className="flex justify-between items-end mt-4">
+                                    <div className="space-y-3 pt-12">
+                                        <div className="h-6 w-48 bg-[var(--bg-canvas)] rounded-lg" />
+                                        <div className="h-3 w-32 bg-[var(--bg-canvas)] rounded flex items-center" />
+                                    </div>
+                                    <div className="flex gap-4">
+                                        <div className="h-10 w-32 bg-[var(--bg-canvas)] rounded-lg" />
+                                        <div className="h-10 w-32 bg-[var(--bg-canvas)] rounded-lg" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {activeTab === 'posts' && (
                         <>
@@ -359,9 +387,16 @@ export default function FeedPage() {
                                                 <button
                                                     key={s.id}
                                                     onClick={() => {
-                                                        const path = isGlobal
-                                                            ? `/posts/${s.id}${tagParam && tagParam !== 'friends' && !['payout', 'muted'].includes(tagParam) ? `/${tagParam}` : ''}`
-                                                            : `/c/${config.id}/posts/${s.id}`;
+                                                        let path = '';
+                                                        if (isGlobal) {
+                                                            if (community) {
+                                                                path = `/c/${community.id}/posts/${s.id}`;
+                                                            } else {
+                                                                path = `/posts/${s.id}${tagParam && tagParam !== 'friends' && !['payout', 'muted'].includes(tagParam) ? `/${tagParam}` : ''}`;
+                                                            }
+                                                        } else {
+                                                            path = `/c/${config?.id || ''}/posts/${s.id}`;
+                                                        }
                                                         navigate(path);
                                                     }}
                                                     className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isActive ? 'bg-white dark:bg-gray-800 text-[var(--primary-color)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
@@ -414,7 +449,16 @@ export default function FeedPage() {
                                                     <button
                                                         key={opt.id}
                                                         onClick={() => {
-                                                            const path = isGlobal ? `/posts/${opt.id}` : `/c/${config.id}/posts/${opt.id}`;
+                                                            let path = '';
+                                                            if (isGlobal) {
+                                                                if (community) {
+                                                                    path = `/c/${community.id}/posts/${opt.id}`;
+                                                                } else {
+                                                                    path = `/posts/${opt.id}`;
+                                                                }
+                                                            } else {
+                                                                path = `/c/${config.id}/posts/${opt.id}`;
+                                                            }
                                                             navigate(path);
                                                             setShowMoreFilters(false);
                                                         }}
@@ -704,29 +748,12 @@ export default function FeedPage() {
 
                 </div>
 
-                {/* Right Column - Leadership / Global Sidebar */}
-                <div className={`lg:col-span-1 xl:col-span-3 order-3 space-y-6 ${activeTab !== 'about' ? 'hidden lg:block' : 'block'}`}>
-                    {isGlobal ? (
-                        <GlobalSidebar />
-                    ) : community ? (
-                        <>
-                            {!['activities', 'about'].includes(activeTab) && (
-                                <button
-                                    onClick={() => navigate('/submit')}
-                                    className="w-full py-3 bg-[var(--primary-color)] text-white rounded-lg font-bold shadow-lg hover:brightness-110 transition-all flex items-center justify-center gap-2 mb-6"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                                    </svg>
-                                    Create Post
-                                </button>
-                            )}
-                            <CommunityLeadership community={community} />
-                        </>
-                    ) : (
-                        <div className="h-48 bg-gray-100 dark:bg-gray-800 rounded-xl animate-pulse" />
-                    )}
-                </div>
+                {/* Right Column - Global Sidebar Only */}
+                {(!isGlobal || (!community && !isExplicitCommunityRoute)) && (
+                    <div className="hidden lg:block lg:col-span-4 xl:col-span-3 order-3 space-y-6">
+                        <GlobalSidebar isStandalone={!isGlobal} />
+                    </div>
+                )}
 
             </div>
         </div >

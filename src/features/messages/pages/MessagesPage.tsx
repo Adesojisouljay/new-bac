@@ -857,9 +857,9 @@ export function MessagesPage() {
     }
 
     return (
-        <div className={`flex flex-col md:flex-row fixed inset-x-0 bottom-0 bg-[var(--bg-canvas)] overflow-hidden transition-all duration-300 ${(selectedUser || selectedStoryGroup)
-                ? 'top-0 h-[100dvh] z-[60] md:top-16 md:h-[calc(100vh-64px)] md:z-40 md:left-0 md:right-0'
-                : 'top-16 h-[calc(100dvh-64px)] md:h-[calc(100vh-64px)] z-40 md:left-0 md:right-0'
+        <div className={`flex flex-col md:flex-row fixed inset-x-0 bg-[var(--bg-canvas)] overflow-hidden transition-all duration-300 ${(selectedUser || selectedStoryGroup)
+            ? 'top-0 bottom-0 z-[110] md:top-16 md:bottom-0 md:z-40 md:left-0 md:right-0'
+            : 'top-16 bottom-[60px] z-40 md:bottom-0 md:left-0 md:right-0'
             }`}>
             {/* 1. Vertical Nav (WhatsApp style) */}
             <div className="hidden md:flex w-20 flex-col items-center py-8 gap-8 bg-[var(--bg-canvas)] border-r border-[var(--border-color)]">
@@ -890,7 +890,7 @@ export function MessagesPage() {
             </div>
 
             {/* 2. Sidebar Area (Chats or Status) */}
-            <div className={`w-full md:w-[320px] md:flex-none border-r border-[var(--border-color)] flex flex-col bg-[var(--bg-canvas)] ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
+            <div className={`w-full md:w-[320px] md:flex-none border-r border-[var(--border-color)] flex flex-col bg-[var(--bg-canvas)] flex-1 min-h-0 ${selectedUser ? 'hidden md:flex' : 'flex'}`}>
                 {/* Mobile Tab Switcher */}
                 <div className="flex md:hidden bg-[var(--bg-card)] border-b border-[var(--border-color)] z-10">
                     <button
@@ -943,7 +943,7 @@ export function MessagesPage() {
                                 </button>
                             ))}
                         </div>
-                        <div className="flex-1 overflow-y-auto">
+                        <div className="flex-1 overflow-y-auto min-h-0">
                             {searchQuery.length > 0 ? (
                                 <div className="py-2">
                                     <div className="px-6 py-2 text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">Search Results</div>
@@ -1032,7 +1032,7 @@ export function MessagesPage() {
                         <div className="hidden md:block p-6 border-b border-[var(--border-color)]">
                             <h2 className="text-xl font-black tracking-tight">Status</h2>
                         </div>
-                        <div className="flex-1 overflow-y-auto">
+                        <div className="flex-1 overflow-y-auto min-h-0">
                             {/* My Status Item */}
                             {(() => {
                                 const myGroup = groupedStories.find(g => g.username === username);

@@ -11,9 +11,11 @@ import { OnboardingFlow } from '../features/auth/components/OnboardingFlow';
 import { useChat } from '../contexts/ChatContext';
 import { Search, Hexagon } from 'lucide-react';
 import { SearchModal } from '../features/feed/components/SearchModal';
+import { useConfig } from '../contexts/ConfigContext';
 
 export function Navbar() {
     const { config } = useCommunity();
+    const { config: dynamicConfig } = useConfig();
     const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
     const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
     const [user, setUser] = useState<string | null>(accountManager.getActive());
@@ -58,14 +60,19 @@ export function Navbar() {
                 <div className="w-full max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between gap-8">
                     {/* Logo Section */}
                     <Link to="/" className="flex items-center gap-2 flex-shrink-0">
-                        {config?.id === 'global' ? (
-                            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[var(--primary-color)] to-purple-600 flex items-center justify-center shadow-lg shadow-[var(--primary-color)]/20">
-                                <Hexagon size={20} className="text-white fill-white/20" />
+                        {dynamicConfig?.hiveCommunityId === 'global' ? (
+                            <div className="flex items-center gap-2">
+                                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[var(--primary-color)] to-purple-600 flex items-center justify-center shadow-lg shadow-[var(--primary-color)]/20">
+                                    <Hexagon size={20} className="text-white fill-white/20" />
+                                </div>
+                                <span className="font-bold text-xl text-[var(--text-primary)] hidden sm:block">Breakaway</span>
                             </div>
                         ) : (
-                            <img src={(!config?.logo || config.logo.includes('vite.svg')) ? `https://images.hive.blog/u/${config?.id}/avatar` : config.logo} alt={config?.name || 'Community'} className="h-8 w-8 rounded-full bg-[var(--bg-canvas)] object-cover border border-[var(--border-color)]" />
+                            <div className="flex items-center gap-2">
+                                <img src={(!config?.logo || config.logo.includes('vite.svg')) ? `https://images.hive.blog/u/${config?.id}/avatar` : config.logo} alt={config?.name || 'Community'} className="h-8 w-8 rounded-full bg-[var(--bg-canvas)] object-cover border border-[var(--border-color)]" />
+                                <span className="font-bold text-xl text-[var(--text-primary)] hidden sm:block">{config?.name || 'Loading...'}</span>
+                            </div>
                         )}
-                        <span className="font-bold text-xl text-[var(--text-primary)] hidden sm:block">{config?.name || 'Loading...'}</span>
                     </Link>
 
                     {/* Central Search Bar */}

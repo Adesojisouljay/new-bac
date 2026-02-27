@@ -3,82 +3,71 @@ import { CommunityDetails } from '../../../services/unified';
 
 interface CommunityHeaderProps {
     community: CommunityDetails;
+    isBaseRoute?: boolean;
 }
 
-export function CommunityHeader({ community }: CommunityHeaderProps) {
+export function CommunityHeader({ community, isBaseRoute = false }: CommunityHeaderProps) {
     const tabClass = ({ isActive }: { isActive: boolean }) =>
-        `px-4 py-2 font-medium text-sm transition-colors whitespace-nowrap ${isActive
+        `px-6 py-3 font-bold text-sm transition-colors whitespace-nowrap ${isActive
             ? 'text-[var(--primary-color)] border-b-2 border-[var(--primary-color)]'
-            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)]'
         }`;
 
     return (
         <div className="bg-[var(--bg-card)] rounded-xl shadow-sm overflow-hidden mb-6 border border-[var(--border-color)]">
-            {/* Hero/Cover Image */}
-            <div className="h-56 md:h-80 bg-gray-200 dark:bg-gray-800 relative">
-                {community.cover_url ? (
+            {/* Hero/Cover Image with Glassmorphism Stats */}
+            <div className="h-48 md:h-56 bg-gradient-to-r from-blue-900 to-purple-900 relative">
+                {community.cover_url && (
                     <img
                         src={community.cover_url}
                         alt="Community Cover"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover opacity-60"
                     />
-                ) : (
-                    <div className="w-full h-full bg-gradient-to-r from-blue-500 to-purple-600" />
                 )}
 
-                {/* Stats Overlay (Bottom) */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-6 pt-20 text-white flex flex-wrap items-end justify-between">
-                    <div className="flex items-center gap-4">
-                        {/* Avatar */}
-                        <div className="w-20 h-20 md:w-24 md:h-24 rounded-full border-4 border-[var(--bg-card)] bg-[var(--bg-card)] overflow-hidden shadow-lg -mb-10 z-10 relative">
-                            {community.avatar_url ? (
-                                <img src={community.avatar_url} alt={community.title} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full bg-gray-300 dark:bg-gray-700 flex items-center justify-center text-gray-500 font-bold text-xl">
-                                    {community.title.charAt(0)}
-                                </div>
-                            )}
+                {/* Glassmorphism Stats Overlay */}
+                <div className="absolute inset-0 flex items-center justify-center p-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-4xl">
+
+                        <div className="bg-black/30 backdrop-blur-md border border-white/10 rounded-xl p-4 text-center text-white shadow-xl hover:bg-black/40 transition-all">
+                            <div className="text-2xl font-black drop-shadow-md">{community.subscribers.toLocaleString()}</div>
+                            <div className="text-xs uppercase tracking-widest font-medium opacity-80 mt-1">Members</div>
                         </div>
 
-                        <div className="mb-1">
-                            <h1 className="text-2xl md:text-3xl font-bold shadow-black drop-shadow-md">{community.title}</h1>
-                            <p className="text-sm md:text-base opacity-90 max-w-2xl text-shadow-sm line-clamp-1">{community.about}</p>
+                        <div className="bg-black/30 backdrop-blur-md border border-white/10 rounded-xl p-4 text-center text-white shadow-xl hover:bg-black/40 transition-all">
+                            <div className="text-2xl font-black drop-shadow-md">{community.pending_rewards}</div>
+                            <div className="text-xs uppercase tracking-widest font-medium opacity-80 mt-1">Rewards</div>
                         </div>
-                    </div>
 
-                    {/* Key Stats (Hero) */}
-                    <div className="hidden md:flex gap-6 text-center mb-1">
-                        <div>
-                            <div className="text-xl font-bold">{community.subscribers.toLocaleString()}</div>
-                            <div className="text-xs uppercase opacity-80">Subscribers</div>
+                        <div className="bg-black/30 backdrop-blur-md border border-white/10 rounded-xl p-4 text-center text-white shadow-xl hover:bg-black/40 transition-all">
+                            <div className="text-2xl font-black drop-shadow-md">{community.authors}</div>
+                            <div className="text-xs uppercase tracking-widest font-medium opacity-80 mt-1">Posters</div>
                         </div>
-                        <div>
-                            <div className="text-xl font-bold">{community.pending_rewards}</div>
-                            <div className="text-xs uppercase opacity-80">Pending</div>
+
+                        <div className="bg-black/30 backdrop-blur-md border border-white/10 rounded-xl p-4 text-center text-white shadow-xl hover:bg-black/40 transition-all">
+                            <div className="text-2xl font-black drop-shadow-md uppercase">{community.lang || 'EN'}</div>
+                            <div className="text-xs uppercase tracking-widest font-medium opacity-80 mt-1">Language</div>
                         </div>
-                        <div>
-                            <div className="text-xl font-bold">{community.authors}</div>
-                            <div className="text-xs uppercase opacity-80">Active</div>
-                        </div>
+
                     </div>
                 </div>
             </div>
 
-            {/* Navigation Tabs (PeakD Style) */}
-            <div className="flex items-center px-4 pt-12 pb-2 md:pl-32 border-b border-[var(--border-color)] overflow-x-auto">
-                <NavLink to="/posts" className={tabClass}>
+            {/* Navigation Tabs */}
+            <div className="flex items-center px-2 md:px-6 overflow-x-auto no-scrollbar border-b border-[var(--border-color)]">
+                <NavLink to={isBaseRoute ? "/" : `/c/${community.id}`} end className={tabClass}>
                     Posts
                 </NavLink>
-                <NavLink to="/about" className={tabClass}>
+                <NavLink to={isBaseRoute ? "/about" : `/c/${community.id}/about`} className={tabClass}>
                     About
                 </NavLink>
-                <NavLink to="/subscribers" className={tabClass}>
+                <NavLink to={isBaseRoute ? "/subscribers" : `/c/${community.id}/subscribers`} className={tabClass}>
                     Subscribers
                 </NavLink>
-                <NavLink to="/activities" className={tabClass}>
+                <NavLink to={isBaseRoute ? "/activities" : `/c/${community.id}/activities`} className={tabClass}>
                     Activities
                 </NavLink>
             </div>
-        </div>
+        </div >
     );
 }

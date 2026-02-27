@@ -71,6 +71,7 @@ const AppContent = () => {
         <Route path="posts/:sort/:tag" element={<Feed />} />
         <Route path="about" element={<Feed />} />
         <Route path="activities" element={<Feed />} />
+        <Route path="subscribers" element={<Feed />} />
 
         {/* Dynamic Community Routes */}
         <Route path="c/:communityId" element={<Feed />} />

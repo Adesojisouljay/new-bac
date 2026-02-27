@@ -6,6 +6,7 @@ import { Hash, TrendingUp } from 'lucide-react';
 export function TopicSidebar() {
     const navigate = useNavigate();
     const { tag: activeTag } = useParams();
+    const currentUsername = localStorage.getItem('hive_user');
     const [tags, setTags] = useState<TrendingTag[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -28,6 +29,14 @@ export function TopicSidebar() {
         navigate(`/posts/trending/${tagId}`);
     };
 
+    const handleJoinClick = () => {
+        if (!currentUsername) {
+            alert("Please log in to join communities.");
+            return;
+        }
+        alert("Please visit a specific community page to join it.");
+    };
+
     return (
         <div className="space-y-4">
             {/* Global Hero Integrated into Sidebar */}
@@ -47,11 +56,11 @@ export function TopicSidebar() {
                         Discover trending content and earn rewards on the most active Web3 social network.
                     </p>
                     <div className="flex flex-col gap-2">
-                        <button className="w-full py-2 bg-white text-rose-600 rounded-lg text-xs font-black hover:bg-rose-50 transition-colors">
+                        <button onClick={() => navigate('/posts/trending')} className="w-full py-2 bg-white text-rose-600 rounded-lg text-xs font-black hover:bg-rose-50 transition-colors">
                             Start Exploring
                         </button>
-                        <button className="w-full py-2 bg-white/5 text-white rounded-lg text-xs font-black border border-white/10 hover:bg-white/10 transition-colors">
-                            Join Community
+                        <button onClick={handleJoinClick} className="w-full py-2 bg-white/5 text-white rounded-lg text-xs font-black border border-white/10 hover:bg-white/10 transition-colors">
+                            Join Communities
                         </button>
                     </div>
                 </div>
