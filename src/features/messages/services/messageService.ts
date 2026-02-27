@@ -109,6 +109,31 @@ class MessageService {
     }
 
     /**
+     * Save a message to the backend database (Off-Chain)
+     */
+    async saveMessage(msg: { from: string; to: string; message: string; timestamp?: string }): Promise<any> {
+        if (!this.BACKEND_URL) return { success: false, error: 'Backend URL not configured' };
+
+        try {
+            const response = await fetch(`${this.BACKEND_URL}/api/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(msg)
+            });
+
+            if (response.ok) {
+                return await response.json();
+            } else {
+                const error = await response.text();
+                throw new Error(error || 'Failed to save message');
+            }
+        } catch (error: any) {
+            console.error('❌ [MessageService] Failed to save message:', error.message);
+            throw error;
+        }
+    }
+
+    /**
      * Fetch message history for a user
      */
     async getMessageHistory(username: string, limit: number = 100): Promise<Message[]> {

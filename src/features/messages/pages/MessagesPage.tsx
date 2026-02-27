@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Image, Loader2, Send, Mic, Square, ArrowLeft, MessageCircle, CircleDashed, PlusCircle, MoreVertical, Plus, X, Search, ShieldCheck, Zap, Trash2, Shield, Reply, Smile, Pencil, Volume2, RefreshCw } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
+import rehypeRaw from 'rehype-raw';
+import { Copy, Check, Image, Loader2, Send, Mic, Square, ArrowLeft, MessageCircle, CircleDashed, PlusCircle, MoreVertical, Plus, X, Search, ShieldCheck, Zap, Trash2, Shield, Reply, Smile, Pencil, Volume2, RefreshCw, Bot, Sparkles } from 'lucide-react';
 import { VoiceNotePlayer } from '../../../components/VoiceNotePlayer';
 import { MediaPicker } from '../../../components/MediaPicker';
 import { storyService, GroupedStory } from '../../stories/services/storyService';
@@ -12,6 +16,64 @@ import { useSocket } from '../../../contexts/SocketContext';
 import { messageService, Message, Conversation } from '../services/messageService';
 import { socketService } from '../../../services/socketService';
 import { cloudinaryService } from '../../../services/cloudinaryService';
+import { speechService } from '../services/speechService';
+import { aiService } from '../../../services/aiService';
+
+const CodeBlock = ({ code, language }: { code: string; language: string }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+        navigator.clipboard.writeText(code);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    return (
+        <div className="relative group/code my-4 rounded-xl overflow-hidden bg-[#0f172a] border border-white/10 shadow-2xl">
+            <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/5">
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-widest">{language}</span>
+                <button
+                    onClick={handleCopy}
+                    className="p-1.5 rounded-lg hover:bg-white/10 text-white/60 hover:text-white transition-all flex items-center gap-1.5"
+                    title="Copy code"
+                >
+                    {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                    <span className="text-[10px] font-bold">{copied ? 'Copied!' : 'Copy'}</span>
+                </button>
+            </div>
+            <pre className="p-4 overflow-x-auto scrollbar-thin scrollbar-thumb-white/10">
+                <code className="text-xs md:text-sm text-blue-100/90 font-mono leading-relaxed">
+                    {code}
+                </code>
+            </pre>
+        </div>
+    );
+};
+
+const SpeakButton = ({ text }: { text: string }) => {
+    const [isSpeaking, setIsSpeaking] = useState(false);
+
+    const handleSpeak = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (isSpeaking) {
+            speechService.stop();
+            setIsSpeaking(false);
+        } else {
+            speechService.speak(text, () => setIsSpeaking(false));
+            setIsSpeaking(true);
+        }
+    };
+
+    return (
+        <button
+            onClick={handleSpeak}
+            className={`p-1.5 rounded-lg transition-all flex items-center gap-1.5 ${isSpeaking ? 'bg-[var(--primary-color)] text-white shadow-lg scale-110' : 'bg-white/5 text-white/40 hover:bg-white/10 hover:text-white'}`}
+            title={isSpeaking ? "Stop speaking" : "Speak message"}
+        >
+            <Volume2 size={14} className={isSpeaking ? "animate-pulse" : ""} />
+        </button>
+    );
+};
 
 export function MessagesPage() {
     const [messages, setMessages] = useState<Message[]>([]);
@@ -46,6 +108,8 @@ export function MessagesPage() {
     const [loadingUserDetails, setLoadingUserDetails] = useState(false);
     const [showHeaderActions, setShowHeaderActions] = useState(false);
     const [loadingMessages, setLoadingMessages] = useState(false);
+    const [isAiTyping, setIsAiTyping] = useState(false);
+    const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
 
     const { showNotification } = useNotification();
     const { resetUnreadCount } = useChat();
@@ -171,7 +235,24 @@ export function MessagesPage() {
         try {
             const history = await messageService.getMessageHistory(username);
             setMessages(history);
-            const convos = messageService.getConversations(history, username).filter(c => c.otherUser !== username);
+
+            let convos = messageService.getConversations(history, username).filter(c => c.otherUser !== username);
+
+            // Inject AI Guide at the top if not already present
+            if (!convos.some(c => c.otherUser === '@hive_guide')) {
+                convos = [{
+                    otherUser: '@hive_guide',
+                    lastMessage: {
+                        from: '@hive_guide',
+                        to: username,
+                        message: "Hello! I'm your Hive Guide. Ask me anything about the Hive blockchain!",
+                        timestamp: new Date().toISOString(),
+                        isEncrypted: false
+                    },
+                    unreadCount: 0
+                }, ...convos];
+            }
+
             setConversations(convos);
             if (convos.length > 0 && !selectedUser) {
                 // On mobile, don't auto-select a chat so the list view is shown first
@@ -205,6 +286,11 @@ export function MessagesPage() {
             setSelectedUserDetails(null);
             setShowUserInfo(false);
         }
+
+        // Stop any ongoing AI speech when switching users or starting new work
+        speechService.stop();
+
+        return () => speechService.stop();
     }, [selectedUser]);
 
     // Close chat menu on click outside
@@ -263,12 +349,73 @@ export function MessagesPage() {
 
             // Encrypt if needed
             let finalMessage = payload;
-            if (isSecure) {
+            if (isSecure && selectedUser !== '@hive_guide') {
                 showNotification('Waiting for Keychain encryption...', 'info');
                 finalMessage = await messageService.encryptMessage(username, selectedUser, payload);
             }
 
-            // Send Message
+            // Handle AI Guide Interception
+            if (selectedUser === '@hive_guide') {
+                // Add user message to UI immediately
+                const userMsg: Message = {
+                    from: username,
+                    to: '@hive_guide',
+                    message: payload,
+                    timestamp: new Date().toISOString(),
+                    isEncrypted: false,
+                    id: 'temp-' + Date.now()
+                };
+                setMessages(prev => [...prev, userMsg]);
+                setNewMessage('');
+
+                // Save user message to database
+                messageService.saveMessage({
+                    from: username,
+                    to: '@hive_guide',
+                    message: payload,
+                    timestamp: userMsg.timestamp
+                }).catch(err => console.error('Failed to persist user query:', err));
+
+                // Simulate AI Thinking
+                setIsAiTyping(true);
+                setAiSuggestions([]);
+
+                try {
+                    const aiRes = await aiService.ask(payload);
+
+                    // Add AI response to UI
+                    const aiMsg: Message = {
+                        from: '@hive_guide',
+                        to: username,
+                        message: aiRes.message,
+                        timestamp: new Date().toISOString(),
+                        isEncrypted: false,
+                        id: 'ai-' + Date.now()
+                    };
+
+                    setMessages(prev => [...prev, aiMsg]);
+
+                    // Save AI response to database
+                    messageService.saveMessage({
+                        from: '@hive_guide',
+                        to: username,
+                        message: aiRes.message,
+                        timestamp: aiMsg.timestamp
+                    }).catch(err => console.error('Failed to persist AI response:', err));
+
+                    if (aiRes.suggestions) {
+                        setAiSuggestions(aiRes.suggestions);
+                    }
+                } catch (error) {
+                    console.error('AI Guide error:', error);
+                    showNotification('AI Guide encountered an error. Please try again.', 'error');
+                } finally {
+                    setIsAiTyping(false);
+                }
+                return;
+            }
+
+            // Send Message (Normal flow)
             await messageService.sendMessage(username, selectedUser, finalMessage);
             setNewMessage('');
             setReplyingTo(null);
@@ -521,6 +668,38 @@ export function MessagesPage() {
 
             setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'sent', message: finalMessage, decrypted: combined } : m));
             await messageService.sendMessage(username, selectedUser, finalMessage);
+
+            // --- AI Listening Logic ---
+            if (selectedUser === '@hive_guide') {
+                setIsAiTyping(true);
+                try {
+                    // Convert audio file to Base64 for Gemini multimodal processing
+                    const reader = new FileReader();
+                    reader.readAsDataURL(file);
+                    reader.onloadend = async () => {
+                        const base64Audio = (reader.result as string).split(',')[1];
+
+                        const aiResponse = await aiService.ask("Please listen to this voice note and respond.", base64Audio);
+
+                        const aiMsg: Message = {
+                            from: '@hive_guide',
+                            to: username,
+                            message: aiResponse.message,
+                            timestamp: new Date().toISOString(),
+                            isEncrypted: false,
+                            id: `ai-${Date.now()}`
+                        };
+
+                        setMessages(prev => [...prev, aiMsg]);
+                        messageService.saveMessage(aiMsg);
+                        setIsAiTyping(false);
+                        if (aiResponse.suggestions) setAiSuggestions(aiResponse.suggestions);
+                    };
+                } catch (aiErr) {
+                    console.error('AI Listening failed:', aiErr);
+                    setIsAiTyping(false);
+                }
+            }
         } catch (error: any) {
             showNotification(`Upload failed: ${error.message}`, 'error');
             setMessages(prev => prev.map(m => m.id === tempId ? { ...m, status: 'failed' } : m));
@@ -653,22 +832,78 @@ export function MessagesPage() {
 
             if (!urlMatch) {
                 return (
-                    <div className="relative">
-                        <p className="whitespace-pre-wrap break-words">{displayContent}{shouldTruncate && '...'}</p>
+                    <div className="relative markdown-content">
+                        <ReactMarkdown
+                            remarkPlugins={[remarkGfm, remarkBreaks]}
+                            rehypePlugins={[rehypeRaw]}
+                            components={{
+                                code({ node, inline, className, children, ...props }: any) {
+                                    const match = /language-(\w+)/.exec(className || '');
+                                    const codeText = String(children).replace(/\n$/, '');
+
+                                    if (!inline && match) {
+                                        return <CodeBlock code={codeText} language={match[1]} />;
+                                    }
+                                    return (
+                                        <code className={`${className} bg-[var(--bg-canvas)]/50 px-1 rounded text-sm`} {...props}>
+                                            {children}
+                                        </code>
+                                    );
+                                },
+                                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                                a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">{children}</a>,
+                                ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                                ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
+                            }}
+                        >
+                            {displayContent}
+                        </ReactMarkdown>
+                        {shouldTruncate && <span className="text-[var(--text-secondary)]">...</span>}
                         <TruncateToggle />
                     </div>
                 );
             }
 
             const url = urlMatch[0];
-            const cleanCaption = displayContent.replace(url, '').replace('[IMAGE]', '').replace('[AUDIO]', '').trim();
+            const cleanContent = displayContent.replace(url, '').replace('[IMAGE]', '').replace('[AUDIO]', '').trim();
 
             const isAudio = displayContent.includes('[AUDIO]') || /\/video\/upload\//.test(url) || /\.(mp3|wav|ogg|webm)(\?|$)/i.test(url);
             const isImage = displayContent.includes('[IMAGE]') || /\/image\/upload\//.test(url) || /\.(png|jpg|jpeg|gif|webp|svg)(\?|$)/i.test(url);
 
+            const TextBody = () => cleanContent ? (
+                <div className="markdown-content mb-3">
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkBreaks]}
+                        rehypePlugins={[rehypeRaw]}
+                        components={{
+                            code({ node, inline, className, children, ...props }: any) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                const codeText = String(children).replace(/\n$/, '');
+
+                                if (!inline && match) {
+                                    return <CodeBlock code={codeText} language={match[1]} />;
+                                }
+                                return (
+                                    <code className={`${className} bg-[var(--bg-canvas)]/50 px-1 rounded text-sm`} {...props}>
+                                        {children}
+                                    </code>
+                                );
+                            },
+                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                            a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">{children}</a>,
+                            ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
+                        }}
+                    >
+                        {cleanContent}
+                    </ReactMarkdown>
+                </div>
+            ) : null;
+
             if (isAudio) {
                 return (
                     <div className="relative inline-block w-full min-w-[220px]">
+                        <TextBody />
                         <div className={`transition-all ${msg.status === 'uploading' ? 'opacity-60 pointer-events-none' : ''} ${msg.status === 'failed' ? 'opacity-50 pointer-events-none' : ''}`}>
                             <VoiceNotePlayer src={url} />
                         </div>
@@ -716,17 +951,40 @@ export function MessagesPage() {
                                 </div>
                             )}
                         </div>
-                        {(msg.caption || cleanCaption) && (
-                            <p className="whitespace-pre-wrap text-sm break-words">{msg.caption || cleanCaption}{shouldTruncate && '...'}</p>
-                        )}
+                        <TextBody />
                         <TruncateToggle />
                     </div>
                 );
             }
 
             return (
-                <div className="relative">
-                    <p className="whitespace-pre-wrap break-words">{displayContent}{shouldTruncate && '...'}</p>
+                <div className="relative markdown-content">
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm, remarkBreaks]}
+                        rehypePlugins={[rehypeRaw]}
+                        components={{
+                            code({ node, inline, className, children, ...props }: any) {
+                                const match = /language-(\w+)/.exec(className || '');
+                                const codeText = String(children).replace(/\n$/, '');
+
+                                if (!inline && match) {
+                                    return <CodeBlock code={codeText} language={match[1]} />;
+                                }
+                                return (
+                                    <code className={`${className} bg-[var(--bg-canvas)]/50 px-1 rounded text-sm`} {...props}>
+                                        {children}
+                                    </code>
+                                );
+                            },
+                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                            a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">{children}</a>,
+                            ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
+                        }}
+                    >
+                        {displayContent}
+                    </ReactMarkdown>
+                    {shouldTruncate && <span className="text-[var(--text-secondary)]">...</span>}
                     <TruncateToggle />
                 </div>
             );
@@ -787,7 +1045,10 @@ export function MessagesPage() {
                         </button>
                     );
                 })()}
-                {renderBody(text, msg.id?.toString() || '')}
+                <div className="flex items-center gap-2">
+                    {renderBody(text, msg.id?.toString() || '')}
+                    {msg.from === '@hive_guide' && <SpeakButton text={text} />}
+                </div>
                 {/* Edited label */}
                 {(msg as any).edited && (
                     <p className="text-[9px] text-white/40 italic">edited</p>
@@ -998,13 +1259,24 @@ export function MessagesPage() {
                                                 <div className={`absolute left-0 top-0 bottom-0 w-1 bg-[var(--primary-color)] transition-opacity ${selectedUser === convo.otherUser ? 'opacity-100' : 'opacity-0 group-hover:opacity-30'}`} />
 
                                                 <div className="relative">
-                                                    <img
-                                                        src={`https://images.hive.blog/u/${convo.otherUser}/avatar`}
-                                                        alt={convo.otherUser}
-                                                        className="w-12 h-12 rounded-full shadow-sm object-cover"
-                                                    />
-                                                    {onlineUsers.includes(convo.otherUser) && (
+                                                    {convo.otherUser === '@hive_guide' ? (
+                                                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[var(--primary-color)] to-amber-500 flex items-center justify-center text-white shadow-lg">
+                                                            <Bot size={24} />
+                                                        </div>
+                                                    ) : (
+                                                        <img
+                                                            src={`https://images.hive.blog/u/${convo.otherUser}/avatar`}
+                                                            alt={convo.otherUser}
+                                                            className="w-12 h-12 rounded-full shadow-sm object-cover"
+                                                        />
+                                                    )}
+                                                    {onlineUsers.includes(convo.otherUser) && convo.otherUser !== '@hive_guide' && (
                                                         <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-[var(--bg-card)] rounded-full" title="Online" />
+                                                    )}
+                                                    {convo.otherUser === '@hive_guide' && (
+                                                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-amber-500 border-2 border-[var(--bg-card)] rounded-full flex items-center justify-center text-[8px] text-white font-bold" title="AI Assistant">
+                                                            <Sparkles size={8} />
+                                                        </div>
                                                     )}
                                                 </div>
                                                 <div className="flex-1 text-left min-w-0">
@@ -1137,19 +1409,39 @@ export function MessagesPage() {
                                             onClick={() => setShowUserInfo(true)}
                                         >
                                             <div className="relative">
-                                                <img
-                                                    src={`https://images.hive.blog/u/${selectedUser}/avatar`}
-                                                    alt={selectedUser}
-                                                    className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover ring-2 ring-transparent group-hover:ring-[var(--primary-color)]/50 transition-all border border-[var(--border-color)]"
-                                                />
-                                                {onlineUsers.includes(selectedUser!) && (
+                                                {selectedUser === '@hive_guide' ? (
+                                                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-tr from-[var(--primary-color)] to-amber-500 flex items-center justify-center text-white shadow-lg">
+                                                        <Bot size={24} />
+                                                    </div>
+                                                ) : (
+                                                    <img
+                                                        src={`https://images.hive.blog/u/${selectedUser}/avatar`}
+                                                        alt={selectedUser}
+                                                        className="w-10 h-10 md:w-12 md:h-12 rounded-full object-cover ring-2 ring-transparent group-hover:ring-[var(--primary-color)]/50 transition-all border border-[var(--border-color)]"
+                                                    />
+                                                )}
+                                                {onlineUsers.includes(selectedUser!) && selectedUser !== '@hive_guide' && (
                                                     <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[var(--bg-card)] rounded-full" />
+                                                )}
+                                                {selectedUser === '@hive_guide' && (
+                                                    <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-amber-500 border-2 border-[var(--bg-card)] rounded-full flex items-center justify-center text-white shadow-sm">
+                                                        <Sparkles size={10} />
+                                                    </div>
                                                 )}
                                             </div>
                                             <div className="min-w-0">
-                                                <div className="font-bold truncate text-[var(--text-primary)]">@{selectedUser}</div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="font-bold truncate text-[var(--text-primary)]">
+                                                        {selectedUser === '@hive_guide' ? 'Hive Guide' : `@${selectedUser}`}
+                                                    </div>
+                                                    {selectedUser === '@hive_guide' && (
+                                                        <div className="px-1.5 py-0.5 bg-amber-500/10 text-amber-500 dark:text-amber-400 text-[10px] font-black uppercase rounded-[4px] border border-amber-500/20">AI</div>
+                                                    )}
+                                                </div>
                                                 <div className="text-[10px] text-[var(--text-secondary)] flex items-center gap-1">
-                                                    {onlineUsers.includes(selectedUser!) ? (
+                                                    {selectedUser === '@hive_guide' ? (
+                                                        <span className="flex items-center gap-1 text-amber-500/80 font-medium">Assistant</span>
+                                                    ) : onlineUsers.includes(selectedUser!) ? (
                                                         <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" /> Online</span>
                                                     ) : 'Offline'}
                                                 </div>
@@ -1190,6 +1482,20 @@ export function MessagesPage() {
                                                 <>
                                                     <div className="fixed inset-0 z-40" onClick={() => setShowHeaderActions(false)} />
                                                     <div className="absolute top-full right-0 mt-2 w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                        {selectedUser === '@hive_guide' && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    const current = speechService.getGender();
+                                                                    const next = current === 'female' ? 'male' : 'female';
+                                                                    speechService.setGender(next);
+                                                                    showNotification(`AI voice set to ${next}`, 'success');
+                                                                    setShowHeaderActions(false);
+                                                                }}
+                                                                className="w-full px-4 py-3 flex items-center gap-3 text-sm hover:bg-[var(--primary-color)]/5 transition-all font-bold text-[var(--primary-color)] border-b border-[var(--border-color)]/50"
+                                                            >
+                                                                <Volume2 size={16} /> Change Voice ({speechService.getGender()})
+                                                            </button>
+                                                        )}
                                                         <button
                                                             onClick={() => { setShowUserInfo(true); setShowHeaderActions(false); }}
                                                             className="w-full px-4 py-3 flex items-center gap-3 text-sm hover:bg-[var(--primary-color)]/5 transition-all font-medium text-[var(--text-primary)]"
@@ -1310,6 +1616,20 @@ export function MessagesPage() {
                                                     </div>
                                                 );
                                             })}
+                                            {isAiTyping && (
+                                                <div className="flex items-start gap-2 mb-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[var(--primary-color)] to-amber-500 flex items-center justify-center text-white shadow-md">
+                                                        <Bot size={16} />
+                                                    </div>
+                                                    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] px-4 py-3 rounded-2xl rounded-bl-none shadow-sm">
+                                                        <div className="flex gap-1.5">
+                                                            <div className="w-1.5 h-1.5 bg-[var(--text-secondary)]/50 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                                            <div className="w-1.5 h-1.5 bg-[var(--text-secondary)]/50 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                                            <div className="w-1.5 h-1.5 bg-[var(--text-secondary)]/50 rounded-full animate-bounce" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                             <div ref={chatEndRef} className="h-4" />
                                         </div>
                                     )}
@@ -1320,6 +1640,26 @@ export function MessagesPage() {
                                     onSubmit={handleSendMessage}
                                     className="p-4 bg-[var(--bg-card)]/50 backdrop-blur-md border-t border-[var(--border-color)] relative z-40"
                                 >
+                                    {/* AI Suggestions */}
+                                    {selectedUser === '@hive_guide' && aiSuggestions.length > 0 && (
+                                        <div className="flex gap-2 mb-4 overflow-x-auto scrollbar-none pb-1 animate-in slide-in-from-bottom-2 duration-300">
+                                            {aiSuggestions.map((suggestion, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setNewMessage(suggestion);
+                                                        // Use a temporary event-like object to trigger send
+                                                        handleSendMessage({ preventDefault: () => { } } as any);
+                                                    }}
+                                                    className="whitespace-nowrap px-4 py-2 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-bold border border-amber-500/20 hover:bg-amber-500/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
+                                                >
+                                                    <Sparkles size={12} />
+                                                    {suggestion}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                     {/* Media Previews */}
                                     {pendingImagePreviewUrl && (
                                         <div className="media-preview-container flex items-center gap-4">
