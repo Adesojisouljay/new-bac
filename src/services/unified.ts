@@ -1,5 +1,5 @@
 import { hiveClient } from './hive/client';
-// import { apiClient } from './api/client';
+import { transactionService, WalletOperation } from '../features/wallet/services/transactionService';
 
 export interface Post {
     id: string;
@@ -57,6 +57,11 @@ export interface MarketTrade {
     open_pays: string;
 }
 
+export interface TrendingTag {
+    id: string;
+    title: string;
+}
+
 export interface OpenOrder {
     id: number;
     orderid: number;
@@ -67,6 +72,7 @@ export interface OpenOrder {
 }
 
 export interface CommunityDetails {
+    id: string;
     title: string;
     about: string;
     subscribers: number;
@@ -111,6 +117,7 @@ export const UnifiedDataService = {
             }
 
             return {
+                id: name,
                 title: bridgeData.title,
                 about: bridgeData.about,
                 subscribers: bridgeData.subscribers,
@@ -138,7 +145,7 @@ export const UnifiedDataService = {
      */
     getCommunityFeed: async (
         tag: string,
-        sort: 'trending' | 'created' | 'hot' = 'created',
+        sort: 'trending' | 'created' | 'hot' | 'promoted' | 'payout' | 'muted' = 'created',
         limit: number = 20,
         start_author?: string,
         start_permlink?: string
@@ -151,7 +158,7 @@ export const UnifiedDataService = {
             // 2. Fallback to Hive Bridge API
             try {
                 const params: any = {
-                    tag,
+                    tag: tag === 'global' ? '' : tag,
                     sort,
                     limit: limit, // Strict limit of 20 for Bridge API
                 };
@@ -202,6 +209,111 @@ export const UnifiedDataService = {
             }
         }
     },
+
+    /**
+     * Fetches the following feed (posts from people the user follows)
+     */
+    getFollowingFeed: async (
+        username: string,
+        limit: number = 20,
+        start_author?: string,
+        start_permlink?: string
+    ): Promise<Post[]> => {
+        try {
+            const params: any = {
+                account: username,
+                sort: 'feed',
+                limit
+            };
+
+            if (start_author && start_permlink) {
+                params.start_author = start_author;
+                params.start_permlink = start_permlink;
+            }
+
+            const result = await hiveClient.call('bridge', 'get_account_posts', params);
+
+            if (!result || !Array.isArray(result)) return [];
+
+            let posts = result;
+            if (start_author && start_permlink && posts.length > 0) {
+                if (posts[0].author === start_author && posts[0].permlink === start_permlink) {
+                    posts = posts.slice(1);
+                }
+            }
+
+            return posts.map((post: any) => ({
+                id: `${post.author}/${post.permlink}`,
+                author: post.author,
+                permlink: post.permlink,
+                title: post.title,
+                body: post.body,
+                created: post.created,
+                json_metadata: post.json_metadata,
+                pending_payout_value: post.pending_payout_value,
+                total_payout_value: post.total_payout_value,
+                curator_payout_value: post.curator_payout_value,
+                active_votes: post.active_votes || [],
+                children: post.children,
+                stats: post.stats,
+                reblogged_by: post.reblogged_by || [],
+                community: post.community,
+                category: post.category,
+                author_reputation: UnifiedDataService.formatReputation(post.author_reputation)
+            }));
+        } catch (error) {
+            console.error('Failed to fetch following feed:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Fetches the list of users that a specific user is following.
+     * condenser_api.get_following is paginated with a max limit of 100 per request.
+     */
+    getFollowing: async (username: string, limit: number = 1000): Promise<string[]> => {
+        try {
+            let following: string[] = [];
+            let startAccount = '';
+
+            while (following.length < limit) {
+                const requestLimit = Math.min(100, limit - following.length + (startAccount ? 1 : 0));
+                const result = await hiveClient.call('condenser_api', 'get_following', [username, startAccount, 'blog', requestLimit]);
+
+                if (!result || !Array.isArray(result) || result.length === 0) break;
+
+                // If paginating, the first result is the `startAccount` from the previous request
+                const accounts = startAccount ? result.slice(1) : result;
+                if (accounts.length === 0) break;
+
+                following = following.concat(accounts.map((item: any) => item.following));
+                startAccount = result[result.length - 1].following;
+
+                // If we got fewer results than requested, we've reached the end
+                if (result.length < requestLimit) break;
+            }
+
+            return following;
+        } catch (error) {
+            console.error('Failed to fetch following list:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Fetches the list of communities that a specific user is subscribed to.
+     */
+    getSubscriptions: async (username: string): Promise<string[]> => {
+        try {
+            const result = await hiveClient.call('bridge', 'list_all_subscriptions', { account: username });
+            if (!result || !Array.isArray(result)) return [];
+            return result.map((item: any) => item[0]); // item format: [community_id, title, role, label]
+        } catch (error) {
+            console.error('Failed to fetch subscriptions:', error);
+            return [];
+        }
+    },
+
 
     /**
      * Fetches a post.
@@ -654,81 +766,78 @@ export const UnifiedDataService = {
     },
 
     /**
-     * Follows or unfollows a user via Hive Keychain
+     * Follows or unfollows a user
      */
     followUser: async (follower: string, following: string, isFollowing: boolean): Promise<boolean> => {
-        return new Promise((resolve) => {
-            const keychain = (window as any).hive_keychain;
-            if (!keychain) {
-                console.error('Hive Keychain not found');
-                resolve(false);
-                return;
-            }
-
-            const json = JSON.stringify([
-                'follow',
-                {
-                    follower,
-                    following,
-                    what: isFollowing ? [] : ['blog'] // Empty array means unfollow
-                }
-            ]);
-
-            keychain.requestCustomJson(
+        try {
+            const op: WalletOperation = {
+                type: 'follow',
+                username: follower,
                 follower,
-                'follow',
-                'Posting',
-                json,
-                isFollowing ? `Unfollowing ${following}...` : `Following ${following}...`,
-                (response: any) => {
-                    if (response.success) {
-                        resolve(true);
-                    } else {
-                        console.error('Follow operation failed:', response.message);
-                        resolve(false);
-                    }
-                }
-            );
-        });
+                following,
+                isFollowing
+            };
+            const result = await transactionService.broadcast(op);
+            if (!result.success) {
+                console.error('Follow operation failed:', result.error);
+            }
+            return result.success;
+        } catch (error) {
+            console.error('Follow operation threw an error:', error);
+            return false;
+        }
     },
 
     /**
-     * Mutes or unmutes a user via Hive Keychain
+     * Mutes or unmutes a user
      */
     muteUser: async (follower: string, following: string, isMuted: boolean): Promise<boolean> => {
-        return new Promise((resolve) => {
-            const keychain = (window as any).hive_keychain;
-            if (!keychain) {
-                console.error('Hive Keychain not found');
-                resolve(false);
-                return;
-            }
-
-            const json = JSON.stringify([
-                'follow',
-                {
-                    follower,
-                    following,
-                    what: isMuted ? [] : ['ignore'] // Empty array means unmute
+        try {
+            // Muting uses the same follow operation structure, but with what: ['ignore'] (or [] for unmute)
+            // For now, transactionService handles follow/unfollow. 
+            // We can extend it for mute if needed, but for now we'll construct the follow op 
+            // and assume we need to extend the transactionService to explicitly handle mute state if it diverges from isFollowing structure.
+            // Actually, looking at transactionService, follow expects isFollowing boolean to set 'blog' or [].
+            // To properly support mute, we would need to edit transactionService FollowOperation to support 'ignore'.
+            // For now, we will leave the direct keychain call for MUTE to avoid breaking changes, 
+            // since the user's primary request is about following and joining communities.
+            return new Promise((resolve) => {
+                const keychain = (window as any).hive_keychain;
+                if (!keychain) {
+                    console.error('Hive Keychain not found');
+                    resolve(false);
+                    return;
                 }
-            ]);
 
-            keychain.requestCustomJson(
-                follower,
-                'follow',
-                'Posting',
-                json,
-                isMuted ? `Unmuting ${following}...` : `Muting ${following}...`,
-                (response: any) => {
-                    if (response.success) {
-                        resolve(true);
-                    } else {
-                        console.error('Mute operation failed:', response.message);
-                        resolve(false);
+                const json = JSON.stringify([
+                    'follow',
+                    {
+                        follower,
+                        following,
+                        what: isMuted ? ['ignore'] : [] // Empty array means unmute
                     }
-                }
-            );
-        });
+                ]);
+
+                keychain.requestCustomJson(
+                    follower,
+                    'follow',
+                    'Posting',
+                    json,
+                    isMuted ? `Muting ${following}...` : `Unmuting ${following}...`,
+                    (response: any) => {
+                        if (response.success) {
+                            resolve(true);
+                        } else {
+                            console.error('Mute operation failed:', response.message);
+                            resolve(false);
+                        }
+                    }
+                );
+            });
+        } catch (error) {
+            console.error('Mute operation threw an error:', error);
+            return false;
+        }
     },
 
     /**
@@ -822,6 +931,184 @@ export const UnifiedDataService = {
         } catch (error) {
             console.error(`Failed to fetch open orders for ${username}:`, error);
             return [];
+        }
+    },
+
+    /**
+     * Fetches a list of trending/active communities.
+     */
+    getTrendingCommunities: async (limit: number = 10, query: string = ''): Promise<CommunityDetails[]> => {
+        try {
+            const params: any = {
+                limit,
+                sort: 'rank'
+            };
+
+            if (query.trim()) {
+                params.query = query.trim();
+            }
+
+            const result = await hiveClient.call('bridge', 'list_communities', params);
+
+            if (!result || !Array.isArray(result)) return [];
+
+            return result.map((c: any) => ({
+                id: c.name,
+                name: c.name,
+                title: c.title,
+                about: c.about,
+                subscribers: c.subscribers,
+                pending_rewards: c.sum_pending,
+                authors: c.num_authors,
+                team: [], // list_communities doesn't return team
+                avatar_url: `https://images.hive.blog/u/${c.name}/avatar/small`,
+            }));
+        } catch (error) {
+            console.error('Failed to fetch trending communities:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Fetches global Hive market data.
+     */
+    getHiveGlobals: async () => {
+        try {
+            const ticker = await UnifiedDataService.getMarketTicker();
+            const props = await hiveClient.database.getDynamicGlobalProperties();
+
+            return {
+                ticker,
+                props
+            };
+        } catch (error) {
+            console.error('Failed to fetch hive globals:', error);
+            return null;
+        }
+    },
+
+    /**
+     * Fetches suggested users to follow based on trending activity.
+     */
+    getSuggestedUsers: async (limit: number = 5): Promise<{ username: string; reputation: number; avatar_url: string }[]> => {
+        try {
+            const trendingPosts = await UnifiedDataService.getCommunityFeed('global', 'trending', 20);
+            const uniqueAuthors = new Map<string, { username: string; reputation: number; avatar_url: string }>();
+
+            for (const post of trendingPosts) {
+                if (!uniqueAuthors.has(post.author) && uniqueAuthors.size < limit) {
+                    uniqueAuthors.set(post.author, {
+                        username: post.author,
+                        reputation: post.author_reputation || 25,
+                        avatar_url: `https://images.hive.blog/u/${post.author}/avatar/small`
+                    });
+                }
+            }
+
+            return Array.from(uniqueAuthors.values());
+        } catch (error) {
+            console.error('Failed to fetch suggested users:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Searches for Hive profiles by username prefix.
+     */
+    searchProfiles: async (query: string, limit: number = 10): Promise<{ username: string; reputation: number; avatar_url: string }[]> => {
+        try {
+            if (!query.trim()) return [];
+            const usernames = await hiveClient.call('condenser_api', 'lookup_accounts', [query.toLowerCase().trim(), limit]);
+
+            if (!Array.isArray(usernames)) return [];
+
+            // For now, return basic info. We could fetch full accounts here if needed,
+            // but for a search list, username and avatar (generated) are often enough.
+            return usernames.map(username => ({
+                username,
+                reputation: 25, // Default or fetch if needed
+                avatar_url: `https://images.hive.blog/u/${username}/avatar/small`
+            }));
+        } catch (error) {
+            console.error('Failed to search profiles:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Fetches trending topics (tags).
+     */
+    getTrendingTags: async (limit: number = 20): Promise<TrendingTag[]> => {
+        try {
+            const result = await hiveClient.call('bridge', 'get_trending_topics', {
+                limit,
+                observer: ''
+            });
+
+            if (!result || !Array.isArray(result)) return [];
+
+            // Map the [id, title] array format seen in logs
+            return result.map((item: any) => {
+                if (Array.isArray(item) && item.length >= 2) {
+                    return { id: item[0], title: item[1] };
+                }
+                if (typeof item === 'string') {
+                    return { id: item, title: item };
+                }
+                if (item && typeof item === 'object') {
+                    const id = item.name || item.word || item.tag || '';
+                    const title = item.title || id;
+                    return { id, title };
+                }
+                return { id: '', title: '' };
+            }).filter(t => t.id !== '');
+        } catch (error) {
+            console.error('Failed to fetch trending tags:', error);
+            return [];
+        }
+    },
+
+    /**
+     * Subscribes to a community
+     */
+    subscribeCommunity: async (username: string, communityId: string): Promise<boolean> => {
+        try {
+            const op: WalletOperation = {
+                type: 'subscribe',
+                username,
+                community: communityId,
+                isSubscribing: true
+            };
+            const result = await transactionService.broadcast(op);
+            if (!result.success) {
+                console.error('Subscribe operation failed:', result.error);
+            }
+            return result.success;
+        } catch (error) {
+            console.error('Subscribe operation threw an error:', error);
+            return false;
+        }
+    },
+
+    /**
+     * Unsubscribes from a community
+     */
+    unsubscribeCommunity: async (username: string, communityId: string): Promise<boolean> => {
+        try {
+            const op: WalletOperation = {
+                type: 'subscribe',
+                username,
+                community: communityId,
+                isSubscribing: false
+            };
+            const result = await transactionService.broadcast(op);
+            if (!result.success) {
+                console.error('Unsubscribe operation failed:', result.error);
+            }
+            return result.success;
+        } catch (error) {
+            console.error('Unsubscribe operation threw an error:', error);
+            return false;
         }
     }
 };

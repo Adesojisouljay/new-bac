@@ -3,10 +3,23 @@ import { KeychainSDK } from 'keychain-sdk';
 const keychain = new KeychainSDK(window);
 
 // Types for wallet operations
-export type OperationType = 'transfer' | 'power_up' | 'power_down' | 'delegate' | 'delegate_rc' | 'deposit_savings' | 'withdraw_savings' | 'vote' | 'comment' | 'reblog' | 'limit_order_create' | 'limit_order_cancel' | 'witness_vote' | 'proposal_vote' | 'messaging';
+export type OperationType = 'transfer' | 'power_up' | 'power_down' | 'delegate' | 'delegate_rc' | 'deposit_savings' | 'withdraw_savings' | 'vote' | 'comment' | 'reblog' | 'limit_order_create' | 'limit_order_cancel' | 'witness_vote' | 'proposal_vote' | 'messaging' | 'follow' | 'subscribe';
 
 interface BaseOperation {
     username: string;
+}
+
+interface FollowOperation extends BaseOperation {
+    type: 'follow';
+    follower: string;
+    following: string;
+    isFollowing: boolean;
+}
+
+interface SubscribeOperation extends BaseOperation {
+    type: 'subscribe';
+    community: string;
+    isSubscribing: boolean;
 }
 
 interface TransferOperation extends BaseOperation {
@@ -121,7 +134,7 @@ interface MessagingOperation extends BaseOperation {
     message: string;
 }
 
-export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation;
+export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation;
 
 export const transactionService = {
     /**
@@ -136,7 +149,7 @@ export const transactionService = {
         const username = op.username;
 
         // Check if this is a Posting-level operation that can be relayed
-        const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc', 'messaging'];
+        const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc', 'messaging', 'follow', 'subscribe'];
 
         if (postingOps.includes(op.type)) {
             const relayAccount = 'breakaway.app';
@@ -238,6 +251,26 @@ export const transactionService = {
                         required_posting_auths: [op.username],
                         id: "messaging",
                         json: JSON.stringify(["message", { to: msgOp.to, message: msgOp.message, v: '1.0' }])
+                    }]];
+                    break;
+                }
+                case 'follow': {
+                    const followOp = op as FollowOperation;
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [op.username],
+                        id: "follow",
+                        json: JSON.stringify(["follow", { follower: followOp.follower, following: followOp.following, what: followOp.isFollowing ? ['blog'] : [] }])
+                    }]];
+                    break;
+                }
+                case 'subscribe': {
+                    const subOp = op as SubscribeOperation;
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [op.username],
+                        id: "community",
+                        json: JSON.stringify([subOp.isSubscribing ? 'subscribe' : 'unsubscribe', { community: subOp.community }])
                     }]];
                     break;
                 }
@@ -527,6 +560,30 @@ export const transactionService = {
                         display_msg: 'Send Private Message'
                     });
                     break;
+                case 'follow': {
+                    const followOp = op as FollowOperation;
+                    const json = JSON.stringify(["follow", { follower: followOp.follower, following: followOp.following, what: followOp.isFollowing ? ['blog'] : [] }]);
+                    result = await keychain.custom({
+                        username: op.username,
+                        id: 'follow',
+                        method: 'Posting' as any,
+                        json: json,
+                        display_msg: followOp.isFollowing ? `Follow ${followOp.following}` : `Unfollow ${followOp.following}`
+                    });
+                    break;
+                }
+                case 'subscribe': {
+                    const subOp = op as SubscribeOperation;
+                    const json = JSON.stringify([subOp.isSubscribing ? 'subscribe' : 'unsubscribe', { community: subOp.community }]);
+                    result = await keychain.custom({
+                        username: op.username,
+                        id: 'community',
+                        method: 'Posting' as any,
+                        json: json,
+                        display_msg: subOp.isSubscribing ? `Join ${subOp.community}` : `Leave ${subOp.community}`
+                    });
+                    break;
+                }
             }
 
             return result as { success: boolean; result?: any; error?: string };
@@ -709,6 +766,28 @@ export const transactionService = {
                 }]];
                 keyType = 'posting';
                 break;
+            case 'follow': {
+                const followOp = op as FollowOperation;
+                operation = [["custom_json", {
+                    required_auths: [],
+                    required_posting_auths: [op.username],
+                    id: 'follow',
+                    json: JSON.stringify(["follow", { follower: followOp.follower, following: followOp.following, what: followOp.isFollowing ? ['blog'] : [] }])
+                }]];
+                keyType = 'posting';
+                break;
+            }
+            case 'subscribe': {
+                const subOp = op as SubscribeOperation;
+                operation = [["custom_json", {
+                    required_auths: [],
+                    required_posting_auths: [op.username],
+                    id: 'community',
+                    json: JSON.stringify([subOp.isSubscribing ? 'subscribe' : 'unsubscribe', { community: subOp.community }])
+                }]];
+                keyType = 'posting';
+                break;
+            }
             default:
                 return { success: false, error: "Unsupported operation" };
         }

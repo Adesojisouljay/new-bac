@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { UnifiedDataService, Post } from '../../../services/unified';
 import { PostCard } from '../../feed/components/PostCard';
 import { CommentCard } from '../components/CommentCard';
 import { WalletView } from '../components/WalletView';
 import { useCommunity } from '../../community/context/CommunityContext';
-import { MapPin, Globe, Calendar, Rss, Shield } from 'lucide-react';
+import { MapPin, Globe, Calendar, Rss, Shield, Search, ChevronDown, X } from 'lucide-react';
 
 export default function ProfilePage() {
     const params = useParams();
@@ -30,6 +30,9 @@ export default function ProfilePage() {
     const [loading, setLoading] = useState(true);
     const [contentLoading, setContentLoading] = useState(false);
     const [coverError, setCoverError] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+    const [showMoreTabs, setShowMoreTabs] = useState(false);
     const [currentUser] = useState<string | null>(localStorage.getItem('hive_user'));
 
     const [isFollowing, setIsFollowing] = useState(false);
@@ -94,6 +97,7 @@ export default function ProfilePage() {
             setContentLoading(true);
             setHasMore(true); // Reset hasMore on tab change
             setFeed([]); // Clear previous feed to avoid flicker
+            setSearchQuery(''); // Clear previous search queries
 
             if (activeTab === 'wallet') {
                 if (!wallet || wallet.username !== username) { // Fetch if not loaded or user changed
@@ -201,120 +205,312 @@ export default function ProfilePage() {
     };
 
     const handleTabChange = (tab: string) => {
+        setSearchQuery(''); // Reset search on tab change
+        setIsSearchExpanded(false);
+        setShowMoreTabs(false);
         navigate(`/@${username}/${tab}`);
     };
+
+    // Client-side text search over the currently loaded feed (posts/comments)
+    const filteredFeed = useMemo(() => {
+        if (!searchQuery.trim()) return feed;
+        const lowerQuery = searchQuery.toLowerCase();
+        return feed.filter(post =>
+            post.title?.toLowerCase().includes(lowerQuery) ||
+            post.body?.toLowerCase().includes(lowerQuery)
+        );
+    }, [feed, searchQuery]);
 
     if (!username) return <div>User not found</div>;
     if (loading && !profile) return <div className="p-8 text-center text-[var(--text-secondary)]">Loading profile...</div>;
 
-    const avatar = profile?.avatar_url || `https://images.hive.blog/u/${username}/avatar/large`;
     const hasCover = profile?.cover_url && !coverError;
 
     return (
-        <div className="max-w-[1400px] mx-auto pb-12 px-4 md:px-6">
-            {/* Header Section */}
-            <div className="relative mb-8 group">
-                {/* Cover Image or Gradient */}
-                <div className={`h-64 md:h-80 rounded-xl overflow-hidden ${!hasCover ? 'bg-gradient-to-r from-[var(--primary-color)] to-[var(--secondary-color)]' : 'bg-gray-200 dark:bg-gray-800'} relative`}>
-                    {hasCover ? (
-                        <img
-                            src={profile.cover_url}
-                            alt="Cover"
-                            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                            onError={() => setCoverError(true)}
-                        />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center opacity-20">
-                            <span className="text-9xl">👤</span>
-                        </div>
-                    )}
-
-                    {/* Gradient Overlay for text readability if no glass card used, but we use glass card */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
-                </div>
-
-                {/* Glassmorphism Profile Card Overlay */}
-                <div className="absolute bottom-0 left-0 w-full md:w-auto md:max-w-2xl md:bottom-8 md:left-8 p-4 md:p-0">
-                    <div className="backdrop-blur-xl bg-black/40 border border-white/10 rounded-2xl p-6 text-white shadow-2xl">
-                        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-                            {/* Avatar */}
-                            <div className="relative">
+        <div className="max-w-[1400px] mx-auto pb-12 px-4 md:px-8 mt-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* Left Column - Profile Sidebar */}
+                <div className="lg:col-span-3 space-y-6">
+                    {/* Unified Profile Card */}
+                    <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] overflow-hidden shadow-sm">
+                        {/* Shorter Cover Image */}
+                        <div className={`h-32 relative ${!hasCover ? 'bg-gradient-to-r from-[var(--primary-color)] to-[var(--secondary-color)]' : 'bg-gray-200 dark:bg-gray-800'}`}>
+                            {hasCover ? (
                                 <img
-                                    src={avatar}
-                                    alt={username}
-                                    className="w-24 h-24 md:w-28 md:h-28 rounded-full border-4 border-white/20 shadow-lg object-cover"
+                                    src={profile?.cover_url}
+                                    alt="Cover"
+                                    className="w-full h-full object-cover"
+                                    onError={() => setCoverError(true)}
                                 />
-                                <div className="absolute -bottom-2 -right-2 bg-[var(--primary-color)] text-white text-xs font-bold px-2 py-1 rounded-full border border-white/20">
-                                    {profile?.reputation || 25}
-                                </div>
-                            </div>
-
-                            {/* Details */}
-                            <div className="flex-1">
-                                <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-white/80">
-                                    {profile?.name || username}
-                                </h1>
-                                <p className="text-white/70 font-medium">@{username}</p>
-                            </div>
-
-                            {/* Actions (Desktop) */}
-                            {currentUser !== username && (
-                                <div className="hidden md:flex flex-col gap-2">
-                                    <button
-                                        onClick={handleFollow}
-                                        disabled={actionLoading}
-                                        className={`px-6 py-2 rounded-full font-bold transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 min-w-[120px] ${isFollowing
-                                                ? 'bg-white/10 text-white border border-white/20 hover:bg-red-500/20 hover:border-red-500/50 hover:text-red-500 group'
-                                                : 'bg-white text-black hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        {isFollowing ? (
-                                            <>
-                                                <span className="group-hover:hidden">Following</span>
-                                                <span className="hidden group-hover:inline">Unfollow</span>
-                                            </>
-                                        ) : 'Follow'}
-                                    </button>
-                                    <button
-                                        onClick={handleMute}
-                                        disabled={actionLoading}
-                                        className={`px-6 py-2 rounded-full font-bold transition-all backdrop-blur-md border min-w-[120px] ${isMuted
-                                                ? 'bg-red-500 text-white border-red-600 hover:bg-red-600'
-                                                : 'bg-white/10 text-white border-white/20 hover:bg-white/20'
-                                            }`}
-                                    >
-                                        {isMuted ? 'Muted' : 'Mute'}
-                                    </button>
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center opacity-20">
+                                    <span className="text-5xl">👤</span>
                                 </div>
                             )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+                        </div>
+
+                        {/* Profile Info */}
+                        <div className="px-6 pb-6 relative">
+                            {/* Floating Avatar */}
+                            <div className="absolute -top-12 left-6">
+                                <div className="relative">
+                                    <img
+                                        src={`https://images.hive.blog/u/${username?.toLowerCase()}/avatar/large`}
+                                        alt={username}
+                                        className="w-24 h-24 rounded-full border-4 border-[var(--bg-card)] shadow-md object-cover bg-[var(--bg-canvas)]"
+                                        onError={(e) => { (e.target as HTMLImageElement).src = `https://images.hive.blog/u/hive-106130/avatar/large`; }}
+                                    />
+                                    <div className="absolute bottom-0 right-0 bg-[var(--primary-color)] text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-[var(--bg-card)] shadow-sm">
+                                        {profile?.reputation || 25}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-14">
+                                <h1 className="text-xl font-bold text-[var(--text-primary)] leading-tight">
+                                    {profile?.name || username}
+                                </h1>
+                                <p className="text-sm font-medium text-[var(--text-secondary)] mb-4">@{username}</p>
+
+                                {/* Bio */}
+                                {profile?.metadata?.profile?.about ? (
+                                    <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-6 whitespace-pre-wrap">
+                                        {profile.metadata.profile.about}
+                                    </p>
+                                ) : (
+                                    <p className="text-sm text-[var(--text-secondary)] italic mb-6">No bio provided.</p>
+                                )}
+
+                                {/* Action Buttons */}
+                                {currentUser !== username && (
+                                    <div className="flex flex-col gap-2 mb-6">
+                                        <button
+                                            onClick={handleFollow}
+                                            disabled={actionLoading}
+                                            className={`w-full py-2 rounded-lg font-bold transition-all text-sm ${isFollowing
+                                                ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20'
+                                                : 'bg-[var(--primary-color)] text-white hover:brightness-110 shadow-sm'
+                                                }`}
+                                        >
+                                            {isFollowing ? 'Unfollow' : 'Follow'}
+                                        </button>
+                                        <button
+                                            onClick={handleMute}
+                                            disabled={actionLoading}
+                                            className={`w-full py-2 rounded-lg font-bold transition-all text-sm border ${isMuted
+                                                ? 'bg-red-50 text-red-600 border-red-200 dark:bg-red-900/20 dark:border-red-800/50'
+                                                : 'bg-transparent text-[var(--text-secondary)] border-[var(--border-color)] hover:bg-[var(--bg-canvas)]'
+                                                }`}
+                                        >
+                                            {isMuted ? 'Unmute' : 'Mute'}
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* Stats Block */}
+                                <div className="flex justify-between items-center py-3 border-y border-[var(--border-color)] mb-4">
+                                    <div className="text-center flex-1">
+                                        <span className="block text-xs text-[var(--text-secondary)] uppercase font-bold tracking-wider">Followers</span>
+                                        <span className="text-sm font-bold text-[var(--text-primary)]">{profile?.stats?.followers?.toLocaleString() || 0}</span>
+                                    </div>
+                                    <div className="w-px h-6 bg-[var(--border-color)]" />
+                                    <div className="text-center flex-1">
+                                        <span className="block text-xs text-[var(--text-secondary)] uppercase font-bold tracking-wider">Following</span>
+                                        <span className="text-sm font-bold text-[var(--text-primary)]">{profile?.stats?.following?.toLocaleString() || 0}</span>
+                                    </div>
+                                </div>
+
+                                {/* Extra Details */}
+                                <div className="space-y-3">
+                                    {profile?.metadata?.profile?.location && (
+                                        <div className="flex items-start gap-3">
+                                            <MapPin size={16} className="text-[var(--text-secondary)] mt-0.5" />
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">Location</span>
+                                                <span className="text-sm text-[var(--text-primary)]">{profile.metadata.profile.location}</span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {profile?.metadata?.profile?.website && (
+                                        <div className="flex items-start gap-3">
+                                            <Globe size={16} className="text-[var(--text-secondary)] mt-0.5" />
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">Website</span>
+                                                <a
+                                                    href={profile.metadata.profile.website.startsWith('http') ? profile.metadata.profile.website : `https://${profile.metadata.profile.website}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-sm text-[var(--primary-color)] hover:underline break-all"
+                                                >
+                                                    {profile.metadata.profile.website.replace(/^https?:\/\//, '')}
+                                                </a>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {profile?.created && (
+                                        <div className="flex items-start gap-3">
+                                            <Calendar size={16} className="text-[var(--text-secondary)] mt-0.5" />
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">Joined</span>
+                                                <span className="text-sm text-[var(--text-primary)]">
+                                                    {new Date(profile.created).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex items-start gap-3">
+                                        <Rss size={16} className="text-[var(--text-secondary)] mt-0.5" />
+                                        <div className="flex flex-col">
+                                            <span className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">RSS Feed</span>
+                                            <a
+                                                href={`https://hive.blog/@${username}/feed`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-sm text-[var(--primary-color)] hover:underline"
+                                            >
+                                                Subscribe
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Moderated Communities */}
+                                {profile?.metadata?.profile?.communities && profile.metadata.profile.communities.length > 0 && (
+                                    <div className="pt-4 mt-4 border-t border-[var(--border-color)]">
+                                        <h4 className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider mb-3 flex items-center gap-2">
+                                            <Shield size={14} className="text-[var(--primary-color)]" />
+                                            Moderator of:
+                                        </h4>
+                                        <div className="space-y-2">
+                                            {profile.metadata.profile.communities.map((comm: any, idx: number) => (
+                                                <div key={idx} className="flex items-center gap-2 group cursor-pointer hover:bg-[var(--bg-canvas)] p-1.5 rounded-lg transition-all rounded">
+                                                    <img
+                                                        src={`https://images.hive.blog/u/${comm}/avatar/small`}
+                                                        alt={comm}
+                                                        className="w-6 h-6 rounded-full bg-gray-200 border border-[var(--border-color)]"
+                                                        onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.hive.blog/u/hive-106130/avatar/small'; }}
+                                                    />
+                                                    <span className="text-xs font-bold text-[var(--text-primary)] group-hover:text-[var(--primary-color)]">{comm}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Tabs */}
-            <div className="border-b border-[var(--border-color)] mb-6 sticky top-16 bg-[var(--bg-canvas)]/95 backdrop-blur z-10 transition-colors duration-300">
-                <div className="max-w-4xl mx-auto flex gap-8 px-4 md:px-8 overflow-x-auto no-scrollbar">
-                    {validTabs.map((tab) => (
-                        <button
-                            key={tab}
-                            onClick={() => handleTabChange(tab)}
-                            className={`pb-3 border-b-2 transition-colors capitalize whitespace-nowrap ${activeTab === tab
-                                ? 'border-[var(--primary-color)] text-[var(--text-primary)] font-bold'
-                                : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                                }`}
-                        >
-                            {tab === 'community' ? (config?.name || 'Community') : tab}
-                        </button>
-                    ))}
-                </div>
-            </div>
+                {/* Right Column - Navigation Tabs & Main Content Feed */}
+                <div className="lg:col-span-9 space-y-6">
+                    {/* Floating Glass Navigation Tabs & Search */}
+                    <div className="sticky top-[84px] z-20 mb-2 flex items-center justify-end gap-2 md:justify-between w-full h-[52px]">
+                        {/* Mobile & Desktop Tabs Group */}
+                        <div className={`flex items-center gap-2 transition-all duration-300 ${isSearchExpanded ? 'w-0 opacity-0 overflow-hidden md:w-auto md:opacity-100' : 'w-full opacity-100 mr-auto'}`}>
+                            {/* Desktop Tabs (All visible) */}
+                            <div className="hidden md:inline-flex gap-1 md:gap-2 p-1.5 bg-[var(--bg-card)]/80 backdrop-blur-xl rounded-2xl border border-[var(--border-color)] shadow-sm overflow-x-auto no-scrollbar whitespace-nowrap">
+                                {validTabs.map((tab) => (
+                                    <button
+                                        key={tab}
+                                        onClick={() => handleTabChange(tab)}
+                                        className={`px-4 md:px-5 py-2 md:py-2.5 rounded-xl transition-all capitalize whitespace-nowrap text-xs md:text-sm font-medium ${activeTab === tab
+                                            ? 'bg-[var(--primary-color)] text-white shadow-md font-bold'
+                                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)]'
+                                            }`}
+                                    >
+                                        {tab === 'community' ? (config?.name || 'Community') : tab}
+                                    </button>
+                                ))}
+                            </div>
 
-            {/* Content Section with Sidebar */}
-            <div className="max-w-[1400px] mx-auto px-4 md:px-8">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                    {/* Left Column - Main Feed */}
-                    <div className="lg:col-span-8 space-y-6">
+                            {/* Mobile Tabs (Limited + Dropdown) */}
+                            <div className="md:hidden flex items-center gap-1 p-1.5 bg-[var(--bg-card)]/80 backdrop-blur-xl rounded-2xl border border-[var(--border-color)] shadow-sm flex-nowrap w-fit">
+                                {/* Primary Mobile Tabs */}
+                                {['blog', 'posts'].map((tab) => (
+                                    <button
+                                        key={tab}
+                                        onClick={() => handleTabChange(tab)}
+                                        className={`px-4 py-2 rounded-xl transition-all capitalize whitespace-nowrap text-xs font-medium ${activeTab === tab
+                                            ? 'bg-[var(--primary-color)] text-white shadow-md font-bold'
+                                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)]'
+                                            }`}
+                                    >
+                                        {tab}
+                                    </button>
+                                ))}
+
+                                {/* Mobile More Dropdown */}
+                                <div className="relative">
+                                    <button
+                                        onClick={() => setShowMoreTabs(!showMoreTabs)}
+                                        className={`px-3 py-2 flex items-center gap-1 rounded-xl transition-all capitalize whitespace-nowrap text-xs font-medium ${['comments', 'replies', 'wallet', 'community'].includes(activeTab)
+                                            ? 'bg-[var(--primary-color)] text-white shadow-md font-bold'
+                                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)]'
+                                            }`}
+                                    >
+                                        {['comments', 'replies', 'wallet', 'community'].includes(activeTab) ? (activeTab === 'community' ? config?.name || 'Community' : activeTab) : 'More'}
+                                        <ChevronDown size={14} className={`transition-transform duration-200 ${showMoreTabs ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {showMoreTabs && (
+                                        <div className="absolute left-0 mt-2 w-40 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl transition-all z-30 p-1 flex flex-col gap-1">
+                                            {['comments', 'replies', 'wallet', ...(config?.id === 'global' ? [] : ['community'])].map((tab) => (
+                                                <button
+                                                    key={tab}
+                                                    onClick={() => handleTabChange(tab)}
+                                                    className={`w-full text-left px-4 py-2.5 rounded-lg text-xs font-bold transition-all capitalize ${activeTab === tab ? 'bg-[var(--primary-color)]/10 text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-canvas)]'}`}
+                                                >
+                                                    {tab === 'community' ? (config?.name || 'Community') : tab}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Expanding Search Bar */}
+                        {activeTab !== 'wallet' && (
+                            <div className={`flex items-center shrink-0 bg-[var(--bg-card)]/80 backdrop-blur-xl border border-[var(--border-color)] rounded-2xl transition-all duration-300 shadow-sm ${isSearchExpanded ? 'w-full md:w-64 px-4 py-2 opacity-100 h-full' : 'w-[48px] h-[48px] justify-center opacity-80 hover:opacity-100'}`}>
+                                <button
+                                    onClick={() => setIsSearchExpanded(true)}
+                                    className={`text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors ${isSearchExpanded ? 'shrink-0' : 'w-full h-full flex items-center justify-center'}`}
+                                >
+                                    <Search size={18} />
+                                </button>
+                                {isSearchExpanded && (
+                                    <>
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            placeholder={`Search ${activeTab}...`}
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            onBlur={() => { if (!searchQuery) setIsSearchExpanded(false) }}
+                                            className="w-full bg-transparent border-none outline-none text-sm text-[var(--text-primary)] ml-3 placeholder:text-[var(--text-secondary)]"
+                                        />
+                                        <button
+                                            onClick={() => {
+                                                setSearchQuery('');
+                                                setIsSearchExpanded(false);
+                                            }}
+                                            className="shrink-0 p-1 ml-1 text-[var(--text-secondary)] hover:text-[var(--primary-color)] hover:bg-[var(--bg-canvas)] rounded-full transition-colors"
+                                            aria-label="Close search"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Feed Output */}
+                    <div className="mt-4">
                         {activeTab === 'wallet' ? (
                             <WalletView
                                 wallet={wallet}
@@ -327,135 +523,39 @@ export default function ProfilePage() {
                         ) : contentLoading ? (
                             <div className="space-y-4 animate-pulse">
                                 {[1, 2, 3].map(i => (
-                                    <div key={i} className="h-48 bg-gray-200 dark:bg-gray-800 rounded-xl" />
+                                    <div key={i} className="h-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl" />
                                 ))}
                             </div>
-                        ) : feed.length === 0 ? (
-                            <div className="text-center py-12 text-[var(--text-secondary)] bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)]">
-                                No content found in this section.
+                        ) : filteredFeed.length === 0 ? (
+                            <div className="text-center py-12 text-[var(--text-secondary)] bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] shadow-sm">
+                                <span className="text-4xl block mb-4">📭</span>
+                                <h3 className="text-lg font-bold text-[var(--text-primary)] mb-1">No content found</h3>
+                                <p className="text-sm">{searchQuery ? `No matches found for "${searchQuery}"` : "There is nothing to display in this section yet."}</p>
                             </div>
                         ) : activeTab === 'comments' || activeTab === 'replies' ? (
-                            feed.map(post => <CommentCard key={post.id} post={post} />)
+                            <div className="space-y-4">
+                                {filteredFeed.map(post => <CommentCard key={post.id} post={post} />)}
+                            </div>
                         ) : (
-                            <>
-                                {feed.map(post => <PostCard key={post.id} post={post} />)}
-                                {loadingMore && (
-                                    <div className="py-4 text-center text-sm text-[var(--text-secondary)]">
-                                        Loading more posts...
+                            <div className="space-y-4">
+                                {filteredFeed.map(post => <PostCard key={post.id} post={post} />)}
+                                {loadingMore && !searchQuery && (
+                                    <div className="py-4 text-center text-sm font-medium text-[var(--text-secondary)] animate-pulse">
+                                        Loading more...
                                     </div>
                                 )}
-                                {!hasMore && feed.length > 0 && (
-                                    <div className="py-8 text-center text-sm text-[var(--text-secondary)]">
+                                {!hasMore && filteredFeed.length > 0 && !searchQuery && (
+                                    <div className="py-8 text-center text-sm font-medium text-[var(--text-secondary)]">
                                         You've reached the end.
                                     </div>
                                 )}
-                            </>
-                        )}
-                    </div>
-
-                    {/* Right Column - Sidebar */}
-                    <div className="lg:col-span-4 space-y-6">
-                        {/* About Card */}
-                        <div className="bg-[var(--bg-card)] rounded-xl shadow-sm p-6 border border-[var(--border-color)]">
-                            <h3 className="font-bold text-[var(--text-primary)] mb-4">About {profile?.name || username}</h3>
-                            {profile?.metadata?.profile?.about ? (
-                                <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-6 whitespace-pre-wrap text-sm">
-                                    {profile.metadata.profile.about}
-                                </p>
-                            ) : (
-                                <p className="text-sm text-[var(--text-secondary)] italic mb-6">No bio provided.</p>
-                            )}
-
-                            <div className="space-y-4 pt-6 border-t border-[var(--border-color)]">
-                                {profile?.metadata?.profile?.location && (
-                                    <div className="flex items-start gap-3">
-                                        <MapPin size={18} className="text-[var(--text-secondary)] mt-0.5" />
-                                        <div className="flex flex-col">
-                                            <span className="text-xs text-[var(--text-secondary)] uppercase font-semibold">Location</span>
-                                            <span className="text-sm text-[var(--text-primary)]">{profile.metadata.profile.location}</span>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {profile?.metadata?.profile?.website && (
-                                    <div className="flex items-start gap-3">
-                                        <Globe size={18} className="text-[var(--text-secondary)] mt-0.5" />
-                                        <div className="flex flex-col">
-                                            <span className="text-xs text-[var(--text-secondary)] uppercase font-semibold">Website</span>
-                                            <a
-                                                href={profile.metadata.profile.website.startsWith('http') ? profile.metadata.profile.website : `https://${profile.metadata.profile.website}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-sm text-[var(--primary-color)] hover:underline break-all"
-                                            >
-                                                {profile.metadata.profile.website.replace(/^https?:\/\//, '')}
-                                            </a>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {profile?.created && (
-                                    <div className="flex items-start gap-3">
-                                        <Calendar size={18} className="text-[var(--text-secondary)] mt-0.5" />
-                                        <div className="flex flex-col">
-                                            <span className="text-xs text-[var(--text-secondary)] uppercase font-semibold">Joined</span>
-                                            <span className="text-sm text-[var(--text-primary)]">
-                                                {new Date(profile.created).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="flex items-start gap-3">
-                                    <Rss size={18} className="text-[var(--text-secondary)] mt-0.5" />
-                                    <div className="flex flex-col">
-                                        <span className="text-xs text-[var(--text-secondary)] uppercase font-semibold">RSS Feed</span>
-                                        <a
-                                            href={`https://hive.blog/@${username}/feed`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-sm text-[var(--primary-color)] hover:underline"
-                                        >
-                                            Subscribe
-                                        </a>
-                                    </div>
-                                </div>
-
-                                <div className="flex justify-between items-center py-2 px-3 bg-[var(--bg-canvas)] rounded-lg mt-4 border border-[var(--border-color)]">
-                                    <div className="text-center flex-1">
-                                        <span className="block text-xs text-[var(--text-secondary)] uppercase font-bold">Followers</span>
-                                        <span className="text-lg font-bold text-[var(--text-primary)]">{profile?.stats?.followers?.toLocaleString() || 0}</span>
-                                    </div>
-                                    <div className="w-px h-8 bg-[var(--border-color)]" />
-                                    <div className="text-center flex-1">
-                                        <span className="block text-xs text-[var(--text-secondary)] uppercase font-bold">Following</span>
-                                        <span className="text-lg font-bold text-[var(--text-primary)]">{profile?.stats?.following?.toLocaleString() || 0}</span>
-                                    </div>
-                                </div>
-
-                                {profile?.metadata?.profile?.communities && profile.metadata.profile.communities.length > 0 && (
-                                    <div className="pt-6 border-t border-[var(--border-color)] mt-6">
-                                        <h4 className="text-xs text-[var(--text-secondary)] uppercase font-bold mb-4 flex items-center gap-2">
-                                            <Shield size={14} className="text-[var(--primary-color)]" />
-                                            Moderator of these communities
-                                        </h4>
-                                        <div className="space-y-3">
-                                            {profile.metadata.profile.communities.map((comm: any, idx: number) => (
-                                                <div key={idx} className="flex items-center gap-3 group cursor-pointer hover:bg-[var(--bg-canvas)] p-2 rounded-lg transition-all">
-                                                    <img
-                                                        src={`https://images.hive.blog/u/${comm}/avatar/small`}
-                                                        alt={comm}
-                                                        className="w-8 h-8 rounded-full bg-gray-200 border border-[var(--border-color)]"
-                                                        onError={(e) => { (e.target as HTMLImageElement).src = 'https://images.hive.blog/u/hive-106130/avatar/small'; }}
-                                                    />
-                                                    <span className="text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--primary-color)]">{comm}</span>
-                                                </div>
-                                            ))}
-                                        </div>
+                                {searchQuery && hasMore && (
+                                    <div className="py-8 text-center text-sm font-medium text-[var(--text-secondary)]">
+                                        Clear search to load more posts...
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             </div>

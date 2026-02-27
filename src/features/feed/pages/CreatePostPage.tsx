@@ -12,8 +12,9 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import AdvancedSettingsModal, { AdvancedOptions } from '../components/AdvancedSettingsModal';
 import { draftService, Draft } from '../services/draftService';
-import { Settings, Save, Trash2, Calendar } from 'lucide-react';
+import { Settings, Save, Trash2, Calendar, Globe } from 'lucide-react';
 import { useRef } from 'react';
+import { hiveClient } from '../../../services/hive/client';
 
 export default function CreatePostPage() {
     const { config } = useCommunity();
@@ -23,7 +24,25 @@ export default function CreatePostPage() {
     const [title, setTitle] = useState('');
     const [body, setBody] = useState('');
     const [tags, setTags] = useState('');
+    const [destination, setDestination] = useState<string>('');
+    const [communities, setCommunities] = useState<any[]>([]);
     const dateInputRef = useRef<HTMLInputElement>(null);
+    const isGlobal = config?.id === 'global';
+
+    // Fetch popular communities for Global Mode
+    useEffect(() => {
+        if (isGlobal) {
+            const fetchCommunities = async () => {
+                try {
+                    const result = await hiveClient.call('bridge', 'list_communities', { limit: 50, sort: 'rank' });
+                    setCommunities(result || []);
+                } catch (e) {
+                    console.error("Failed to fetch global communities", e);
+                }
+            };
+            fetchCommunities();
+        }
+    }, [isGlobal]);
 
     // Advanced Options State
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -134,8 +153,11 @@ export default function CreatePostPage() {
             const tagList = tags.split(',').map(t => t.trim()).filter(t => t);
 
             // Ensure community tag is present and first (for category)
-            const communityTag = config?.id || 'hive-106130';
-            const finalTags = [communityTag, ...tagList.filter(t => t !== communityTag)];
+            const baseTag = isGlobal ? destination : (config?.id || 'hive-106130');
+            const finalTags = baseTag ? [baseTag, ...tagList.filter(t => t !== baseTag)] : tagList;
+
+            // Determine if it's a blog post (no baseTag)
+            const parentPermlink = finalTags.length > 0 ? finalTags[0] : 'blog';
 
             // Construct metadata
             const metadataObj: any = {
@@ -166,7 +188,7 @@ export default function CreatePostPage() {
                 type: 'comment',
                 username,
                 parent_author: '', // Empty for root post
-                parent_permlink: communityTag, // First tag defines category/community
+                parent_permlink: parentPermlink, // First tag defines category/community
                 permlink,
                 title,
                 body,
@@ -182,7 +204,9 @@ export default function CreatePostPage() {
                     draftService.deleteDraft(currentDraftId);
                 }
                 // Award post points (fire-and-forget)
-                pointsService.awardPoints(username, communityTag, 'posts', communityTag);
+                if (baseTag) {
+                    pointsService.awardPoints(username, baseTag, 'posts', baseTag);
+                }
                 navigate(`/post/${username}/${permlink}`);
             } else {
                 setError(result.error || "Failed to publish post");
@@ -205,7 +229,25 @@ export default function CreatePostPage() {
             <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8 min-h-0">
                 {/* Left Column: Inputs */}
                 <div className="flex flex-col gap-4 h-full min-h-0">
-                    <div className="shrink-0">
+                    <div className="shrink-0 flex flex-col gap-4">
+                        {isGlobal && (
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <Globe size={18} className="text-[var(--text-secondary)]" />
+                                </div>
+                                <select
+                                    value={destination}
+                                    onChange={(e) => setDestination(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] font-medium focus:ring-2 focus:ring-[var(--primary-color)] focus:border-transparent outline-none appearance-none transition-all cursor-pointer"
+                                    disabled={loading}
+                                >
+                                    <option value="">My Blog (No Community)</option>
+                                    {communities.map((c, i) => (
+                                        <option key={i} value={c[0]}>{c[1]} ({c[0]})</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                         <input
                             type="text"
                             value={title}
@@ -235,9 +277,15 @@ export default function CreatePostPage() {
                             disabled={loading}
                         />
                         <div className="flex items-center justify-between mt-1 ml-1">
-                            <p className="text-xs text-[var(--text-secondary)]">
-                                Community tag <b>#{config?.id || 'hive-106130'}</b> is added automatically.
-                            </p>
+                            {isGlobal ? (
+                                <p className="text-xs text-[var(--text-secondary)]">
+                                    Separate tags with commas. First tag will be the main category.
+                                </p>
+                            ) : (
+                                <p className="text-xs text-[var(--text-secondary)]">
+                                    Community tag <b>#{config?.id || 'hive-106130'}</b> is added automatically.
+                                </p>
+                            )}
                             <div
                                 className="flex items-center gap-2 cursor-pointer hover:bg-[var(--bg-canvas)] px-2 py-1 rounded-lg transition-all"
                                 onClick={() => dateInputRef.current?.showPicker?.()}

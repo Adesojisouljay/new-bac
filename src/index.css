@@ -192,6 +192,40 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   border-radius: 4px;
 }
 
-.dark input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1) brightness(1.5);
+@layer utilities {
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .CustomScrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .CustomScrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .CustomScrollbar::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 99px;
+  }
+
+  .CustomScrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+  }
 }
