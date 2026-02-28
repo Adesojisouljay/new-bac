@@ -19,6 +19,7 @@ export function WalletView({ wallet, history, username, loading, onLoadMore, loa
     // For modal state
     const [actionFunc, setActionFunc] = useState<{ type: any, initial?: any } | null>(null);
     const [actionLoading, setActionLoading] = useState(false);
+    const [claimedRewards, setClaimedRewards] = useState(false);
     const navigate = useNavigate();
 
     // Helper to convert VESTS to HP
@@ -49,6 +50,44 @@ export function WalletView({ wallet, history, username, loading, onLoadMore, loa
                 // Ideally refresh wallet here
             } else {
                 showNotification("Failed to cancel power down: " + result.error, 'error');
+            }
+        } catch (error: any) {
+            showNotification("Error: " + error.message, 'error');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    const handleClaimRewards = async () => {
+        const currentUser = localStorage.getItem('hive_user');
+        if (!currentUser) {
+            showNotification("Please login to claim rewards", 'warning');
+            return;
+        }
+
+        const confirmed = await showConfirm(
+            "Claim Rewards",
+            `Claim your pending rewards?\n• ${wallet.reward_hive_balance}\n• ${wallet.reward_hbd_balance}\n• ${parseFloat(wallet.reward_vesting_hive || '0').toFixed(3)} HP`
+        );
+        if (!confirmed) return;
+
+        setActionLoading(true);
+        try {
+            const result = await transactionService.broadcast({
+                type: 'claim_reward_balance',
+                username: currentUser,
+                reward_hive: wallet.reward_hive_balance,
+                reward_hbd: wallet.reward_hbd_balance,
+                reward_vests: wallet.reward_vesting_balance
+            }, () => {
+                showNotification("Action required: Sign with your Hive wallet.", 'info');
+            });
+
+            if (result.success) {
+                showNotification("Rewards claimed successfully! 🎉", 'success');
+                setClaimedRewards(true); // Hide the banner after claim
+            } else {
+                showNotification("Failed to claim rewards: " + result.error, 'error');
             }
         } catch (error: any) {
             showNotification("Error: " + error.message, 'error');
@@ -173,139 +212,186 @@ export function WalletView({ wallet, history, username, loading, onLoadMore, loa
     };
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {assets.map((asset: any) => (
-                <div
-                    key={asset.name}
-                    className={`bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-6 shadow-sm flex flex-col justify-between transition-all hover:shadow-md ${asset.featured || asset.fullWidth ? 'md:col-span-2' : ''} ${asset.featured ? 'border-[var(--primary-color)]/30 border-2' : ''}`}
-                >
-                    <div className={asset.featured ? 'flex flex-col md:flex-row md:items-center justify-between gap-6' : ''}>
-                        <div className="flex justify-between items-start mb-4 flex-1">
-                            <div>
-                                <h3 className={`font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-wider ${asset.featured ? 'text-xs' : 'text-[10px]'}`}>{asset.name}</h3>
-                                <p className={`font-bold text-[var(--text-primary)] ${asset.featured ? 'text-4xl md:text-5xl' : 'text-2xl'}`}>{asset.balance}</p>
-                            </div>
-                            <div className={`p-3 rounded-2xl ${asset.color} ${asset.featured ? 'shadow-lg shadow-[var(--primary-color)]/20' : ''}`}>
-                                <span className="text-2xl">{asset.icon}</span>
-                            </div>
-                        </div>
+        <div className="flex flex-col gap-6">
+            {/* Pending Rewards Banner — visible to all visitors, Claim button only for owner */}
+            {!claimedRewards && wallet.reward_hbd_balance && (
+                (() => {
+                    const currentUser = localStorage.getItem('hive_user');
+                    const rewardHive = parseFloat(wallet.reward_hive_balance || '0');
+                    const rewardHbd = parseFloat(wallet.reward_hbd_balance || '0');
+                    const rewardVestingHive = parseFloat(wallet.reward_vesting_hive || '0');
+                    const hasRewards = rewardHive > 0 || rewardHbd > 0 || rewardVestingHive > 0;
+                    const isOwner = currentUser === username;
 
-                        {asset.featured && (
-                            <div className="md:max-w-xs">
-                                <p className="text-sm text-[var(--text-secondary)] opacity-80 leading-relaxed italic">
-                                    "{asset.desc}"
-                                </p>
-                            </div>
-                        )}
+                    if (!hasRewards) return null;
 
-                        {!asset.featured && (
-                            <p className="text-xs text-[var(--text-secondary)] mb-2">{asset.desc}</p>
-                        )}
-
-                        {asset.info && (
-                            <div className="mb-4 p-3 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl">
-                                <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed italic">
-                                    {asset.info}
-                                </p>
-                            </div>
-                        )}
-
-                        {asset.apr && (
-                            <div className="mb-4 p-2 bg-green-500/5 border border-green-500/10 rounded-lg inline-flex items-center gap-1.5">
-                                <span className="text-[10px] font-bold text-green-600 uppercase tracking-wider">HBD Interest:</span>
-                                <span className="text-xs font-bold text-green-600">{asset.apr}</span>
-                            </div>
-                        )}
-
-                        {asset.name === 'HIVE POWER' && asset.isPD && (
-                            <div className="mb-4 p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl">
-                                <p className="text-xs font-bold text-blue-500 mb-1 flex items-center gap-2">
-                                    <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
-                                    Active Power Down
-                                </p>
-                                <p className="text-xs text-[var(--text-primary)] mb-2">
-                                    Powering down <span className="font-bold">{asset.pdAmount} HP</span> ({asset.pdWeeks} weeks left)
-                                </p>
-                                {localStorage.getItem('hive_user') === username && (
+                    return (
+                        <div className="relative overflow-hidden rounded-2xl border-2 border-[var(--primary-color)]/40 bg-gradient-to-r from-[var(--primary-color)]/5 via-[var(--primary-color)]/10 to-[var(--secondary-color)]/10 p-6 shadow-lg shadow-[var(--primary-color)]/10">
+                            {/* Glow effect */}
+                            <div className="absolute -top-4 -right-4 w-32 h-32 bg-[var(--primary-color)]/20 rounded-full blur-2xl pointer-events-none" />
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="text-xl">🎁</span>
+                                        <h3 className="font-black text-sm text-[var(--text-primary)] uppercase tracking-wider">Pending Rewards</h3>
+                                    </div>
+                                    <div className="flex flex-wrap gap-3 text-sm font-bold text-[var(--text-secondary)]">
+                                        {rewardHive > 0 && <span className="bg-red-500/10 text-red-500 px-2 py-0.5 rounded-full text-xs">{wallet.reward_hive_balance}</span>}
+                                        {rewardHbd > 0 && <span className="bg-green-500/10 text-green-500 px-2 py-0.5 rounded-full text-xs">{wallet.reward_hbd_balance}</span>}
+                                        {rewardVestingHive > 0 && <span className="bg-purple-500/10 text-purple-500 px-2 py-0.5 rounded-full text-xs">{rewardVestingHive.toFixed(3)} HP</span>}
+                                    </div>
+                                </div>
+                                {/* Claim button: only visible to the profile owner */}
+                                {isOwner && (
                                     <button
-                                        onClick={handleStopPowerDown}
+                                        onClick={handleClaimRewards}
                                         disabled={actionLoading}
-                                        className="text-[10px] font-bold uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
+                                        className="shrink-0 px-6 py-2.5 rounded-xl bg-[var(--primary-color)] text-white font-black text-sm shadow-md shadow-[var(--primary-color)]/30 hover:brightness-110 transition-all disabled:opacity-60"
                                     >
-                                        {actionLoading ? 'Stopping...' : 'Stop Power Down ✕'}
+                                        {actionLoading ? 'Claiming...' : 'Claim Rewards'}
                                     </button>
                                 )}
                             </div>
-                        )}
-
-                        {asset.name === 'RESOURCE CREDITS' && asset.rc && (
-                            <>
-                                <div className="w-full h-2 bg-[var(--border-color)] rounded-full overflow-hidden mb-6">
-                                    <div
-                                        className="h-full bg-indigo-500 transition-all duration-1000 shadow-[0_0_8px_rgba(99,102,241,0.5)]"
-                                        style={{ width: `${asset.balance}` }}
-                                    />
-                                </div>
-
-                                <div className="mb-6">
-                                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-3 flex items-center gap-2">
-                                        <span className="w-1 h-1 bg-[var(--primary-color)] rounded-full"></span>
-                                        Estimated Actions Available
-                                    </h4>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        {getEstimations(asset.rc).map(est => (
-                                            <div key={est.label} className="bg-[var(--bg-canvas)] rounded-xl p-3 border border-[var(--border-color)] flex flex-col items-center hover:border-[var(--primary-color)]/30 transition-colors group">
-                                                <span className="text-xl mb-1 group-hover:scale-110 transition-transform">{est.icon}</span>
-                                                <span className="text-base font-bold text-[var(--text-primary)] leading-tight">{est.count.toLocaleString()}</span>
-                                                <span className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-tight">{est.label}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            </>
-                        )}
-                    </div>
-
-                    {/* Action Buttons */}
-                    {localStorage.getItem('hive_user') === username && (
-                        <div className="flex gap-2">
-                            {asset.actions.map((action: any) => (
-                                <button
-                                    key={action.label}
-                                    onClick={action.onClick}
-                                    className="flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded border border-[var(--border-color)] hover:bg-[var(--bg-canvas)] hover:border-[var(--primary-color)] transition-all text-[var(--text-primary)]"
-                                >
-                                    {action.label}
-                                </button>
-                            ))}
                         </div>
-                    )}
-                </div>
-            ))}
-
-            {/* Modal */}
-            {actionFunc && (
-                <WalletActionsModal
-                    isOpen={!!actionFunc}
-                    onClose={() => setActionFunc(null)}
-                    type={actionFunc.type}
-                    username={username}
-                    initialData={actionFunc.initial}
-                    onSuccess={() => { /* Refresh wallet logic could go here */ }}
-                />
+                    );
+                })()
             )}
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {assets.map((asset: any) => (
+                    <div
+                        key={asset.name}
+                        className={`bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-6 shadow-sm flex flex-col justify-between transition-all hover:shadow-md ${asset.featured || asset.fullWidth ? 'md:col-span-2' : ''} ${asset.featured ? 'border-[var(--primary-color)]/30 border-2' : ''}`}
+                    >
+                        <div className={asset.featured ? 'flex flex-col md:flex-row md:items-center justify-between gap-6' : ''}>
+                            <div className="flex justify-between items-start mb-4 flex-1">
+                                <div>
+                                    <h3 className={`font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-wider ${asset.featured ? 'text-xs' : 'text-[10px]'}`}>{asset.name}</h3>
+                                    <p className={`font-bold text-[var(--text-primary)] ${asset.featured ? 'text-4xl md:text-5xl' : 'text-2xl'}`}>{asset.balance}</p>
+                                </div>
+                                <div className={`p-3 rounded-2xl ${asset.color} ${asset.featured ? 'shadow-lg shadow-[var(--primary-color)]/20' : ''}`}>
+                                    <span className="text-2xl">{asset.icon}</span>
+                                </div>
+                            </div>
+
+                            {asset.featured && (
+                                <div className="md:max-w-xs">
+                                    <p className="text-sm text-[var(--text-secondary)] opacity-80 leading-relaxed italic">
+                                        "{asset.desc}"
+                                    </p>
+                                </div>
+                            )}
+
+                            {!asset.featured && (
+                                <p className="text-xs text-[var(--text-secondary)] mb-2">{asset.desc}</p>
+                            )}
+
+                            {asset.info && (
+                                <div className="mb-4 p-3 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl">
+                                    <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed italic">
+                                        {asset.info}
+                                    </p>
+                                </div>
+                            )}
+
+                            {asset.apr && (
+                                <div className="mb-4 p-2 bg-green-500/5 border border-green-500/10 rounded-lg inline-flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold text-green-600 uppercase tracking-wider">HBD Interest:</span>
+                                    <span className="text-xs font-bold text-green-600">{asset.apr}</span>
+                                </div>
+                            )}
+
+                            {asset.name === 'HIVE POWER' && asset.isPD && (
+                                <div className="mb-4 p-3 bg-blue-500/5 border border-blue-500/10 rounded-xl">
+                                    <p className="text-xs font-bold text-blue-500 mb-1 flex items-center gap-2">
+                                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
+                                        Active Power Down
+                                    </p>
+                                    <p className="text-xs text-[var(--text-primary)] mb-2">
+                                        Powering down <span className="font-bold">{asset.pdAmount} HP</span> ({asset.pdWeeks} weeks left)
+                                    </p>
+                                    {localStorage.getItem('hive_user') === username && (
+                                        <button
+                                            onClick={handleStopPowerDown}
+                                            disabled={actionLoading}
+                                            className="text-[10px] font-bold uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
+                                        >
+                                            {actionLoading ? 'Stopping...' : 'Stop Power Down ✕'}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {asset.name === 'RESOURCE CREDITS' && asset.rc && (
+                                <>
+                                    <div className="w-full h-2 bg-[var(--border-color)] rounded-full overflow-hidden mb-6">
+                                        <div
+                                            className="h-full bg-indigo-500 transition-all duration-1000 shadow-[0_0_8px_rgba(99,102,241,0.5)]"
+                                            style={{ width: `${asset.balance}` }}
+                                        />
+                                    </div>
+
+                                    <div className="mb-6">
+                                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-3 flex items-center gap-2">
+                                            <span className="w-1 h-1 bg-[var(--primary-color)] rounded-full"></span>
+                                            Estimated Actions Available
+                                        </h4>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            {getEstimations(asset.rc).map(est => (
+                                                <div key={est.label} className="bg-[var(--bg-canvas)] rounded-xl p-3 border border-[var(--border-color)] flex flex-col items-center hover:border-[var(--primary-color)]/30 transition-colors group">
+                                                    <span className="text-xl mb-1 group-hover:scale-110 transition-transform">{est.icon}</span>
+                                                    <span className="text-base font-bold text-[var(--text-primary)] leading-tight">{est.count.toLocaleString()}</span>
+                                                    <span className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-tight">{est.label}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+
+                        {/* Action Buttons */}
+                        {localStorage.getItem('hive_user') === username && (
+                            <div className="flex gap-2">
+                                {asset.actions.map((action: any) => (
+                                    <button
+                                        key={action.label}
+                                        onClick={action.onClick}
+                                        className="flex-1 py-1.5 text-xs font-bold uppercase tracking-wider rounded border border-[var(--border-color)] hover:bg-[var(--bg-canvas)] hover:border-[var(--primary-color)] transition-all text-[var(--text-primary)]"
+                                    >
+                                        {action.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ))}
+
+                {/* Modal */}
+                {actionFunc && (
+                    <WalletActionsModal
+                        isOpen={!!actionFunc}
+                        onClose={() => setActionFunc(null)}
+                        type={actionFunc.type}
+                        username={username}
+                        initialData={actionFunc.initial}
+                        onSuccess={() => { /* Refresh wallet logic could go here */ }}
+                    />
+                )}
 
 
-            {/* Transaction History */}
-            <div className="md:col-span-2 mt-6">
-                <TransactionList
-                    transactions={history}
-                    username={username}
-                    onLoadMore={onLoadMore}
-                    loading={loadingHistory}
-                />
+
+                {/* Transaction History */}
+                <div className="md:col-span-2 mt-6">
+                    <TransactionList
+                        transactions={history}
+                        username={username}
+                        onLoadMore={onLoadMore}
+                        loading={loadingHistory}
+                    />
+                </div>
             </div>
         </div>
     );
 }
+

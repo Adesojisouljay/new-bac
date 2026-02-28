@@ -283,7 +283,7 @@ export default function ProfilePage() {
                                 )}
 
                                 {/* Action Buttons */}
-                                {currentUser !== username && (
+                                {currentUser !== username ? (
                                     <div className="flex flex-col gap-2 mb-6">
                                         <button
                                             onClick={handleFollow}
@@ -304,6 +304,15 @@ export default function ProfilePage() {
                                                 }`}
                                         >
                                             {isMuted ? 'Unmute' : 'Mute'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-2 mb-6">
+                                        <button
+                                            onClick={() => navigate(`/@${username}/settings`)}
+                                            className="w-full py-2 rounded-lg font-bold transition-all text-sm bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5 shadow-sm"
+                                        >
+                                            Edit Profile
                                         </button>
                                     </div>
                                 )}

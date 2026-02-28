@@ -1,12 +1,21 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { Shield } from 'lucide-react';
 import { CommunityDetails } from '../../../services/unified';
+import { ModerationActionsModal } from './ModerationActionsModal';
 
 interface CommunityHeaderProps {
     community: CommunityDetails;
     isBaseRoute?: boolean;
+    userRole?: string; // viewer's role in this community
 }
 
-export function CommunityHeader({ community, isBaseRoute = false }: CommunityHeaderProps) {
+export function CommunityHeader({ community, isBaseRoute = false, userRole }: CommunityHeaderProps) {
+    const [showModModal, setShowModModal] = useState(false);
+
+    const isOwnerOrAdmin = userRole === 'owner' || userRole === 'admin';
+    const isMod = isOwnerOrAdmin || userRole === 'mod';
+
     const tabClass = ({ isActive }: { isActive: boolean }) =>
         `px-6 py-3 font-bold text-sm transition-colors whitespace-nowrap ${isActive
             ? 'text-[var(--primary-color)] border-b-2 border-[var(--primary-color)]'
@@ -67,7 +76,34 @@ export function CommunityHeader({ community, isBaseRoute = false }: CommunityHea
                 <NavLink to={isBaseRoute ? "/activities" : `/c/${community.id}/activities`} className={tabClass}>
                     Activities
                 </NavLink>
+                {isMod && (
+                    <button
+                        onClick={() => setShowModModal(true)}
+                        className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-purple-500 hover:bg-purple-500/10 transition-colors whitespace-nowrap border-b-2 border-transparent hover:border-purple-500"
+                    >
+                        <Shield size={14} />
+                        Moderation
+                    </button>
+                )}
             </div>
-        </div >
+
+            {/* Moderation Modal */}
+            {showModModal && (
+                <ModerationActionsModal
+                    isOpen={showModModal}
+                    onClose={() => setShowModModal(false)}
+                    community={community.id}
+                    communityTitle={community.title}
+                    userRole={userRole || 'guest'}
+                    communityProps={{
+                        title: community.title,
+                        about: community.about,
+                        description: community.description,
+                        flag_text: community.flag_text,
+                        is_nsfw: community.is_nsfw,
+                    }}
+                />
+            )}
+        </div>
     );
 }

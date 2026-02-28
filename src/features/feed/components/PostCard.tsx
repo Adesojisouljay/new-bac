@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Post } from '../../../services/unified';
 import { transactionService } from '../../wallet/services/transactionService';
-import { ThumbsUp, ThumbsDown, MessageSquare, Repeat } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, Repeat, Shield } from 'lucide-react';
+import { VoteSlider } from './VoteSlider';
+import { VoterListModal } from './VoterListModal';
+import { ModerationActionsModal } from '../../community/components/ModerationActionsModal';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { useCommunity } from '../../community/context/CommunityContext';
@@ -10,20 +13,24 @@ import { pointsService } from '../../../services/pointsService';
 
 interface PostCardProps {
     post: Post;
+    viewerRole?: string; // caller passes the logged-in user's own role in this community
 }
 
-export function PostCard({ post }: PostCardProps) {
+export function PostCard({ post, viewerRole }: PostCardProps) {
     const { showNotification, showConfirm } = useNotification();
     const { config } = useCommunity();
     const community = config?.id || 'hive-106130';
 
     const [voting, setVoting] = useState(false);
-    const [voted, setVoted] = useState(false); // Should check if user already voted in active_votes
+    const [voted, setVoted] = useState(false);
     const [downvoting, setDownvoting] = useState(false);
     const [downvoted, setDownvoted] = useState(false);
     const [reblogging, setReblogging] = useState(false);
     const [reblogged, setReblogged] = useState(false);
+    const [showVoteSlider, setShowVoteSlider] = useState(false);
     const [showPayoutDetails, setShowPayoutDetails] = useState(false);
+    const [showVoters, setShowVoters] = useState(false);
+    const [showModerationModal, setShowModerationModal] = useState(false);
 
     // Strip markdown for clean preview
     const stripMarkdown = (text: string) => {
@@ -149,7 +156,10 @@ export function PostCard({ post }: PostCardProps) {
         });
 
         if (isDownvote) setDownvoting(false);
-        else setVoting(false);
+        else {
+            setVoting(false);
+            setShowVoteSlider(false);
+        }
 
         if (result.success) {
             if (isDownvote) setDownvoted(true);
@@ -234,10 +244,44 @@ export function PostCard({ post }: PostCardProps) {
                                 className="w-8 h-8 rounded-full border-2 border-[var(--bg-canvas)] shadow-sm"
                             />
                             <div className="flex flex-col">
-                                <Link to={`/@${post.author}`} className="font-bold text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors leading-tight">
-                                    {post.author} <span className="text-[var(--text-secondary)] font-normal ml-0.5">({post.author_reputation || 25})</span>
-                                </Link>
-                                <span className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tight">{formatRelativeTime(post.created)}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <Link to={`/@${post.author}`} className="font-bold text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors leading-tight">
+                                        {post.author} <span className="text-[var(--text-secondary)] font-normal ml-0.5">({post.author_reputation || 25})</span>
+                                    </Link>
+                                    {/* Community Role Badge */}
+                                    {post.author_role && post.author_role !== 'guest' && post.author_role !== 'member' && (
+                                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${post.author_role === 'owner' ? 'bg-purple-500/15 text-purple-500 border border-purple-500/25' :
+                                            post.author_role === 'admin' ? 'bg-red-500/15 text-red-500 border border-red-500/25' :
+                                                'bg-blue-500/15 text-blue-500 border border-blue-500/25'
+                                            }`}>
+                                            <Shield size={8} />
+                                            {post.author_role}
+                                        </span>
+                                    )}
+                                    {/* Custom Title Badge (if set by community) */}
+                                    {post.author_title && (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-[var(--primary-color)]/10 text-[var(--primary-color)] border border-[var(--primary-color)]/20">
+                                            {post.author_title}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tight">
+                                    <span>{formatRelativeTime(post.created)}</span>
+                                    {/* Community context — only show in global/following feeds */}
+                                    {post.community && post.community_title && (
+                                        <>
+                                            <span className="opacity-30">·</span>
+                                            <span className="opacity-60">in</span>
+                                            <Link
+                                                to={`/c/${post.community}`}
+                                                className="text-[var(--primary-color)] font-bold hover:underline normal-case truncate max-w-[120px]"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                {post.community_title}
+                                            </Link>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -257,9 +301,16 @@ export function PostCard({ post }: PostCardProps) {
                 <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]/50">
                     <div className="flex items-center gap-2">
                         {/* Vote Pill */}
-                        <div className="flex items-center bg-[var(--bg-canvas)] rounded-full border border-[var(--border-color)] p-1">
+                        <div className="flex items-center bg-[var(--bg-canvas)] rounded-full border border-[var(--border-color)] p-1 relative">
+                            {showVoteSlider && (
+                                <VoteSlider
+                                    onVote={handleVote}
+                                    onClose={() => setShowVoteSlider(false)}
+                                    isVoting={voting}
+                                />
+                            )}
                             <button
-                                onClick={(e) => { e.preventDefault(); handleVote(10000); }}
+                                onClick={(e) => { e.preventDefault(); setShowVoteSlider(!showVoteSlider); }}
                                 disabled={voting || voted || downvoting || downvoted}
                                 className={`p-1.5 rounded-full transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'hover:bg-red-500/10 hover:text-red-500 text-[var(--text-secondary)]'}`}
                                 title="Upvote"
@@ -270,7 +321,12 @@ export function PostCard({ post }: PostCardProps) {
                                     <ThumbsUp size={16} fill={voted ? "currentColor" : "none"} />
                                 )}
                             </button>
-                            <span className="px-3 text-xs font-bold text-[var(--text-primary)]">{post.active_votes?.length || 0}</span>
+                            <button
+                                onClick={(e) => { e.preventDefault(); setShowVoters(true); }}
+                                className="px-3 text-xs font-bold text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors"
+                            >
+                                {post.active_votes?.length || 0}
+                            </button>
                             <button
                                 onClick={(e) => { e.preventDefault(); handleVote(-10000); }}
                                 disabled={voting || voted || downvoting || downvoted}
@@ -298,6 +354,22 @@ export function PostCard({ post }: PostCardProps) {
                             <MessageSquare size={14} />
                             <span>{post.children}</span>
                         </Link>
+
+                        {/* Mod Actions button — only for mods/admins/owners of this community */}
+                        {post.community && (() => {
+                            const currentUser = localStorage.getItem('hive_user');
+                            const isMod = currentUser && (viewerRole === 'mod' || viewerRole === 'admin' || viewerRole === 'owner');
+                            return isMod ? (
+                                <button
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowModerationModal(true); }}
+                                    title="Moderation actions"
+                                    className="flex items-center gap-2 h-9 px-3 rounded-full border border-purple-500/20 bg-purple-500/5 text-xs font-bold text-purple-500 hover:bg-purple-500/20 transition-all"
+                                >
+                                    <Shield size={13} />
+                                    <span className="hidden sm:inline">Mod</span>
+                                </button>
+                            ) : null;
+                        })()}
                     </div>
 
                     <div className="text-right relative">
@@ -356,6 +428,20 @@ export function PostCard({ post }: PostCardProps) {
                     </div>
                 </div>
             </div>
+            {/* Voters Modal */}
+            {showVoters && <VoterListModal post={post} payout={payoutAmount} onClose={() => setShowVoters(false)} />}
+            {/* Moderation Modal */}
+            {showModerationModal && post.community && (
+                <ModerationActionsModal
+                    isOpen={showModerationModal}
+                    onClose={() => setShowModerationModal(false)}
+                    community={post.community}
+                    communityTitle={post.community_title}
+                    userRole={viewerRole || 'guest'}
+                    postAuthor={post.author}
+                    postPermlink={post.permlink}
+                />
+            )}
         </article>
     );
 }

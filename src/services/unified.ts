@@ -26,6 +26,9 @@ export interface Post {
     cashout_time?: string;
     max_accepted_payout?: string;
     percent_hbd?: number;
+    // Community role fields from bridge API
+    author_role?: string;  // e.g. 'owner', 'admin', 'mod', 'member', 'guest'
+    author_title?: string; // Custom title set by community (e.g. 'Lead Dev')
 }
 
 export interface Subscriber {
@@ -239,7 +242,9 @@ export const UnifiedDataService = {
                     author_reputation: UnifiedDataService.formatReputation(post.author_reputation),
                     cashout_time: post.payout_at || post.cashout_time,
                     max_accepted_payout: post.max_accepted_payout || '1000000.000 HBD',
-                    percent_hbd: post.percent_hbd || 10000
+                    percent_hbd: post.percent_hbd || 10000,
+                    author_role: post.author_role,
+                    author_title: post.author_title
                 }));
             } catch (hiveError) {
                 console.error('Hive feed fetch failed:', hiveError);
@@ -301,7 +306,9 @@ export const UnifiedDataService = {
                 author_reputation: UnifiedDataService.formatReputation(post.author_reputation),
                 cashout_time: post.payout_at || post.cashout_time,
                 max_accepted_payout: post.max_accepted_payout || '1000000.000 HBD',
-                percent_hbd: post.percent_hbd || 10000
+                percent_hbd: post.percent_hbd || 10000,
+                author_role: post.author_role,
+                author_title: post.author_title
             }));
         } catch (error) {
             console.error('Failed to fetch following feed:', error);
@@ -400,6 +407,7 @@ export const UnifiedDataService = {
                         cashout_time: fallback.cashout_time,
                         max_accepted_payout: fallback.max_accepted_payout,
                         percent_hbd: fallback.percent_hbd
+                        // author_role / author_title not available from get_content fallback
                     };
                 }
 
@@ -426,12 +434,27 @@ export const UnifiedDataService = {
                     author_reputation: UnifiedDataService.formatReputation(result.author_reputation),
                     cashout_time: result.payout_at || result.cashout_time,
                     max_accepted_payout: result.max_accepted_payout || '1000000.000 HBD',
-                    percent_hbd: result.percent_hbd || 10000
+                    percent_hbd: result.percent_hbd || 10000,
+                    author_role: result.author_role,
+                    author_title: result.author_title
                 };
             } catch (hiveError) {
                 console.error('Hive fetch failed:', hiveError);
                 throw hiveError;
             }
+        }
+    },
+
+    /**
+     * Fetches the full list of active votes for a post, including percentages.
+     */
+    getActiveVotes: async (author: string, permlink: string): Promise<any[]> => {
+        try {
+            const result = await hiveClient.database.call('get_active_votes', [author, permlink]);
+            return Array.isArray(result) ? result : [];
+        } catch (error) {
+            console.error('Failed to fetch active votes:', error);
+            return [];
         }
     },
 
@@ -622,13 +645,21 @@ export const UnifiedDataService = {
                 json_metadata: post.json_metadata,
                 pending_payout_value: post.pending_payout_value,
                 total_payout_value: post.total_payout_value,
+                author_payout_value: post.author_payout_value,
                 curator_payout_value: post.curator_payout_value,
                 active_votes: post.active_votes || [],
                 children: post.children,
                 stats: post.stats,
                 reblogged_by: post.reblogged_by || [],
                 community: post.community,
-                category: post.category
+                community_title: post.community_title,
+                category: post.category,
+                author_reputation: UnifiedDataService.formatReputation(post.author_reputation),
+                cashout_time: post.payout_at || post.cashout_time,
+                max_accepted_payout: post.max_accepted_payout || '1000000.000 HBD',
+                percent_hbd: post.percent_hbd || 10000,
+                author_role: post.author_role,
+                author_title: post.author_title
             }));
 
         } catch (error) {
@@ -697,6 +728,11 @@ export const UnifiedDataService = {
                 withdrawn: account.withdrawn,
                 vesting_withdraw_rate: account.vesting_withdraw_rate,
                 next_vesting_withdrawal: account.next_vesting_withdrawal,
+                // Pending reward fields (from post earnings not yet claimed)
+                reward_hive_balance: account.reward_hive_balance,
+                reward_hbd_balance: account.reward_hbd_balance,
+                reward_vesting_balance: account.reward_vesting_balance,
+                reward_vesting_hive: account.reward_vesting_hive,
                 rc,
                 hive_price: hivePrice,
                 globalProps: {

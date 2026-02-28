@@ -4,7 +4,9 @@ import { UnifiedDataService, Post } from '../../../services/unified';
 import HiveMarkdown from '../../../components/HiveMarkdown';
 import { CommentBox } from '../components/CommentBox';
 import { CommentCard } from '../../profiles/components/CommentCard';
-import { ThumbsUp, Repeat, MessageSquare, Volume2, Clock, BookOpen, X, Search, ChevronLeft, ChevronRight, Share, Twitter, Linkedin, MessageCircle, Copy, Check, Bookmark, MoreHorizontal, History, Zap, DollarSign } from 'lucide-react';
+import { VoteSlider } from '../components/VoteSlider';
+import { VoterListModal } from '../components/VoterListModal';
+import { ThumbsUp, Repeat, MessageSquare, Volume2, Clock, BookOpen, X, Search, ChevronLeft, Share, Twitter, Linkedin, MessageCircle, Copy, Check, Bookmark, MoreHorizontal, History, Zap, DollarSign, Shield } from 'lucide-react';
 import { transactionService } from '../../wallet/services/transactionService';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
@@ -24,11 +26,8 @@ export default function PostViewPage() {
     const [showMoreMenu, setShowMoreMenu] = useState(false);
     const [isBookmarked, setIsBookmarked] = useState(false);
     const [copied, setCopied] = useState(false);
-    const [voterSearch, setVoterSearch] = useState('');
     const [scrollProgress, setScrollProgress] = useState(0);
     const [showScrollTop, setShowScrollTop] = useState(false);
-    const [voterPage, setVoterPage] = useState(1);
-    const [voterSort, setVoterSort] = useState<'reward' | 'time'>('reward');
     const [postVersions, setPostVersions] = useState<any[]>([]);
     const [communities, setCommunities] = useState<any[]>([]);
     const [communitySearch, setCommunitySearch] = useState('');
@@ -41,11 +40,11 @@ export default function PostViewPage() {
     const [suggestedPosts, setSuggestedPosts] = useState<Post[]>([]);
     const [loadingSuggestedPosts, setLoadingSuggestedPosts] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
-    const votersPerPage = 12;
     const mainContentRef = useRef<HTMLDivElement>(null);
 
     const [voting, setVoting] = useState(false);
     const [voted, setVoted] = useState(false);
+    const [showVoteSlider, setShowVoteSlider] = useState(false);
     const [reblogging, setReblogging] = useState(false);
     const [reblogged, setReblogged] = useState(false);
 
@@ -241,8 +240,10 @@ export default function PostViewPage() {
         setVoting(false);
         if (result.success) {
             setVoted(true);
+            setShowVoteSlider(false);
             showNotification("Upvoted successfully", 'success');
         } else {
+            setShowVoteSlider(false);
             showNotification("Vote failed: " + result.error, 'error');
         }
     };
@@ -587,8 +588,6 @@ export default function PostViewPage() {
     const tags = post.json_metadata?.tags || [];
     const appSource = post.json_metadata?.app?.split('/')[0] || post.category;
 
-    // Calculate sum of rshares for relative voter weight
-    const totalRShares = post.active_votes?.reduce((sum, vote) => sum + Math.abs(Number(vote.rshares || 0)), 0) || 1;
 
     return (
         <div className="min-h-screen bg-[var(--bg-canvas)]">
@@ -620,6 +619,21 @@ export default function PostViewPage() {
                                     <Link to={`/@${post?.author}`} className="font-black text-xl text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors mb-1">
                                         @{post?.author}
                                     </Link>
+                                    {/* Community Role Badge */}
+                                    {post?.author_role && post.author_role !== 'guest' && post.author_role !== 'member' && (
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide mb-1 ${post.author_role === 'owner' ? 'bg-purple-500/15 text-purple-500 border border-purple-500/25' :
+                                            post.author_role === 'admin' ? 'bg-red-500/15 text-red-500 border border-red-500/25' :
+                                                'bg-blue-500/15 text-blue-500 border border-blue-500/25'
+                                            }`}>
+                                            <Shield size={10} />
+                                            {post.author_role}
+                                        </span>
+                                    )}
+                                    {post?.author_title && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--primary-color)]/10 text-[var(--primary-color)] border border-[var(--primary-color)]/20 mb-1">
+                                            {post.author_title}
+                                        </span>
+                                    )}
                                     <div className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-widest opacity-60 mb-6">
                                         Reputation {UnifiedDataService.formatReputation(post?.author_reputation)}
                                     </div>
@@ -719,9 +733,26 @@ export default function PostViewPage() {
                                         className="w-12 h-12 rounded-full border-2 border-[var(--bg-canvas)] shadow-md group-hover:scale-105 transition-transform"
                                     />
                                     <div className="text-left">
-                                        <Link to={`/@${post?.author}`} className="block font-black text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors">
-                                            @{post?.author}
-                                        </Link>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <Link to={`/@${post?.author}`} className="block font-black text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors">
+                                                @{post?.author}
+                                            </Link>
+                                            {/* Community Role Badge */}
+                                            {post?.author_role && post.author_role !== 'guest' && post.author_role !== 'member' && (
+                                                <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${post.author_role === 'owner' ? 'bg-purple-500/15 text-purple-500 border border-purple-500/25' :
+                                                    post.author_role === 'admin' ? 'bg-red-500/15 text-red-500 border border-red-500/25' :
+                                                        'bg-blue-500/15 text-blue-500 border border-blue-500/25'
+                                                    }`}>
+                                                    <Shield size={8} />
+                                                    {post.author_role}
+                                                </span>
+                                            )}
+                                            {post?.author_title && (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-[var(--primary-color)]/10 text-[var(--primary-color)] border border-[var(--primary-color)]/20">
+                                                    {post.author_title}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-[10px] text-[var(--text-secondary)] font-bold opacity-60 uppercase tracking-tighter">
                                             Reputation {UnifiedDataService.formatReputation(post?.author_reputation)}
                                         </div>
@@ -929,13 +960,22 @@ export default function PostViewPage() {
                         {/* Left Group: Interactions */}
                         <div className="flex items-center gap-1 pl-2">
                             {/* Upvote */}
-                            <button
-                                onClick={() => handleVote(10000)}
-                                disabled={voting || voted}
-                                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'hover:bg-[var(--primary-color)]/10 text-[var(--text-primary)]'}`}
-                            >
-                                {voting ? <div className="animate-spin h-5 w-5 border-2 border-current rounded-full border-t-transparent" /> : <ThumbsUp size={20} fill={voted ? "currentColor" : "none"} />}
-                            </button>
+                            <div className="relative">
+                                {showVoteSlider && (
+                                    <VoteSlider
+                                        onVote={handleVote}
+                                        onClose={() => setShowVoteSlider(false)}
+                                        isVoting={voting}
+                                    />
+                                )}
+                                <button
+                                    onClick={() => setShowVoteSlider(!showVoteSlider)}
+                                    disabled={voting || voted}
+                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'hover:bg-[var(--primary-color)]/10 text-[var(--text-primary)]'}`}
+                                >
+                                    {voting ? <div className="animate-spin h-5 w-5 border-2 border-current rounded-full border-t-transparent" /> : <ThumbsUp size={20} fill={voted ? "currentColor" : "none"} />}
+                                </button>
+                            </div>
 
                             {/* Payout Display */}
                             <div
@@ -1139,166 +1179,8 @@ export default function PostViewPage() {
 
 
 
-            {/* Voters Modal - Enhanced Ecency Style */}
-            {
-                showVoters && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <div
-                            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in"
-                            onClick={() => setShowVoters(false)}
-                        />
-                        <div className="relative w-full max-w-2xl bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl flex flex-col max-h-[85vh] animate-in zoom-in-95 fade-in overflow-hidden">
-                            {/* Modal Header */}
-                            <div className="p-6 border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/50">
-                                <div className="flex items-center justify-between mb-6">
-                                    <div className="flex items-center gap-3">
-                                        <h3 className="text-xl font-bold text-[var(--text-primary)]">{post.active_votes?.length || 0} Votes</h3>
-                                    </div>
-                                    <button
-                                        onClick={() => setShowVoters(false)}
-                                        className="p-2 hover:bg-[var(--bg-canvas)] rounded-full transition-colors text-[var(--text-secondary)]"
-                                    >
-                                        <X size={20} />
-                                    </button>
-                                </div>
-
-                                <div className="flex items-center gap-4">
-                                    <div className="relative flex-1">
-                                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
-                                        <input
-                                            type="text"
-                                            placeholder="Search voters..."
-                                            value={voterSearch}
-                                            onChange={(e) => {
-                                                setVoterSearch(e.target.value);
-                                                setVoterPage(1);
-                                            }}
-                                            className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary-color)]/20 focus:border-[var(--primary-color)] transition-all"
-                                        />
-                                    </div>
-                                    <select
-                                        value={voterSort}
-                                        onChange={(e) => setVoterSort(e.target.value as 'reward' | 'time')}
-                                        className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl py-2 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--primary-color)]/20 transition-all font-medium text-[var(--text-primary)]"
-                                    >
-                                        <option value="reward">Sort by Reward</option>
-                                        <option value="time">Sort by Time</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            {/* Modal Content - Grid */}
-                            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-[var(--bg-card)]">
-                                {(() => {
-                                    const filteredVoters = (post.active_votes || [])
-                                        .filter(v => v.voter.toLowerCase().includes(voterSearch.toLowerCase()))
-                                        .sort((a, b) => {
-                                            if (voterSort === 'reward') {
-                                                return (Number(b.rshares) || 0) - (Number(a.rshares) || 0);
-                                            }
-                                            return new Date(b.time).getTime() - new Date(a.time).getTime();
-                                        });
-
-                                    const totalPages = Math.ceil(filteredVoters.length / votersPerPage);
-                                    const startIndex = (voterPage - 1) * votersPerPage;
-                                    const paginatedVoters = filteredVoters.slice(startIndex, startIndex + votersPerPage);
-
-                                    if (filteredVoters.length === 0) {
-                                        return (
-                                            <div className="text-center py-20">
-                                                <div className="text-[var(--text-secondary)] italic mb-2">No voters found</div>
-                                                {voterSearch && <div className="text-xs opacity-60">Try a different search term</div>}
-                                            </div>
-                                        );
-                                    }
-
-                                    return (
-                                        <>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {paginatedVoters.map((vote: any) => {
-                                                    const vReward = ((Math.abs(Number(vote.rshares || 0)) / totalRShares) * payout);
-                                                    const vWeight = (vote.percent || 0) / 100;
-
-                                                    return (
-                                                        <Link
-                                                            key={vote.voter}
-                                                            to={`/@${vote.voter}`}
-                                                            onClick={() => setShowVoters(false)}
-                                                            className="flex items-center gap-4 p-4 rounded-2xl bg-[var(--bg-canvas)]/30 hover:bg-[var(--bg-canvas)] border border-[var(--border-color)] hover:border-[var(--primary-color)]/30 transition-all group shadow-sm hover:shadow-md"
-                                                        >
-                                                            <img
-                                                                src={`https://images.hive.blog/u/${vote.voter}/avatar/small`}
-                                                                alt={vote.voter}
-                                                                className="w-12 h-12 rounded-full border border-[var(--border-color)] shadow-sm"
-                                                            />
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-1.5 mb-1">
-                                                                    <span className="font-bold text-[var(--text-primary)] group-hover:text-[var(--primary-color)] transition-colors truncate">
-                                                                        @{vote.voter}
-                                                                    </span>
-                                                                    <span className="text-[10px] bg-[var(--bg-card)] px-1.5 py-0.5 rounded border border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
-                                                                        {UnifiedDataService.formatReputation(vote.reputation)}
-                                                                    </span>
-                                                                </div>
-                                                                <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] font-medium">
-                                                                    <span className="text-green-600 dark:text-green-400 font-bold">${vReward.toFixed(3)}</span>
-                                                                    <span className="opacity-30">•</span>
-                                                                    <span>{vWeight.toFixed(1)}%</span>
-                                                                    <span className="opacity-30">•</span>
-                                                                    <span>{formatRelativeTime(vote.time || post.created)}</span>
-                                                                </div>
-                                                            </div>
-                                                        </Link>
-                                                    );
-                                                })}
-                                            </div>
-
-                                            {/* Pagination */}
-                                            {totalPages > 1 && (
-                                                <div className="mt-10 flex items-center justify-center gap-2 border-t border-[var(--border-color)] pt-6">
-                                                    <button
-                                                        disabled={voterPage === 1}
-                                                        onClick={() => setVoterPage(prev => prev - 1)}
-                                                        className="p-2 rounded-xl hover:bg-[var(--bg-canvas)] disabled:opacity-20 transition-all text-[var(--text-secondary)]"
-                                                    >
-                                                        <ChevronLeft size={20} />
-                                                    </button>
-                                                    <div className="flex items-center gap-1">
-                                                        {[...Array(totalPages)].map((_, i) => {
-                                                            const p = i + 1;
-                                                            // Show limited page numbers if too many
-                                                            if (totalPages > 7 && Math.abs(p - voterPage) > 2 && p !== 1 && p !== totalPages) {
-                                                                if (p === 2 || p === totalPages - 1) return <span key={p} className="px-2 opacity-30">...</span>;
-                                                                return null;
-                                                            }
-                                                            return (
-                                                                <button
-                                                                    key={p}
-                                                                    onClick={() => setVoterPage(p)}
-                                                                    className={`w-9 h-9 rounded-xl text-sm font-bold transition-all ${voterPage === p ? 'bg-[var(--primary-color)] text-white shadow-lg' : 'hover:bg-[var(--bg-canvas)] text-[var(--text-secondary)]'}`}
-                                                                >
-                                                                    {p}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                    <button
-                                                        disabled={voterPage === totalPages}
-                                                        onClick={() => setVoterPage(prev => prev + 1)}
-                                                        className="p-2 rounded-xl hover:bg-[var(--bg-canvas)] disabled:opacity-20 transition-all text-[var(--text-secondary)]"
-                                                    >
-                                                        <ChevronRight size={20} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </>
-                                    );
-                                })()}
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
+            {/* Voters Modal */}
+            {post && showVoters && <VoterListModal post={post} payout={payout} onClose={() => setShowVoters(false)} />}
 
             {/* Share Modal - Premium Style */}
             {
