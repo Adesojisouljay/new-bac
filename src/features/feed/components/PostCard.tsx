@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Post } from '../../../services/unified';
 import { transactionService } from '../../wallet/services/transactionService';
-import { ThumbsUp, ThumbsDown, MessageSquare, Repeat } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, Repeat, Shield } from 'lucide-react';
 import { VoteSlider } from './VoteSlider';
 import { VoterListModal } from './VoterListModal';
 import { formatRelativeTime } from '../../../lib/dateUtils';
@@ -241,10 +241,44 @@ export function PostCard({ post }: PostCardProps) {
                                 className="w-8 h-8 rounded-full border-2 border-[var(--bg-canvas)] shadow-sm"
                             />
                             <div className="flex flex-col">
-                                <Link to={`/@${post.author}`} className="font-bold text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors leading-tight">
-                                    {post.author} <span className="text-[var(--text-secondary)] font-normal ml-0.5">({post.author_reputation || 25})</span>
-                                </Link>
-                                <span className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tight">{formatRelativeTime(post.created)}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <Link to={`/@${post.author}`} className="font-bold text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors leading-tight">
+                                        {post.author} <span className="text-[var(--text-secondary)] font-normal ml-0.5">({post.author_reputation || 25})</span>
+                                    </Link>
+                                    {/* Community Role Badge */}
+                                    {post.author_role && post.author_role !== 'guest' && post.author_role !== 'member' && (
+                                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${post.author_role === 'owner' ? 'bg-purple-500/15 text-purple-500 border border-purple-500/25' :
+                                            post.author_role === 'admin' ? 'bg-red-500/15 text-red-500 border border-red-500/25' :
+                                                'bg-blue-500/15 text-blue-500 border border-blue-500/25'
+                                            }`}>
+                                            <Shield size={8} />
+                                            {post.author_role}
+                                        </span>
+                                    )}
+                                    {/* Custom Title Badge (if set by community) */}
+                                    {post.author_title && (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-[var(--primary-color)]/10 text-[var(--primary-color)] border border-[var(--primary-color)]/20">
+                                            {post.author_title}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tight">
+                                    <span>{formatRelativeTime(post.created)}</span>
+                                    {/* Community context — only show in global/following feeds */}
+                                    {post.community && post.community_title && (
+                                        <>
+                                            <span className="opacity-30">·</span>
+                                            <span className="opacity-60">in</span>
+                                            <Link
+                                                to={`/c/${post.community}`}
+                                                className="text-[var(--primary-color)] font-bold hover:underline normal-case truncate max-w-[120px]"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                {post.community_title}
+                                            </Link>
+                                        </>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>

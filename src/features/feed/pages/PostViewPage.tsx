@@ -6,7 +6,7 @@ import { CommentBox } from '../components/CommentBox';
 import { CommentCard } from '../../profiles/components/CommentCard';
 import { VoteSlider } from '../components/VoteSlider';
 import { VoterListModal } from '../components/VoterListModal';
-import { ThumbsUp, Repeat, MessageSquare, Volume2, Clock, BookOpen, X, Search, ChevronLeft, Share, Twitter, Linkedin, MessageCircle, Copy, Check, Bookmark, MoreHorizontal, History, Zap, DollarSign } from 'lucide-react';
+import { ThumbsUp, Repeat, MessageSquare, Volume2, Clock, BookOpen, X, Search, ChevronLeft, Share, Twitter, Linkedin, MessageCircle, Copy, Check, Bookmark, MoreHorizontal, History, Zap, DollarSign, Shield } from 'lucide-react';
 import { transactionService } from '../../wallet/services/transactionService';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
@@ -619,6 +619,21 @@ export default function PostViewPage() {
                                     <Link to={`/@${post?.author}`} className="font-black text-xl text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors mb-1">
                                         @{post?.author}
                                     </Link>
+                                    {/* Community Role Badge */}
+                                    {post?.author_role && post.author_role !== 'guest' && post.author_role !== 'member' && (
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide mb-1 ${post.author_role === 'owner' ? 'bg-purple-500/15 text-purple-500 border border-purple-500/25' :
+                                                post.author_role === 'admin' ? 'bg-red-500/15 text-red-500 border border-red-500/25' :
+                                                    'bg-blue-500/15 text-blue-500 border border-blue-500/25'
+                                            }`}>
+                                            <Shield size={10} />
+                                            {post.author_role}
+                                        </span>
+                                    )}
+                                    {post?.author_title && (
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-[var(--primary-color)]/10 text-[var(--primary-color)] border border-[var(--primary-color)]/20 mb-1">
+                                            {post.author_title}
+                                        </span>
+                                    )}
                                     <div className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-widest opacity-60 mb-6">
                                         Reputation {UnifiedDataService.formatReputation(post?.author_reputation)}
                                     </div>
@@ -718,9 +733,26 @@ export default function PostViewPage() {
                                         className="w-12 h-12 rounded-full border-2 border-[var(--bg-canvas)] shadow-md group-hover:scale-105 transition-transform"
                                     />
                                     <div className="text-left">
-                                        <Link to={`/@${post?.author}`} className="block font-black text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors">
-                                            @{post?.author}
-                                        </Link>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            <Link to={`/@${post?.author}`} className="block font-black text-sm text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors">
+                                                @{post?.author}
+                                            </Link>
+                                            {/* Community Role Badge */}
+                                            {post?.author_role && post.author_role !== 'guest' && post.author_role !== 'member' && (
+                                                <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${post.author_role === 'owner' ? 'bg-purple-500/15 text-purple-500 border border-purple-500/25' :
+                                                    post.author_role === 'admin' ? 'bg-red-500/15 text-red-500 border border-red-500/25' :
+                                                        'bg-blue-500/15 text-blue-500 border border-blue-500/25'
+                                                    }`}>
+                                                    <Shield size={8} />
+                                                    {post.author_role}
+                                                </span>
+                                            )}
+                                            {post?.author_title && (
+                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-[var(--primary-color)]/10 text-[var(--primary-color)] border border-[var(--primary-color)]/20">
+                                                    {post.author_title}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="text-[10px] text-[var(--text-secondary)] font-bold opacity-60 uppercase tracking-tighter">
                                             Reputation {UnifiedDataService.formatReputation(post?.author_reputation)}
                                         </div>
