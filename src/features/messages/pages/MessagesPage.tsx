@@ -1,10 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
-import rehypeRaw from 'rehype-raw';
 import { Copy, Check, Image, Loader2, Send, Mic, Square, ArrowLeft, MessageCircle, CircleDashed, PlusCircle, MoreVertical, Plus, X, Search, ShieldCheck, Zap, Trash2, Shield, Reply, Smile, Pencil, Volume2, RefreshCw, Bot, Sparkles } from 'lucide-react';
 import { VoiceNotePlayer } from '../../../components/VoiceNotePlayer';
+import HiveMarkdown from '../../../components/HiveMarkdown';
 import { MediaPicker } from '../../../components/MediaPicker';
 import { storyService, GroupedStory } from '../../stories/services/storyService';
 import { fixWebmDuration } from '../../../utils/fixWebmDuration';
@@ -833,9 +830,9 @@ export function MessagesPage() {
             if (!urlMatch) {
                 return (
                     <div className="relative markdown-content">
-                        <ReactMarkdown
-                            remarkPlugins={[remarkGfm, remarkBreaks]}
-                            rehypePlugins={[rehypeRaw]}
+                        <HiveMarkdown
+                            content={displayContent}
+                            isProse={false}
                             components={{
                                 code({ node, inline, className, children, ...props }: any) {
                                     const match = /language-(\w+)/.exec(className || '');
@@ -850,14 +847,11 @@ export function MessagesPage() {
                                         </code>
                                     );
                                 },
-                                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                                a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">{children}</a>,
-                                ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
-                                ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
+                                p: ({ children }: any) => <p className="mb-2 last:mb-0">{children}</p>,
+                                ul: ({ children }: any) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                                ol: ({ children }: any) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
                             }}
-                        >
-                            {displayContent}
-                        </ReactMarkdown>
+                        />
                         {shouldTruncate && <span className="text-[var(--text-secondary)]">...</span>}
                         <TruncateToggle />
                     </div>
@@ -872,9 +866,9 @@ export function MessagesPage() {
 
             const TextBody = () => cleanContent ? (
                 <div className="markdown-content mb-3">
-                    <ReactMarkdown
-                        remarkPlugins={[remarkGfm, remarkBreaks]}
-                        rehypePlugins={[rehypeRaw]}
+                    <HiveMarkdown
+                        content={cleanContent}
+                        isProse={false}
                         components={{
                             code({ node, inline, className, children, ...props }: any) {
                                 const match = /language-(\w+)/.exec(className || '');
@@ -889,14 +883,11 @@ export function MessagesPage() {
                                     </code>
                                 );
                             },
-                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                            a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">{children}</a>,
-                            ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
-                            ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
+                            p: ({ children }: any) => <p className="mb-2 last:mb-0">{children}</p>,
+                            ul: ({ children }: any) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                            ol: ({ children }: any) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
                         }}
-                    >
-                        {cleanContent}
-                    </ReactMarkdown>
+                    />
                 </div>
             ) : null;
 
@@ -959,9 +950,9 @@ export function MessagesPage() {
 
             return (
                 <div className="relative markdown-content">
-                    <ReactMarkdown
-                        remarkPlugins={[remarkGfm, remarkBreaks]}
-                        rehypePlugins={[rehypeRaw]}
+                    <HiveMarkdown
+                        content={displayContent}
+                        isProse={false}
                         components={{
                             code({ node, inline, className, children, ...props }: any) {
                                 const match = /language-(\w+)/.exec(className || '');
@@ -976,14 +967,11 @@ export function MessagesPage() {
                                     </code>
                                 );
                             },
-                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                            a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">{children}</a>,
-                            ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
-                            ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
+                            p: ({ children }: any) => <p className="mb-2 last:mb-0">{children}</p>,
+                            ul: ({ children }: any) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                            ol: ({ children }: any) => <ol className="list-decimal ml-4 mb-2">{children}</ol>
                         }}
-                    >
-                        {displayContent}
-                    </ReactMarkdown>
+                    />
                     {shouldTruncate && <span className="text-[var(--text-secondary)]">...</span>}
                     <TruncateToggle />
                 </div>

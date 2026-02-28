@@ -82,7 +82,7 @@ export function SearchModal({ isOpen, onClose, initialTab = 'people' }: SearchMo
             onClick={onClose}
         >
             <div
-                className="w-full max-w-2xl bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-top-4 duration-300"
+                className="w-full max-w-2xl bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-top-4 duration-300 max-h-[85vh] flex flex-col"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Search Header */}
@@ -127,7 +127,7 @@ export function SearchModal({ isOpen, onClose, initialTab = 'people' }: SearchMo
                 </div>
 
                 {/* Results Section */}
-                <div className="max-h-[60vh] overflow-y-auto p-4 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto min-h-0 p-4 custom-scrollbar">
                     {loading && !query ? (
                         <div className="flex flex-col items-center justify-center py-12 space-y-4 text-[var(--text-secondary)]">
                             <div className="w-8 h-8 border-4 border-[var(--primary-color)]/20 border-t-[var(--primary-color)] rounded-full animate-spin" />
@@ -197,11 +197,11 @@ export function SearchModal({ isOpen, onClose, initialTab = 'people' }: SearchMo
                 </div>
 
                 {/* Footer Tip */}
-                <div className="p-4 bg-[var(--bg-card)]/30 border-t border-[var(--border-color)] flex items-center justify-center gap-2 text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">
+                <div className="shrink-0 p-4 bg-[var(--bg-card)]/30 border-t border-[var(--border-color)] flex items-center justify-center gap-2 text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest">
                     <span>Pro Tip: Search for @usernames to find people faster</span>
                     <ChevronRight size={12} />
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
