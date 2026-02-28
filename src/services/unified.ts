@@ -728,6 +728,11 @@ export const UnifiedDataService = {
                 withdrawn: account.withdrawn,
                 vesting_withdraw_rate: account.vesting_withdraw_rate,
                 next_vesting_withdrawal: account.next_vesting_withdrawal,
+                // Pending reward fields (from post earnings not yet claimed)
+                reward_hive_balance: account.reward_hive_balance,
+                reward_hbd_balance: account.reward_hbd_balance,
+                reward_vesting_balance: account.reward_vesting_balance,
+                reward_vesting_hive: account.reward_vesting_hive,
                 rc,
                 hive_price: hivePrice,
                 globalProps: {

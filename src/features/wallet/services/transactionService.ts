@@ -142,7 +142,14 @@ interface CrossPostOperation extends BaseOperation {
     originTitle: string;
 }
 
-export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation | CrossPostOperation;
+interface ClaimRewardOperation extends BaseOperation {
+    type: 'claim_reward_balance';
+    reward_hive: string;    // e.g. '0.000 HIVE'
+    reward_hbd: string;     // e.g. '1.234 HBD'
+    reward_vests: string;   // e.g. '123456.000000 VESTS'
+}
+
+export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation | CrossPostOperation | ClaimRewardOperation;
 
 export const transactionService = {
     /**
@@ -303,6 +310,16 @@ export const transactionService = {
                             })
                         }]
                     ];
+                    break;
+                }
+                case 'claim_reward_balance': {
+                    const crOp = op as ClaimRewardOperation;
+                    hiveOps = [["claim_reward_balance", {
+                        account: crOp.username,
+                        reward_hive: crOp.reward_hive,
+                        reward_hbd: crOp.reward_hbd,
+                        reward_vests: crOp.reward_vests
+                    }]];
                     break;
                 }
                 default:
@@ -640,6 +657,24 @@ export const transactionService = {
                     result = await keychain.broadcast({
                         username: cpOp.username,
                         operations: [cpOpData as any],
+                        method: "Posting" as any
+                    });
+                    break;
+                }
+                case 'claim_reward_balance': {
+                    const crOp = op as ClaimRewardOperation;
+                    const claimOp = [
+                        "claim_reward_balance",
+                        {
+                            account: crOp.username,
+                            reward_hive: crOp.reward_hive,
+                            reward_hbd: crOp.reward_hbd,
+                            reward_vests: crOp.reward_vests
+                        }
+                    ];
+                    result = await keychain.broadcast({
+                        username: crOp.username,
+                        operations: [claimOp as any],
                         method: "Posting" as any
                     });
                     break;
