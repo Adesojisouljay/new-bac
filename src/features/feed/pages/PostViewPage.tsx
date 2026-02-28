@@ -622,8 +622,8 @@ export default function PostViewPage() {
                                     {/* Community Role Badge */}
                                     {post?.author_role && post.author_role !== 'guest' && post.author_role !== 'member' && (
                                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wide mb-1 ${post.author_role === 'owner' ? 'bg-purple-500/15 text-purple-500 border border-purple-500/25' :
-                                                post.author_role === 'admin' ? 'bg-red-500/15 text-red-500 border border-red-500/25' :
-                                                    'bg-blue-500/15 text-blue-500 border border-blue-500/25'
+                                            post.author_role === 'admin' ? 'bg-red-500/15 text-red-500 border border-red-500/25' :
+                                                'bg-blue-500/15 text-blue-500 border border-blue-500/25'
                                             }`}>
                                             <Shield size={10} />
                                             {post.author_role}

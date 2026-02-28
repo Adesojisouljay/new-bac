@@ -49,6 +49,10 @@ export function GovernancePage() {
     const [proposalSearch, setProposalSearch] = useState('');
     const [hasMoreWitnesses, setHasMoreWitnesses] = useState(true);
     const [hasMoreProposals, setHasMoreProposals] = useState(true);
+    // Proxy
+    const [currentProxy, setCurrentProxy] = useState('');
+    const [proxyInput, setProxyInput] = useState('');
+    const [settingProxy, setSettingProxy] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -96,6 +100,7 @@ export function GovernancePage() {
         try {
             const [account] = await hiveClient.database.getAccounts([username]);
             setUserVotes(account.witness_votes);
+            setCurrentProxy(account.proxy || '');
 
             // Fetch user proposal votes
             const votes = await hiveClient.call('database_api', 'list_proposal_votes', {
@@ -122,7 +127,7 @@ export function GovernancePage() {
 
         try {
             const op = {
-                type: 'witness_vote' as any, // Need to add to transactionService
+                type: 'witness_vote' as const,
                 username,
                 witness,
                 approve
@@ -140,6 +145,36 @@ export function GovernancePage() {
             }
         } catch (error: any) {
             showNotification(`Error: ${error.message}`, 'error');
+        }
+    };
+
+    const handleSetProxy = async (proxy: string) => {
+        if (!username) {
+            showNotification('Please login to set a proxy', 'error');
+            return;
+        }
+        setSettingProxy(true);
+        try {
+            const result = await transactionService.broadcast({
+                type: 'set_proxy' as any,
+                username,
+                proxy
+            }, () => {
+                showNotification('Please sign the transaction', 'info');
+            });
+
+            if (result.success) {
+                const msg = proxy ? `Proxy set to @${proxy}` : 'Proxy cleared';
+                showNotification(msg, 'success');
+                setCurrentProxy(proxy);
+                setProxyInput('');
+            } else {
+                showNotification(`Failed: ${result.error}`, 'error');
+            }
+        } catch (error: any) {
+            showNotification(`Error: ${error.message}`, 'error');
+        } finally {
+            setSettingProxy(false);
         }
     };
 
@@ -220,58 +255,101 @@ export function GovernancePage() {
                     ))}
                 </div>
             ) : activeTab === 'witnesses' ? (
-                <div className="bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] overflow-hidden">
-                    <table className="w-full text-left">
-                        <thead className="bg-[var(--bg-canvas)]/50 text-[10px] uppercase font-bold tracking-widest text-[var(--text-secondary)]">
-                            <tr>
-                                <th className="px-6 py-4">Rank</th>
-                                <th className="px-6 py-4">Witness</th>
-                                <th className="px-6 py-4">Votes</th>
-                                <th className="px-6 py-4 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--border-color)]">
-                            {witnesses
-                                .filter(w => w.owner.toLowerCase().includes(witnessSearch.toLowerCase()))
-                                .map((w, i) => {
-                                    const isVoted = userVotes.includes(w.owner);
-                                    return (
-                                        <tr key={w.owner} className="hover:bg-[var(--bg-canvas)] transition-colors group">
-                                            <td className="px-6 py-4 text-sm font-bold text-[var(--text-secondary)]">#{i + 1}</td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex flex-col">
-                                                    <span className="font-bold text-[var(--text-primary)] group-hover:text-[var(--primary-color)] transition-colors">@{w.owner}</span>
-                                                    <a href={w.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[var(--text-secondary)] hover:underline truncate max-w-[150px]">Link</a>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-[var(--text-primary)]">
-                                                {(parseFloat(w.votes) / 1e12).toFixed(2)}T
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <button
-                                                    onClick={() => handleWitnessVote(w.owner, !isVoted)}
-                                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${isVoted ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white' : 'bg-[var(--primary-color)]/10 text-[var(--primary-color)] border-[var(--primary-color)]/20 hover:bg-[var(--primary-color)] hover:text-white'}`}
-                                                >
-                                                    {isVoted ? 'Unvote' : 'Vote'}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                        </tbody>
-                    </table>
-
-                    {hasMoreWitnesses && witnessSearch === '' && (
-                        <div className="p-6 text-center border-t border-[var(--border-color)]">
-                            <button
-                                onClick={() => fetchData(true)}
-                                disabled={loadingMore}
-                                className="px-8 py-2 text-sm font-bold uppercase tracking-widest text-[var(--primary-color)] hover:bg-[var(--primary-color)]/5 border border-[var(--primary-color)]/20 rounded-xl transition-all disabled:opacity-50"
-                            >
-                                {loadingMore ? 'Loading More...' : 'Load More Witnesses'}
-                            </button>
+                <div className="space-y-6">
+                    {/* Proxy Panel */}
+                    {username && (
+                        <div className="bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] p-6">
+                            <h3 className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-4">Voting Proxy</h3>
+                            {currentProxy ? (
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
+                                        <p className="text-sm text-[var(--text-secondary)] mb-1">Your witness votes are delegated to:</p>
+                                        <span className="font-black text-[var(--primary-color)] text-lg">@{currentProxy}</span>
+                                    </div>
+                                    <button
+                                        onClick={() => handleSetProxy('')}
+                                        disabled={settingProxy}
+                                        className="px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"
+                                    >
+                                        {settingProxy ? 'Clearing...' : 'Clear Proxy'}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col sm:flex-row gap-3">
+                                    <input
+                                        type="text"
+                                        placeholder="Enter Hive username to set as proxy..."
+                                        value={proxyInput}
+                                        onChange={(e) => setProxyInput(e.target.value.toLowerCase().replace('@', ''))}
+                                        className="flex-1 px-4 py-2.5 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl text-sm text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:border-[var(--primary-color)] focus:ring-2 focus:ring-[var(--primary-color)]/10 outline-none transition-all"
+                                    />
+                                    <button
+                                        onClick={() => handleSetProxy(proxyInput.trim())}
+                                        disabled={!proxyInput.trim() || settingProxy}
+                                        className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider bg-[var(--primary-color)] text-white shadow-md shadow-[var(--primary-color)]/20 hover:brightness-110 transition-all disabled:opacity-50"
+                                    >
+                                        {settingProxy ? 'Setting...' : 'Set Proxy'}
+                                    </button>
+                                </div>
+                            )}
+                            <p className="text-[10px] text-[var(--text-secondary)] opacity-60 mt-3">Setting a proxy delegates ALL your witness votes to that account. You can clear it anytime.</p>
                         </div>
                     )}
+
+                    {/* Witness Table */}
+                    <div className="bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] overflow-hidden">
+                        <table className="w-full text-left">
+                            <thead className="bg-[var(--bg-canvas)]/50 text-[10px] uppercase font-bold tracking-widest text-[var(--text-secondary)]">
+                                <tr>
+                                    <th className="px-6 py-4">Rank</th>
+                                    <th className="px-6 py-4">Witness</th>
+                                    <th className="px-6 py-4">Votes</th>
+                                    <th className="px-6 py-4 text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--border-color)]">
+                                {witnesses
+                                    .filter(w => w.owner.toLowerCase().includes(witnessSearch.toLowerCase()))
+                                    .map((w, i) => {
+                                        const isVoted = userVotes.includes(w.owner);
+                                        return (
+                                            <tr key={w.owner} className="hover:bg-[var(--bg-canvas)] transition-colors group">
+                                                <td className="px-6 py-4 text-sm font-bold text-[var(--text-secondary)]">#{i + 1}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="font-bold text-[var(--text-primary)] group-hover:text-[var(--primary-color)] transition-colors">@{w.owner}</span>
+                                                        <a href={w.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[var(--text-secondary)] hover:underline truncate max-w-[150px]">Link</a>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-[var(--text-primary)]">
+                                                    {(parseFloat(w.votes) / 1e12).toFixed(2)}T
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <button
+                                                        onClick={() => handleWitnessVote(w.owner, !isVoted)}
+                                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${isVoted ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white' : 'bg-[var(--primary-color)]/10 text-[var(--primary-color)] border-[var(--primary-color)]/20 hover:bg-[var(--primary-color)] hover:text-white'}`}
+                                                    >
+                                                        {isVoted ? 'Unvote' : 'Vote'}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                            </tbody>
+                        </table>
+
+                        {hasMoreWitnesses && witnessSearch === '' && (
+                            <div className="p-6 text-center border-t border-[var(--border-color)]">
+                                <button
+                                    onClick={() => fetchData(true)}
+                                    disabled={loadingMore}
+                                    className="px-8 py-2 text-sm font-bold uppercase tracking-widest text-[var(--primary-color)] hover:bg-[var(--primary-color)]/5 border border-[var(--primary-color)]/20 rounded-xl transition-all disabled:opacity-50"
+                                >
+                                    {loadingMore ? 'Loading More...' : 'Load More Witnesses'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             ) : (
                 <div className="space-y-4">

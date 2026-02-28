@@ -5,6 +5,7 @@ import { transactionService } from '../../wallet/services/transactionService';
 import { ThumbsUp, ThumbsDown, MessageSquare, Repeat, Shield } from 'lucide-react';
 import { VoteSlider } from './VoteSlider';
 import { VoterListModal } from './VoterListModal';
+import { ModerationActionsModal } from '../../community/components/ModerationActionsModal';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { useCommunity } from '../../community/context/CommunityContext';
@@ -12,15 +13,16 @@ import { pointsService } from '../../../services/pointsService';
 
 interface PostCardProps {
     post: Post;
+    viewerRole?: string; // caller passes the logged-in user's own role in this community
 }
 
-export function PostCard({ post }: PostCardProps) {
+export function PostCard({ post, viewerRole }: PostCardProps) {
     const { showNotification, showConfirm } = useNotification();
     const { config } = useCommunity();
     const community = config?.id || 'hive-106130';
 
     const [voting, setVoting] = useState(false);
-    const [voted, setVoted] = useState(false); // Should check if user already voted in active_votes
+    const [voted, setVoted] = useState(false);
     const [downvoting, setDownvoting] = useState(false);
     const [downvoted, setDownvoted] = useState(false);
     const [reblogging, setReblogging] = useState(false);
@@ -28,6 +30,7 @@ export function PostCard({ post }: PostCardProps) {
     const [showVoteSlider, setShowVoteSlider] = useState(false);
     const [showPayoutDetails, setShowPayoutDetails] = useState(false);
     const [showVoters, setShowVoters] = useState(false);
+    const [showModerationModal, setShowModerationModal] = useState(false);
 
     // Strip markdown for clean preview
     const stripMarkdown = (text: string) => {
@@ -351,6 +354,22 @@ export function PostCard({ post }: PostCardProps) {
                             <MessageSquare size={14} />
                             <span>{post.children}</span>
                         </Link>
+
+                        {/* Mod Actions button — only for mods/admins/owners of this community */}
+                        {post.community && (() => {
+                            const currentUser = localStorage.getItem('hive_user');
+                            const isMod = currentUser && (viewerRole === 'mod' || viewerRole === 'admin' || viewerRole === 'owner');
+                            return isMod ? (
+                                <button
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowModerationModal(true); }}
+                                    title="Moderation actions"
+                                    className="flex items-center gap-2 h-9 px-3 rounded-full border border-purple-500/20 bg-purple-500/5 text-xs font-bold text-purple-500 hover:bg-purple-500/20 transition-all"
+                                >
+                                    <Shield size={13} />
+                                    <span className="hidden sm:inline">Mod</span>
+                                </button>
+                            ) : null;
+                        })()}
                     </div>
 
                     <div className="text-right relative">
@@ -411,6 +430,18 @@ export function PostCard({ post }: PostCardProps) {
             </div>
             {/* Voters Modal */}
             {showVoters && <VoterListModal post={post} payout={payoutAmount} onClose={() => setShowVoters(false)} />}
+            {/* Moderation Modal */}
+            {showModerationModal && post.community && (
+                <ModerationActionsModal
+                    isOpen={showModerationModal}
+                    onClose={() => setShowModerationModal(false)}
+                    community={post.community}
+                    communityTitle={post.community_title}
+                    userRole={viewerRole || 'guest'}
+                    postAuthor={post.author}
+                    postPermlink={post.permlink}
+                />
+            )}
         </article>
     );
 }

@@ -122,6 +122,11 @@ interface WitnessVoteOperation extends BaseOperation {
     approve: boolean;
 }
 
+interface SetProxyOperation extends BaseOperation {
+    type: 'set_proxy';
+    proxy: string; // username of proxy, or '' to clear
+}
+
 interface ProposalVoteOperation extends BaseOperation {
     type: 'proposal_vote';
     proposal_ids: number[];
@@ -144,12 +149,47 @@ interface CrossPostOperation extends BaseOperation {
 
 interface ClaimRewardOperation extends BaseOperation {
     type: 'claim_reward_balance';
-    reward_hive: string;    // e.g. '0.000 HIVE'
-    reward_hbd: string;     // e.g. '1.234 HBD'
-    reward_vests: string;   // e.g. '123456.000000 VESTS'
+    reward_hive: string;
+    reward_hbd: string;
+    reward_vests: string;
 }
 
-export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation | CrossPostOperation | ClaimRewardOperation;
+interface CommunityPinOperation extends BaseOperation {
+    type: 'community_pin';
+    community: string;
+    account: string;
+    permlink: string;
+    pinned: boolean;
+}
+
+interface CommunityMuteOperation extends BaseOperation {
+    type: 'community_mute';
+    community: string;
+    account: string;
+    notes: string;
+    mute: boolean;
+}
+
+interface CommunitySetRoleOperation extends BaseOperation {
+    type: 'community_set_role';
+    community: string;
+    account: string;
+    role: 'owner' | 'admin' | 'mod' | 'member' | 'guest';
+}
+
+interface CommunityUpdateOperation extends BaseOperation {
+    type: 'community_update';
+    community: string;
+    props: {
+        title?: string;
+        about?: string;
+        description?: string;
+        flag_text?: string;
+        is_nsfw?: boolean;
+    };
+}
+
+export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation | CrossPostOperation | ClaimRewardOperation | SetProxyOperation | CommunityPinOperation | CommunityMuteOperation | CommunitySetRoleOperation | CommunityUpdateOperation;
 
 export const transactionService = {
     /**
@@ -322,6 +362,46 @@ export const transactionService = {
                     }]];
                     break;
                 }
+                case 'community_pin': {
+                    const pOp = op as CommunityPinOperation;
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [pOp.username],
+                        id: 'community',
+                        json: JSON.stringify(["pinPost", { community: pOp.community, account: pOp.account, permlink: pOp.permlink, pinned: pOp.pinned }])
+                    }]];
+                    break;
+                }
+                case 'community_mute': {
+                    const mOp = op as CommunityMuteOperation;
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [mOp.username],
+                        id: 'community',
+                        json: JSON.stringify([mOp.mute ? "mutePost" : "unmutePost", { community: mOp.community, account: mOp.account, permlink: '', notes: mOp.notes }])
+                    }]];
+                    break;
+                }
+                case 'community_set_role': {
+                    const rOp = op as CommunitySetRoleOperation;
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [rOp.username],
+                        id: 'community',
+                        json: JSON.stringify(["setRole", { community: rOp.community, account: rOp.account, role: rOp.role }])
+                    }]];
+                    break;
+                }
+                case 'community_update': {
+                    const uOp = op as CommunityUpdateOperation;
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [uOp.username],
+                        id: 'community',
+                        json: JSON.stringify(["updateProps", { community: uOp.community, props: uOp.props }])
+                    }]];
+                    break;
+                }
                 default:
                     return { success: false, error: "Operation type not supported by relay" };
             }
@@ -419,6 +499,22 @@ export const transactionService = {
                         vote: op.approve
                     });
                     break;
+                case 'set_proxy': {
+                    const spOp = op as any;
+                    const proxyOp = [
+                        "account_witness_proxy",
+                        {
+                            account: spOp.username,
+                            proxy: spOp.proxy
+                        }
+                    ];
+                    result = await keychain.broadcast({
+                        username: spOp.username,
+                        operations: [proxyOp as any],
+                        method: "Active" as any
+                    });
+                    break;
+                }
                 case 'proposal_vote':
                     const proposalOp = [
                         "update_proposal_votes",
@@ -679,6 +775,42 @@ export const transactionService = {
                     });
                     break;
                 }
+                case 'community_pin': {
+                    const pOp = op as CommunityPinOperation;
+                    result = await keychain.broadcast({
+                        username: pOp.username,
+                        operations: [["custom_json", { required_auths: [], required_posting_auths: [pOp.username], id: 'community', json: JSON.stringify(["pinPost", { community: pOp.community, account: pOp.account, permlink: pOp.permlink, pinned: pOp.pinned }]) }] as any],
+                        method: "Posting" as any
+                    });
+                    break;
+                }
+                case 'community_mute': {
+                    const mOp = op as CommunityMuteOperation;
+                    result = await keychain.broadcast({
+                        username: mOp.username,
+                        operations: [["custom_json", { required_auths: [], required_posting_auths: [mOp.username], id: 'community', json: JSON.stringify([mOp.mute ? "mutePost" : "unmutePost", { community: mOp.community, account: mOp.account, permlink: '', notes: mOp.notes }]) }] as any],
+                        method: "Posting" as any
+                    });
+                    break;
+                }
+                case 'community_set_role': {
+                    const rOp = op as CommunitySetRoleOperation;
+                    result = await keychain.broadcast({
+                        username: rOp.username,
+                        operations: [["custom_json", { required_auths: [], required_posting_auths: [rOp.username], id: 'community', json: JSON.stringify(["setRole", { community: rOp.community, account: rOp.account, role: rOp.role }]) }] as any],
+                        method: "Posting" as any
+                    });
+                    break;
+                }
+                case 'community_update': {
+                    const uOp = op as CommunityUpdateOperation;
+                    result = await keychain.broadcast({
+                        username: uOp.username,
+                        operations: [["custom_json", { required_auths: [], required_posting_auths: [uOp.username], id: 'community', json: JSON.stringify(["updateProps", { community: uOp.community, props: uOp.props }]) }] as any],
+                        method: "Posting" as any
+                    });
+                    break;
+                }
             }
 
             return result as { success: boolean; result?: any; error?: string };
@@ -843,6 +975,15 @@ export const transactionService = {
                 }]];
                 keyType = 'active';
                 break;
+            case 'set_proxy': {
+                const spOp = op as SetProxyOperation;
+                operation = [["account_witness_proxy", {
+                    account: spOp.username,
+                    proxy: spOp.proxy
+                }]];
+                keyType = 'active';
+                break;
+            }
             case 'proposal_vote':
                 operation = [["update_proposal_votes", {
                     voter: op.username,

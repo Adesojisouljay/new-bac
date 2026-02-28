@@ -332,6 +332,10 @@ export default function FeedPage() {
                             <CommunityHeader
                                 community={community}
                                 isBaseRoute={!isGlobal}
+                                userRole={community.roles
+                                    ? community.roles.find(([uname]) => uname === user)?.[1]
+                                    : undefined
+                                }
                             />
                         </div>
                     ) : isExplicitCommunityRoute && (
@@ -648,7 +652,14 @@ export default function FeedPage() {
                             {displayedPosts.length > 0 && (
                                 <div className="space-y-6">
                                     {displayedPosts.map((post) => (
-                                        <PostCard key={post.id} post={post} />
+                                        <PostCard
+                                            key={post.id}
+                                            post={post}
+                                            viewerRole={community?.roles
+                                                ? community.roles.find(([uname]) => uname === user)?.[1]
+                                                : undefined
+                                            }
+                                        />
                                     ))}
                                 </div>
                             )}
