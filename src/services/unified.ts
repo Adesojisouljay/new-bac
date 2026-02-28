@@ -436,6 +436,19 @@ export const UnifiedDataService = {
     },
 
     /**
+     * Fetches the full list of active votes for a post, including percentages.
+     */
+    getActiveVotes: async (author: string, permlink: string): Promise<any[]> => {
+        try {
+            const result = await hiveClient.database.call('get_active_votes', [author, permlink]);
+            return Array.isArray(result) ? result : [];
+        } catch (error) {
+            console.error('Failed to fetch active votes:', error);
+            return [];
+        }
+    },
+
+    /**
      * Fetches the edit history of a post.
      * Searches blockchain history for 'comment' operations matching author/permlink.
      */

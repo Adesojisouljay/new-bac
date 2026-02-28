@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Post } from '../../../services/unified';
 import { transactionService } from '../../wallet/services/transactionService';
 import { ThumbsUp, ThumbsDown, MessageSquare, Repeat } from 'lucide-react';
+import { VoteSlider } from './VoteSlider';
+import { VoterListModal } from './VoterListModal';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { useCommunity } from '../../community/context/CommunityContext';
@@ -23,7 +25,9 @@ export function PostCard({ post }: PostCardProps) {
     const [downvoted, setDownvoted] = useState(false);
     const [reblogging, setReblogging] = useState(false);
     const [reblogged, setReblogged] = useState(false);
+    const [showVoteSlider, setShowVoteSlider] = useState(false);
     const [showPayoutDetails, setShowPayoutDetails] = useState(false);
+    const [showVoters, setShowVoters] = useState(false);
 
     // Strip markdown for clean preview
     const stripMarkdown = (text: string) => {
@@ -149,7 +153,10 @@ export function PostCard({ post }: PostCardProps) {
         });
 
         if (isDownvote) setDownvoting(false);
-        else setVoting(false);
+        else {
+            setVoting(false);
+            setShowVoteSlider(false);
+        }
 
         if (result.success) {
             if (isDownvote) setDownvoted(true);
@@ -257,9 +264,16 @@ export function PostCard({ post }: PostCardProps) {
                 <div className="flex items-center justify-between pt-4 border-t border-[var(--border-color)]/50">
                     <div className="flex items-center gap-2">
                         {/* Vote Pill */}
-                        <div className="flex items-center bg-[var(--bg-canvas)] rounded-full border border-[var(--border-color)] p-1">
+                        <div className="flex items-center bg-[var(--bg-canvas)] rounded-full border border-[var(--border-color)] p-1 relative">
+                            {showVoteSlider && (
+                                <VoteSlider
+                                    onVote={handleVote}
+                                    onClose={() => setShowVoteSlider(false)}
+                                    isVoting={voting}
+                                />
+                            )}
                             <button
-                                onClick={(e) => { e.preventDefault(); handleVote(10000); }}
+                                onClick={(e) => { e.preventDefault(); setShowVoteSlider(!showVoteSlider); }}
                                 disabled={voting || voted || downvoting || downvoted}
                                 className={`p-1.5 rounded-full transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'hover:bg-red-500/10 hover:text-red-500 text-[var(--text-secondary)]'}`}
                                 title="Upvote"
@@ -270,7 +284,12 @@ export function PostCard({ post }: PostCardProps) {
                                     <ThumbsUp size={16} fill={voted ? "currentColor" : "none"} />
                                 )}
                             </button>
-                            <span className="px-3 text-xs font-bold text-[var(--text-primary)]">{post.active_votes?.length || 0}</span>
+                            <button
+                                onClick={(e) => { e.preventDefault(); setShowVoters(true); }}
+                                className="px-3 text-xs font-bold text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors"
+                            >
+                                {post.active_votes?.length || 0}
+                            </button>
                             <button
                                 onClick={(e) => { e.preventDefault(); handleVote(-10000); }}
                                 disabled={voting || voted || downvoting || downvoted}
@@ -356,6 +375,8 @@ export function PostCard({ post }: PostCardProps) {
                     </div>
                 </div>
             </div>
+            {/* Voters Modal */}
+            {showVoters && <VoterListModal post={post} payout={payoutAmount} onClose={() => setShowVoters(false)} />}
         </article>
     );
 }
