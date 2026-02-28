@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { Post, UnifiedDataService } from '../../../services/unified';
 import { transactionService } from '../../wallet/services/transactionService';
 import { CommentBox } from '../../feed/components/CommentBox';
-import ReactMarkdown from 'react-markdown';
-import rehypeRaw from 'rehype-raw';
+import HiveMarkdown from '../../../components/HiveMarkdown';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
@@ -25,6 +24,7 @@ export function CommentCard({ post, parentAuthor }: CommentCardProps) {
     const [replies, setReplies] = useState<Post[]>([]);
     const [loadingReplies, setLoadingReplies] = useState(false);
     const [replyCount, setReplyCount] = useState(post.children || 0);
+    const [showPayoutDetails, setShowPayoutDetails] = useState(false);
 
     // Initialize voting state from post data
     useEffect(() => {
@@ -49,7 +49,46 @@ export function CommentCard({ post, parentAuthor }: CommentCardProps) {
         }
     }, [post, post.active_votes]);
 
-    const payout = (parseFloat(post.pending_payout_value || '0') + parseFloat(post.total_payout_value || '0') + parseFloat(post.curator_payout_value || '0')).toFixed(3);
+    // Calculate payout details
+    const parsePayout = (val?: string) => {
+        if (!val) return 0;
+        return parseFloat(val.split(' ')[0]);
+    };
+
+    const pendingPayout = parsePayout(post.pending_payout_value);
+    const authorPayoutActual = parsePayout(post.author_payout_value || post.total_payout_value);
+    const curatorPayoutActual = parsePayout(post.curator_payout_value);
+    const beneficiaryPayout = parsePayout(post.beneficiary_payout_value);
+
+    // Total Payout Displayed
+    const payoutAmount = pendingPayout > 0 ? pendingPayout : (authorPayoutActual + curatorPayoutActual + beneficiaryPayout);
+
+    // Helper to safely parse Hive's UTC timestamps
+    const parseHiveDate = (dateStr?: string) => {
+        if (!dateStr) return null;
+        const isoString = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(dateStr) ? dateStr + 'Z' : dateStr;
+        return new Date(isoString);
+    };
+
+    const cashoutTimeDate = parseHiveDate(post.cashout_time);
+    const cashoutTime = cashoutTimeDate ? cashoutTimeDate.getTime() : 0;
+    const now = new Date().getTime();
+
+    const isPastCashout = cashoutTime > 0 && cashoutTime < now;
+    const isPaidOut = isPastCashout || authorPayoutActual > 0 || curatorPayoutActual > 0;
+    const isDeclined = post.max_accepted_payout?.startsWith('0.000');
+
+    let timingMsg = "";
+    if (isDeclined) {
+        timingMsg = "Rewards Declined";
+    } else if (isPaidOut) {
+        const displayTime = (cashoutTime > 1000000000) ? post.cashout_time! : (post.created);
+        timingMsg = `Paid ${formatRelativeTime(displayTime)}`;
+    } else if (cashoutTime > 0) {
+        timingMsg = `Payout ${formatRelativeTime(post.cashout_time!)}`;
+    } else {
+        timingMsg = "Payout soon";
+    }
 
     const handleVote = async (weight: number) => {
         const username = localStorage.getItem('hive_user');
@@ -129,18 +168,61 @@ export function CommentCard({ post, parentAuthor }: CommentCardProps) {
                         </div>
                     )}
 
-                    {/* Body */}
                     <div className="prose prose-sm max-w-none text-[var(--text-primary)] mb-3 dark:prose-invert">
-                        <ReactMarkdown rehypePlugins={[rehypeRaw]}>
-                            {post.body.replace(/\n/g, '  \n')}
-                        </ReactMarkdown>
+                        <HiveMarkdown content={post.body} isProse={false} />
                     </div>
 
                     {/* Footer Stats / Actions */}
                     <div className="flex items-center gap-4 text-xs text-[var(--text-secondary)] mb-2">
-                        <span className="font-medium text-[var(--primary-color)]">
-                            ${payout}
-                        </span>
+                        <div
+                            className="font-medium text-[var(--primary-color)] relative cursor-help"
+                            onMouseEnter={() => setShowPayoutDetails(true)}
+                            onMouseLeave={() => setShowPayoutDetails(false)}
+                        >
+                            ${payoutAmount.toFixed(3)}
+
+                            {/* Payout Details Popup */}
+                            {showPayoutDetails && (
+                                <div className="absolute bottom-full left-[-20px] mb-2 w-[240px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl shadow-2xl p-4 animate-in zoom-in-95 fade-in z-[60] backdrop-blur-xl text-left cursor-default"
+                                    onMouseEnter={() => setShowPayoutDetails(true)}
+                                    onMouseLeave={() => setShowPayoutDetails(false)}
+                                >
+                                    <div className="text-center mb-4">
+                                        <div className="text-[9px] uppercase tracking-widest font-black text-[var(--text-secondary)] mb-1 opacity-60">{isPaidOut ? 'Final Payout' : 'Pending Payout'}</div>
+                                        <div className="text-2xl font-black text-[var(--text-primary)]">${isPaidOut ? payoutAmount.toFixed(3) : pendingPayout.toFixed(3)}</div>
+                                        <div className="text-[9px] text-[var(--primary-color)] font-bold mt-1.5 bg-[var(--primary-color)]/10 py-1.5 px-3 rounded-full inline-block tracking-wide">
+                                            {timingMsg}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3 pt-4 border-t border-[var(--border-color)]/30">
+                                        {isPaidOut ? (
+                                            <>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Author</span>
+                                                    <span className="text-xs font-black text-[var(--text-primary)]">${authorPayoutActual.toFixed(3)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Curators</span>
+                                                    <span className="text-xs font-black text-[var(--text-primary)]">${curatorPayoutActual.toFixed(3)}</span>
+                                                </div>
+                                                {beneficiaryPayout > 0 && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Beneficiaries</span>
+                                                        <span className="text-xs font-black text-[var(--text-primary)]">${beneficiaryPayout.toFixed(3)}</span>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="text-center">
+                                                <div className="text-[9px] italic text-[var(--text-secondary)] leading-relaxed opacity-60 px-2 pb-1">
+                                                    Detailed split of Author, Curator, and Beneficiary rewards will be available after the 7-day payout window.
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
                         <div className="flex items-center gap-1">
                             <button

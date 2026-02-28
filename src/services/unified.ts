@@ -12,14 +12,20 @@ export interface Post {
     // Hive specific fields
     pending_payout_value?: string;
     total_payout_value?: string;
+    author_payout_value?: string;
     curator_payout_value?: string;
+    beneficiary_payout_value?: string;
     active_votes?: any[];
     children?: number;
     stats?: any;
     reblogged_by?: string[];
     author_reputation?: number;
     community?: string;
+    community_title?: string;
     category?: string;
+    cashout_time?: string;
+    max_accepted_payout?: string;
+    percent_hbd?: number;
 }
 
 export interface Subscriber {
@@ -141,6 +147,34 @@ export const UnifiedDataService = {
     },
 
     /**
+     * Lists or searches communities.
+     * @param query - Optional search query to filter communities by name/title.
+     * @param limit - Max number of communities to return.
+     * @param last - Last community name from previous page for pagination.
+     */
+    listCommunities: async (query: string = '', limit: number = 25, last: string = '') => {
+        try {
+            const params: any = {
+                limit,
+                sort: 'rank'
+            };
+
+            if (query && query.trim()) {
+                params.query = query.trim();
+            }
+            if (last) {
+                params.last = last;
+            }
+
+            const result = await hiveClient.call('bridge', 'list_communities', params);
+            return (Array.isArray(result) ? result : []);
+        } catch (error) {
+            console.error('Failed to list communities:', error);
+            return [];
+        }
+    },
+
+    /**
      * Fetches the community feed (discussions)
      */
     getCommunityFeed: async (
@@ -201,7 +235,11 @@ export const UnifiedDataService = {
                     stats: post.stats,
                     reblogged_by: post.reblogged_by || [],
                     community: post.community,
-                    author_reputation: UnifiedDataService.formatReputation(post.author_reputation)
+                    community_title: post.community_title,
+                    author_reputation: UnifiedDataService.formatReputation(post.author_reputation),
+                    cashout_time: post.payout_at || post.cashout_time,
+                    max_accepted_payout: post.max_accepted_payout || '1000000.000 HBD',
+                    percent_hbd: post.percent_hbd || 10000
                 }));
             } catch (hiveError) {
                 console.error('Hive feed fetch failed:', hiveError);
@@ -258,8 +296,12 @@ export const UnifiedDataService = {
                 stats: post.stats,
                 reblogged_by: post.reblogged_by || [],
                 community: post.community,
+                community_title: post.community_title,
                 category: post.category,
-                author_reputation: UnifiedDataService.formatReputation(post.author_reputation)
+                author_reputation: UnifiedDataService.formatReputation(post.author_reputation),
+                cashout_time: post.payout_at || post.cashout_time,
+                max_accepted_payout: post.max_accepted_payout || '1000000.000 HBD',
+                percent_hbd: post.percent_hbd || 10000
             }));
         } catch (error) {
             console.error('Failed to fetch following feed:', error);
@@ -346,11 +388,18 @@ export const UnifiedDataService = {
                             : fallback.json_metadata,
                         pending_payout_value: fallback.pending_payout_value,
                         total_payout_value: fallback.total_payout_value,
+                        author_payout_value: fallback.author_payout_value || fallback.total_payout_value, // Fallback for get_content
                         curator_payout_value: fallback.curator_payout_value,
+                        beneficiary_payout_value: fallback.beneficiary_payout_value || '0.000 HBD',
                         active_votes: fallback.active_votes,
                         children: fallback.children,
                         reblogged_by: [], // get_content doesn't have it
-                        author_reputation: UnifiedDataService.formatReputation(fallback.author_reputation)
+                        community: fallback.community,
+                        community_title: fallback.community_title,
+                        author_reputation: UnifiedDataService.formatReputation(fallback.author_reputation),
+                        cashout_time: fallback.cashout_time,
+                        max_accepted_payout: fallback.max_accepted_payout,
+                        percent_hbd: fallback.percent_hbd
                     };
                 }
 
@@ -366,16 +415,57 @@ export const UnifiedDataService = {
                         : result.json_metadata,
                     pending_payout_value: result.pending_payout_value,
                     total_payout_value: result.total_payout_value,
+                    author_payout_value: result.author_payout_value,
                     curator_payout_value: result.curator_payout_value,
+                    beneficiary_payout_value: result.beneficiary_payout_value,
                     active_votes: result.active_votes,
                     children: result.children,
                     reblogged_by: result.reblogged_by || [],
-                    author_reputation: UnifiedDataService.formatReputation(result.author_reputation)
+                    community: result.community,
+                    community_title: result.community_title,
+                    author_reputation: UnifiedDataService.formatReputation(result.author_reputation),
+                    cashout_time: result.payout_at || result.cashout_time,
+                    max_accepted_payout: result.max_accepted_payout || '1000000.000 HBD',
+                    percent_hbd: result.percent_hbd || 10000
                 };
             } catch (hiveError) {
                 console.error('Hive fetch failed:', hiveError);
                 throw hiveError;
             }
+        }
+    },
+
+    /**
+     * Fetches the edit history of a post.
+     * Searches blockchain history for 'comment' operations matching author/permlink.
+     */
+    getPostHistory: async (author: string, permlink: string) => {
+        try {
+            // Fetch account history (author, start_index=-1 for latest, limit=1000)
+            const result = await hiveClient.database.getAccountHistory(author, -1, 1000);
+
+            // Filter for comment operations with matching permlink
+            const history = result
+                .filter((item: any) => {
+                    const op = item[1].op;
+                    return op[0] === 'comment' && op[1].author === author && op[1].permlink === permlink;
+                })
+                .map((item: any) => {
+                    const op = item[1].op[1];
+                    return {
+                        timestamp: item[1].timestamp,
+                        body: op.body,
+                        title: op.title,
+                        json_metadata: typeof op.json_metadata === 'string' ? JSON.parse(op.json_metadata || '{}') : op.json_metadata,
+                        v: item[0] // Transaction index/version
+                    };
+                })
+                .reverse(); // Latest first
+
+            return history;
+        } catch (error) {
+            console.error('Failed to fetch post history:', error);
+            return [];
         }
     },
 
@@ -696,6 +786,7 @@ export const UnifiedDataService = {
                 active_votes: post.active_votes || [],
                 reblogged_by: post.reblogged_by || [],
                 community: post.community,
+                community_title: post.community_title,
                 author_reputation: UnifiedDataService.formatReputation(post.author_reputation)
             }));
         } catch (error) {

@@ -16,7 +16,6 @@ export function PostCard({ post }: PostCardProps) {
     const { showNotification, showConfirm } = useNotification();
     const { config } = useCommunity();
     const community = config?.id || 'hive-106130';
-    const payout = (parseFloat(post.pending_payout_value || '0') + parseFloat(post.total_payout_value || '0') + parseFloat(post.curator_payout_value || '0')).toFixed(2);
 
     const [voting, setVoting] = useState(false);
     const [voted, setVoted] = useState(false); // Should check if user already voted in active_votes
@@ -24,6 +23,67 @@ export function PostCard({ post }: PostCardProps) {
     const [downvoted, setDownvoted] = useState(false);
     const [reblogging, setReblogging] = useState(false);
     const [reblogged, setReblogged] = useState(false);
+    const [showPayoutDetails, setShowPayoutDetails] = useState(false);
+
+    // Strip markdown for clean preview
+    const stripMarkdown = (text: string) => {
+        if (!text) return '';
+        return text
+            .replace(/<[^>]*>?/gm, '') // HTML tags
+            .replace(/!\[.*?\]\(.*?\)/g, '') // Images ![alt](url)
+            .replace(/\[([^\]]+)\]\(.*?\)/g, '$1') // Links [text](url) -> text
+            .replace(/(\*\*|__)(.*?)\1/g, '$2') // Bold **text** -> text
+            .replace(/(\*|_)(.*?)\1/g, '$2') // Italic *text* -> text
+            .replace(/^#+\s/gm, '') // Headers # Header -> Header
+            .replace(/^>\s/gm, '') // Blockquotes > Quote -> Quote
+            .replace(/(http|https):\/\/[^\s]+/g, '') // Raw URLs
+            .replace(/\s+/g, ' ') // Collapse whitespace
+            .trim();
+    };
+
+    // Calculate payout details
+    const parsePayout = (val?: string) => {
+        if (!val) return 0;
+        return parseFloat(val.split(' ')[0]);
+    };
+
+    const pendingPayout = parsePayout(post.pending_payout_value);
+    const authorPayoutActual = parsePayout(post.author_payout_value || post.total_payout_value);
+    const curatorPayoutActual = parsePayout(post.curator_payout_value);
+    const beneficiaryPayout = parsePayout(post.beneficiary_payout_value);
+
+    // Total Payout Displayed
+    const payoutAmount = pendingPayout > 0 ? pendingPayout : (authorPayoutActual + curatorPayoutActual + beneficiaryPayout);
+
+    // Helper to safely parse Hive's UTC timestamps
+    const parseHiveDate = (dateStr?: string) => {
+        if (!dateStr) return null;
+        // Append Z if it's a standard Hive timestamp missing the timezone indicator
+        const isoString = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(dateStr) ? dateStr + 'Z' : dateStr;
+        return new Date(isoString);
+    };
+
+    // Status tracking
+    const cashoutTimeDate = parseHiveDate(post.cashout_time);
+    const cashoutTime = cashoutTimeDate ? cashoutTimeDate.getTime() : 0;
+    const now = new Date().getTime();
+
+    const isPastCashout = cashoutTime > 0 && cashoutTime < now;
+    const isPaidOut = isPastCashout || authorPayoutActual > 0 || curatorPayoutActual > 0;
+    const isDeclined = post.max_accepted_payout?.startsWith('0.000');
+
+    // Timing message
+    let timingMsg = "";
+    if (isDeclined) {
+        timingMsg = "Rewards Declined";
+    } else if (isPaidOut) {
+        const displayTime = (cashoutTime > 1000000000) ? post.cashout_time! : (post.created);
+        timingMsg = `Paid ${formatRelativeTime(displayTime)}`;
+    } else if (cashoutTime > 0) {
+        timingMsg = `Payout ${formatRelativeTime(post.cashout_time!)}`;
+    } else {
+        timingMsg = "Payout soon";
+    }
 
     useEffect(() => {
         const rawUsername = localStorage.getItem('hive_user');
@@ -138,9 +198,9 @@ export function PostCard({ post }: PostCardProps) {
     };
 
     return (
-        <article className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:shadow-xl hover:border-[var(--primary-color)]/30 transition-all duration-300 overflow-hidden flex flex-col md:flex-row group">
+        <article className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] shadow-sm hover:shadow-xl hover:border-[var(--primary-color)]/30 transition-all duration-300 flex flex-col md:flex-row group">
             {/* Thumbnail */}
-            <div className="md:w-56 h-48 md:h-auto flex-shrink-0 bg-gray-100 dark:bg-gray-800 relative overflow-hidden">
+            <div className="md:w-56 h-48 md:h-auto flex-shrink-0 bg-gray-100 dark:bg-gray-800 relative overflow-hidden rounded-t-2xl md:rounded-l-2xl md:rounded-tr-none">
                 <Link to={`/post/${post.author}/${post.permlink}`} className="block h-full w-full">
                     <img
                         src={thumbnail}
@@ -189,7 +249,7 @@ export function PostCard({ post }: PostCardProps) {
                     </Link>
 
                     <p className="text-[var(--text-secondary)] text-sm line-clamp-2 mb-6 leading-relaxed">
-                        {post.body.replace(/<[^>]*>?/gm, '').substring(0, 150)}...
+                        {stripMarkdown(post.body).substring(0, 150)}...
                     </p>
                 </div>
 
@@ -240,10 +300,58 @@ export function PostCard({ post }: PostCardProps) {
                         </Link>
                     </div>
 
-                    <div className="text-right">
-                        <div className="text-[10px] uppercase font-bold text-[var(--text-secondary)] mb-0.5">Earnings</div>
-                        <div className="text-sm font-black text-[var(--primary-color)]">
-                            ${payout}
+                    <div className="text-right relative">
+                        <div
+                            className="cursor-help relative group"
+                            onMouseEnter={() => setShowPayoutDetails(true)}
+                            onMouseLeave={() => setShowPayoutDetails(false)}
+                        >
+                            <div className="text-[10px] uppercase font-bold text-[var(--text-secondary)] mb-0.5">Earnings</div>
+                            <div className="text-sm font-black text-[var(--primary-color)]">
+                                ${payoutAmount.toFixed(2)}
+                            </div>
+
+                            {/* Payout Details Popup */}
+                            {showPayoutDetails && (
+                                <div className="absolute bottom-full right-0 mb-2 w-[240px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl shadow-2xl p-4 animate-in zoom-in-95 fade-in z-[60] backdrop-blur-xl text-left cursor-default"
+                                    onMouseEnter={() => setShowPayoutDetails(true)}
+                                    onMouseLeave={() => setShowPayoutDetails(false)}
+                                >
+                                    <div className="text-center mb-4">
+                                        <div className="text-[9px] uppercase tracking-widest font-black text-[var(--text-secondary)] mb-1 opacity-60">{isPaidOut ? 'Final Payout' : 'Pending Payout'}</div>
+                                        <div className="text-2xl font-black text-[var(--text-primary)]">${isPaidOut ? payoutAmount.toFixed(3) : pendingPayout.toFixed(3)}</div>
+                                        <div className="text-[9px] text-[var(--primary-color)] font-bold mt-1.5 bg-[var(--primary-color)]/10 py-1.5 px-3 rounded-full inline-block tracking-wide">
+                                            {timingMsg}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-3 pt-4 border-t border-[var(--border-color)]/30">
+                                        {isPaidOut ? (
+                                            <>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Author</span>
+                                                    <span className="text-xs font-black text-[var(--text-primary)]">${authorPayoutActual.toFixed(3)}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Curators</span>
+                                                    <span className="text-xs font-black text-[var(--text-primary)]">${curatorPayoutActual.toFixed(3)}</span>
+                                                </div>
+                                                {beneficiaryPayout > 0 && (
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Beneficiaries</span>
+                                                        <span className="text-xs font-black text-[var(--text-primary)]">${beneficiaryPayout.toFixed(3)}</span>
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="text-center">
+                                                <div className="text-[9px] italic text-[var(--text-secondary)] leading-relaxed opacity-60 px-2 pb-1">
+                                                    Detailed split of Author, Curator, and Beneficiary rewards will be available after the 7-day payout window.
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCommunity } from '../../community/context/CommunityContext';
 import { transactionService } from '../../wallet/services/transactionService';
@@ -6,15 +6,14 @@ import { useNotification } from '../../../contexts/NotificationContext';
 import { pointsService } from '../../../services/pointsService';
 import SimpleMDE from 'react-simplemde-editor';
 import "easymde/dist/easymde.min.css";
-import ReactMarkdown from 'react-markdown';
-import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
-import AdvancedSettingsModal, { AdvancedOptions } from '../components/AdvancedSettingsModal';
-import { draftService, Draft } from '../services/draftService';
-import { Settings, Save, Trash2, Calendar, Globe } from 'lucide-react';
-import { useRef } from 'react';
-import { hiveClient } from '../../../services/hive/client';
+import HiveMarkdown from '../../../components/HiveMarkdown';
+import AdvancedSettingsModal, { AdvancedOptions, Draft } from '../components/AdvancedSettingsModal';
+import { draftService } from '../services/draftService';
+import { Settings, MoreVertical } from 'lucide-react';
+import { UnifiedDataService } from '../../../services/unified';
+import { CommunitySelect } from '../components/CommunitySelect';
+import { cloudinaryService } from '../../../services/cloudinaryService';
+import EasyMDE from 'easymde';
 
 export default function CreatePostPage() {
     const { config } = useCommunity();
@@ -26,15 +25,22 @@ export default function CreatePostPage() {
     const [tags, setTags] = useState('');
     const [destination, setDestination] = useState<string>('');
     const [communities, setCommunities] = useState<any[]>([]);
-    const dateInputRef = useRef<HTMLInputElement>(null);
     const isGlobal = config?.id === 'global';
+
+    // Lock body scroll to prevent page-level scrolling
+    useEffect(() => {
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
+    }, []);
 
     // Fetch popular communities for Global Mode
     useEffect(() => {
         if (isGlobal) {
             const fetchCommunities = async () => {
                 try {
-                    const result = await hiveClient.call('bridge', 'list_communities', { limit: 50, sort: 'rank' });
+                    const result = await UnifiedDataService.listCommunities('', 50);
                     setCommunities(result || []);
                 } catch (e) {
                     console.error("Failed to fetch global communities", e);
@@ -55,21 +61,85 @@ export default function CreatePostPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
-    const [isDraftsOpen, setIsDraftsOpen] = useState(false);
     const [scheduledDate, setScheduledDate] = useState<string>('');
-    const [drafts, setDrafts] = useState<Draft[]>(draftService.getDrafts());
+    const [drafts, setDrafts] = useState<Draft[]>(draftService.getDrafts() as Draft[]);
+
+    // Media States
+    const [showMediaChoice, setShowMediaChoice] = useState(false);
+    const [showUrlInput, setShowUrlInput] = useState(false);
+    const [linkUrl, setLinkUrl] = useState('');
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const mdeInstanceRef = useRef<EasyMDE | null>(null);
+
+    const handleImageUpload = async (file: File) => {
+        if (!mdeInstanceRef.current) return;
+        const cm = mdeInstanceRef.current.codemirror;
+        const startPos = cm.getCursor();
+        const placeholder = `![Uploading ${file.name} (0%)...]()`;
+
+        cm.replaceSelection(placeholder);
+
+        try {
+            const url = await cloudinaryService.uploadFile(file, 'image');
+            const content = cm.getValue();
+            const newContent = content.replace(placeholder, `![${file.name}](${url})`);
+            cm.setValue(newContent);
+            cm.setCursor({ line: startPos.line, ch: startPos.ch + `![${file.name}](${url})`.length });
+        } catch (error: any) {
+            showNotification(error.message || 'Image upload failed', 'error');
+            const content = cm.getValue();
+            cm.setValue(content.replace(placeholder, ''));
+        }
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (file.size > 10 * 1024 * 1024) {
+                showNotification('Image size should be less than 10MB', 'error');
+                return;
+            }
+            handleImageUpload(file);
+        }
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        setShowMediaChoice(false);
+    };
+
+    const handleInsertUrl = () => {
+        if (!mdeInstanceRef.current || !linkUrl.trim()) return;
+        const cm = mdeInstanceRef.current.codemirror;
+        cm.replaceSelection(`![image](${linkUrl.trim()})`);
+        setLinkUrl('');
+        setShowUrlInput(false);
+        setShowMediaChoice(false);
+    };
 
     const options = useMemo(() => ({
         spellChecker: false,
         placeholder: "Write your story...",
         status: false,
         autosave: {
-            enabled: false, // We'll handle it manually with draftService for consistency
+            enabled: false,
             uniqueId: "create-post-content",
             delay: 1000,
         },
-        toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|", "link", "image", "|", "guide"] as any
-    }), []);
+        minHeight: "500px",
+        toolbar: [
+            "bold", "italic", "heading", "|",
+            "quote", "unordered-list", "ordered-list", "|",
+            "link",
+            {
+                name: "image",
+                action: () => {
+                    setShowMediaChoice(!showMediaChoice);
+                    setShowUrlInput(false);
+                },
+                className: "fa fa-image",
+                title: "Media Options",
+            },
+            "|", "guide"
+        ] as any
+    }), [showMediaChoice]);
 
     // Auto-save logic
     useEffect(() => {
@@ -83,9 +153,9 @@ export default function CreatePostPage() {
                     scheduledAt: scheduledDate ? new Date(scheduledDate).getTime() : undefined
                 });
                 if (!currentDraftId) setCurrentDraftId(saved.id);
-                setDrafts(draftService.getDrafts()); // Sync state
+                setDrafts(draftService.getDrafts() as Draft[]);
             }
-        }, 10000); // Save every 10 seconds
+        }, 10000);
 
         return () => clearTimeout(timer);
     }, [title, body, tags, scheduledDate, currentDraftId]);
@@ -98,7 +168,8 @@ export default function CreatePostPage() {
         if (draft.scheduledAt) {
             setScheduledDate(new Date(draft.scheduledAt).toISOString().split('T')[0]);
         }
-        setIsDraftsOpen(false);
+        setIsSettingsOpen(false); // Close settings if it was open
+        showNotification('Draft loaded successfully!', 'success');
     };
 
     const handleManualSave = () => {
@@ -111,21 +182,21 @@ export default function CreatePostPage() {
             scheduledAt: scheduledDate ? new Date(scheduledDate).getTime() : undefined
         });
         if (!currentDraftId) setCurrentDraftId(saved.id);
-        setDrafts(draftService.getDrafts()); // Sync state
-        showNotification('Draft saved manually!', 'success');
+        setDrafts(draftService.getDrafts() as Draft[]);
+        showNotification('Draft saved successfully!', 'success');
     };
 
     const handleDeleteDraft = (id: string) => {
         draftService.deleteDraft(id);
-        setDrafts(draftService.getDrafts()); // Sync state
+        setDrafts(draftService.getDrafts() as Draft[]);
         if (currentDraftId === id) setCurrentDraftId(null);
     };
 
     const generatePermlink = (title: string) => {
         const slug = title.toLowerCase()
-            .replace(/[^\w\s-]/g, '') // Remove non-word chars
-            .replace(/\s+/g, '-') // Replace spaces with -
-            .substring(0, 50); // Limit length
+            .replace(/[^\w\s-]/g, '')
+            .replace(/\s+/g, '-')
+            .substring(0, 50);
 
         const random = Math.random().toString(36).substring(2, 7);
         return `${slug}-${random}`;
@@ -150,16 +221,11 @@ export default function CreatePostPage() {
 
         try {
             const permlink = generatePermlink(title);
-            const tagList = tags.split(',').map(t => t.trim()).filter(t => t);
-
-            // Ensure community tag is present and first (for category)
+            const tagList = tags.split(/\s+/).map(t => t.trim().toLowerCase()).filter(t => t);
             const baseTag = isGlobal ? destination : (config?.id || 'hive-106130');
             const finalTags = baseTag ? [baseTag, ...tagList.filter(t => t !== baseTag)] : tagList;
-
-            // Determine if it's a blog post (no baseTag)
             const parentPermlink = finalTags.length > 0 ? finalTags[0] : 'blog';
 
-            // Construct metadata
             const metadataObj: any = {
                 tags: finalTags,
                 app: 'breakaway-communities/0.1',
@@ -172,12 +238,11 @@ export default function CreatePostPage() {
 
             const jsonMetadata = JSON.stringify(metadataObj);
 
-            // Prepare comment options
             let commentOptions;
             if (advancedOptions.reward !== 'default' || advancedOptions.beneficiaries.length > 0) {
                 commentOptions = {
                     max_accepted_payout: advancedOptions.reward === 'decline' ? '0.000 HBD' : '1000000.000 HBD',
-                    percent_hbd: advancedOptions.reward === 'power_up' ? 0 : 10000, // 10000 = 50%, 0 = 100% HP
+                    percent_hbd: advancedOptions.reward === 'power_up' ? 0 : 10000,
                     allow_votes: true,
                     allow_curation_rewards: true,
                     beneficiaries: advancedOptions.beneficiaries
@@ -187,8 +252,8 @@ export default function CreatePostPage() {
             const result = await transactionService.broadcast({
                 type: 'comment',
                 username,
-                parent_author: '', // Empty for root post
-                parent_permlink: parentPermlink, // First tag defines category/community
+                parent_author: '',
+                parent_permlink: parentPermlink,
                 permlink,
                 title,
                 body,
@@ -199,11 +264,9 @@ export default function CreatePostPage() {
             });
 
             if (result.success) {
-                // Clear draft
                 if (currentDraftId) {
                     draftService.deleteDraft(currentDraftId);
                 }
-                // Award post points (fire-and-forget)
                 if (baseTag) {
                     pointsService.awardPoints(username, baseTag, 'posts', baseTag);
                 }
@@ -219,196 +282,176 @@ export default function CreatePostPage() {
     };
 
     return (
-        <div className="h-[calc(100vh-7rem)] -mb-8 max-w-[1600px] mx-auto pb-0 flex flex-col">
+        <div className="h-[calc(100dvh-150px)] lg:h-[calc(100dvh-100px)] max-w-[1600px] mx-auto flex flex-col gap-2 px-4 md:px-8 overflow-hidden">
             {error && (
-                <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-lg mb-4 shrink-0">
+                <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-4 rounded-lg shrink-0">
                     {error}
                 </div>
             )}
 
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-8 min-h-0">
-                {/* Left Column: Inputs */}
-                <div className="flex flex-col gap-4 h-full min-h-0">
-                    <div className="shrink-0 flex flex-col gap-4">
-                        {isGlobal && (
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <Globe size={18} className="text-[var(--text-secondary)]" />
+            {/* Main Content Area */}
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch pt-2">
+                {/* 1. Compose side (Left) */}
+                <div className="flex flex-col gap-4 min-h-0 h-full">
+                    {/* Community Selector - stacked above Compose card */}
+                    {isGlobal && (
+                        <div className="shrink-0">
+                            <CommunitySelect
+                                value={destination}
+                                onChange={setDestination}
+                                communities={communities}
+                                disabled={loading}
+                            />
+                        </div>
+                    )}
+
+                    {/* Compose card */}
+                    <div className="flex-1 flex flex-col min-h-0 bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] overflow-hidden shadow-sm">
+                        {/* Header: Title */}
+                        <div className="shrink-0 p-4 border-b border-[var(--border-color)]">
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                className="w-full bg-transparent text-[var(--text-primary)] text-xl font-bold outline-none placeholder:text-[var(--text-secondary)]"
+                                placeholder="Post Title..."
+                                disabled={loading}
+                            />
+                        </div>
+                        {/* Body: Editor */}
+                        <div className="flex-1 min-h-0 flex flex-col relative overflow-hidden">
+                            <SimpleMDE
+                                value={body}
+                                onChange={setBody}
+                                options={options}
+                                getMdeInstance={(instance) => mdeInstanceRef.current = instance as any}
+                                className="h-full flex flex-col [&_.EasyMDEContainer]:flex-1 [&_.EasyMDEContainer]:flex [&_.EasyMDEContainer]:flex-col [&_.CodeMirror]:flex-1 [&_.CodeMirror]:!min-h-0 [&_.CodeMirror]:!h-0 [&_.CodeMirror-scroll]:!min-h-0 [&_.cm-s-easymde]:border-none"
+                            />
+                            {/* Media Input/Overlays integrated inside the editor card */}
+                            <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept="image/*" className="hidden" />
+                            {(showMediaChoice || showUrlInput) && (
+                                <div className="absolute bottom-0 left-0 right-0 z-20 animate-in slide-in-from-bottom-2">
+                                    {showUrlInput ? (
+                                        <div className="flex gap-2 p-3 bg-[var(--bg-card)] border-t border-[var(--border-color)] shadow-xl">
+                                            <input
+                                                type="text"
+                                                value={linkUrl}
+                                                onChange={(e) => setLinkUrl(e.target.value)}
+                                                placeholder="Paste image URL..."
+                                                className="flex-1 px-4 py-2 border border-[var(--border-color)] rounded-lg bg-[var(--bg-canvas)] text-xs outline-none focus:ring-1 focus:ring-[var(--primary-color)]"
+                                                autoFocus
+                                            />
+                                            <button onClick={handleInsertUrl} disabled={!linkUrl.trim()} className="px-4 py-2 bg-[var(--primary-color)] text-white text-xs font-bold rounded-lg hover:brightness-110">Insert</button>
+                                            <button onClick={() => { setShowUrlInput(false); setShowMediaChoice(false); setLinkUrl(''); }} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition-colors">✕</button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex gap-2 p-3 bg-[var(--bg-card)] border-t border-[var(--border-color)] shadow-xl">
+                                            <button onClick={() => fileInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-[var(--bg-canvas)] hover:brightness-95 text-xs font-bold border border-[var(--border-color)]">
+                                                <span className="fa fa-upload text-[var(--primary-color)]"></span> Upload Device
+                                            </button>
+                                            <button onClick={() => setShowUrlInput(true)} className="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg bg-[var(--bg-canvas)] hover:brightness-95 text-xs font-bold border border-[var(--border-color)]">
+                                                <span className="fa fa-link text-[var(--primary-color)]"></span> Paste URL
+                                            </button>
+                                            <button onClick={() => setShowMediaChoice(false)} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition-colors">✕</button>
+                                        </div>
+                                    )}
                                 </div>
-                                <select
-                                    value={destination}
-                                    onChange={(e) => setDestination(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] font-medium focus:ring-2 focus:ring-[var(--primary-color)] focus:border-transparent outline-none appearance-none transition-all cursor-pointer"
-                                    disabled={loading}
-                                >
-                                    <option value="">My Blog (No Community)</option>
-                                    {communities.map((c, i) => (
-                                        <option key={i} value={c[0]}>{c[1]} ({c[0]})</option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
-                        <input
-                            type="text"
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            className="w-full px-4 py-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] text-lg font-bold focus:ring-2 focus:ring-[var(--primary-color)] focus:border-transparent outline-none transition-all"
-                            placeholder="Post Title..."
-                            disabled={loading}
-                        />
+                            )}
+                        </div>
                     </div>
+                </div>
 
-                    <div className="flex-1 min-h-0 flex flex-col bg-[var(--bg-card)] rounded-lg border border-[var(--border-color)] overflow-hidden">
-                        <SimpleMDE
-                            value={body}
-                            onChange={setBody}
-                            options={options}
-                            className="h-full flex flex-col [&_.EasyMDEContainer]:h-full [&_.EasyMDEContainer]:flex [&_.EasyMDEContainer]:flex-col [&_.CodeMirror]:flex-1 [&_.CodeMirror]:min-h-0"
-                        />
+                {/* 2. Preview card (Right) */}
+                <div className="hidden lg:flex flex-col h-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl overflow-hidden shadow-sm">
+                    <div className="shrink-0 p-4 border-b border-[var(--border-color)] bg-[var(--bg-card)] flex items-center justify-between">
+                        <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">Live Preview</span>
+                        <button
+                            onClick={() => setIsSettingsOpen(true)}
+                            className="p-2 hover:bg-[var(--bg-canvas)] rounded-lg transition-all text-[var(--text-secondary)] hover:text-[var(--primary-color)] group"
+                            title="Advanced Settings & Drafts"
+                        >
+                            <Settings size={18} className="group-hover:rotate-45 transition-transform" />
+                        </button>
                     </div>
+                    <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-[var(--bg-card)]">
+                        <h1 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-6 break-words">
+                            {title || <span className="text-[var(--text-secondary)] italic">Post Title</span>}
+                        </h1>
+                        <div className="prose prose-lg dark:prose-invert max-w-none break-words">
+                            {body ? (
+                                <HiveMarkdown content={body} />
+                            ) : (
+                                <p className="text-[var(--text-secondary)] italic">Start writing to see the preview here...</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-                    <div className="shrink-0">
+            {/* Compact Bottom Footer: Only Tags and Publish */}
+            <div className="shrink-0 pt-2 lg:pt-4 border-t border-[var(--border-color)] lg:border-none">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-end">
+                    {/* Left side: Tag Input */}
+                    <div className="space-y-2">
                         <input
                             type="text"
                             value={tags}
                             onChange={(e) => setTags(e.target.value)}
-                            className="w-full px-4 py-2 rounded-lg bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] focus:ring-2 focus:ring-[var(--primary-color)] focus:border-transparent outline-none transition-all"
-                            placeholder="Tags (e.g. photography, travel)"
+                            className="w-full px-4 py-2.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] font-medium focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all shadow-sm"
+                            placeholder="Add tags separated by spaces..."
                             disabled={loading}
                         />
-                        <div className="flex items-center justify-between mt-1 ml-1">
+                        <div className="flex px-1.5">
                             {isGlobal ? (
-                                <p className="text-xs text-[var(--text-secondary)]">
-                                    Separate tags with commas. First tag will be the main category.
-                                </p>
+                                <p className="text-[10px] md:text-xs text-[var(--text-secondary)] leading-tight italic">First tag becomes the category.</p>
                             ) : (
-                                <p className="text-xs text-[var(--text-secondary)]">
-                                    Community tag <b>#{config?.id || 'hive-106130'}</b> is added automatically.
-                                </p>
+                                <p className="text-[10px] md:text-xs text-[var(--text-secondary)] leading-tight italic">Auto-tag: <b>#{config?.id || 'hive-106130'}</b></p>
                             )}
-                            <div
-                                className="flex items-center gap-2 cursor-pointer hover:bg-[var(--bg-canvas)] px-2 py-1 rounded-lg transition-all"
-                                onClick={() => dateInputRef.current?.showPicker?.()}
-                            >
-                                <Calendar size={14} className="text-[var(--primary-color)]" />
-                                <span className="text-[10px] text-[var(--text-secondary)] uppercase font-bold">Schedule:</span>
-                                <input
-                                    ref={dateInputRef}
-                                    type="date"
-                                    value={scheduledDate}
-                                    onChange={(e) => setScheduledDate(e.target.value)}
-                                    className="text-xs bg-transparent border-none text-[var(--primary-color)] font-bold outline-none cursor-pointer [color-scheme:light] dark:[color-scheme:dark] w-28 [&::-webkit-calendar-picker-indicator]:hidden"
-                                />
-                            </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Right Column: Preview */}
-                <div className="hidden lg:block bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-8 overflow-y-auto h-full shadow-sm custom-scrollbar">
-                    <div className="mb-6 border-b border-[var(--border-color)] pb-4 sticky top-0 bg-[var(--bg-card)] z-10">
-                        <span className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">Live Preview</span>
-                    </div>
-
-                    <h1 className="text-3xl md:text-4xl font-bold text-[var(--text-primary)] mb-6 break-words">
-                        {title || <span className="text-[var(--text-secondary)] italic">Post Title</span>}
-                    </h1>
-
-                    <div className="prose prose-lg dark:prose-invert max-w-none break-words">
-                        {body ? (
-                            <ReactMarkdown
-                                rehypePlugins={[rehypeRaw]}
-                                remarkPlugins={[remarkGfm, remarkBreaks]}
-                            >
-                                {body.replace(/\n/g, '<br/>')}
-                            </ReactMarkdown>
-                        ) : (
-                            <p className="text-[var(--text-secondary)] italic">Start writing to see the preview here...</p>
-                        )}
-                    </div>
-
-                    {tags && (
-                        <div className="flex flex-wrap gap-2 mt-8 pt-6 border-t border-[var(--border-color)]">
-                            {tags.split(',').map((tag, i) => tag.trim() && (
-                                <span key={i} className="px-3 py-1 rounded-full bg-[var(--bg-canvas)] text-sm text-[var(--text-secondary)]">
-                                    #{tag.trim()}
+                    {/* Right side: Final Tags Preview and Publish */}
+                    <div className="flex flex-col gap-3">
+                        {/* Live Tags Preview in Footer area */}
+                        <div className="flex flex-wrap items-center justify-end gap-2 px-1">
+                            {tags && tags.split(/\s+/).map((tag, i) => tag.trim() && (
+                                <span key={i} className="px-3 py-1.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] text-[10px] text-[var(--text-secondary)] font-bold shadow-sm">
+                                    #{tag.trim().toLowerCase()}
                                 </span>
                             ))}
                         </div>
-                    )}
-                </div>
-            </div>
 
-            <div className="flex justify-between py-2 shrink-0 gap-3 mt-2">
-                <button
-                    onClick={() => setIsDraftsOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-[var(--text-secondary)] hover:text-[var(--primary-color)] hover:bg-[var(--bg-card)] border border-transparent hover:border-[var(--border-color)] transition-all"
-                >
-                    <Save size={20} />
-                    <span>My Drafts ({drafts.length})</span>
-                </button>
-                <div className="flex gap-3">
-                    <button
-                        onClick={handleManualSave}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] border border-transparent hover:border-[var(--border-color)] transition-all"
-                    >
-                        <Save size={20} />
-                        <span>Save Draft</span>
-                    </button>
-                    <button
-                        onClick={() => setIsSettingsOpen(true)}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] border border-transparent hover:border-[var(--border-color)] transition-all"
-                    >
-                        <Settings size={20} />
-                        <span>Advanced</span>
-                    </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={loading}
-                        className={`px-6 py-2 rounded-lg font-bold text-white transition-all ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-[var(--primary-color)] hover:brightness-110 shadow-lg'}`}
-                    >
-                        {loading ? 'Publishing...' : scheduledDate ? 'Schedule Post' : 'Publish'}
-                    </button>
-                </div>
-            </div>
-
-            {/* Simple Drafts Modal */}
-            {isDraftsOpen && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                    <div className="bg-[var(--bg-card)] w-full max-w-lg rounded-3xl shadow-2xl border border-[var(--border-color)] overflow-hidden">
-                        <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between">
-                            <h3 className="text-xl font-black">My Drafts</h3>
-                            <button onClick={() => setIsDraftsOpen(false)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]">✕</button>
-                        </div>
-                        <div className="max-h-[60vh] overflow-y-auto p-4 space-y-3">
-                            {drafts.length === 0 ? (
-                                <p className="text-center py-8 text-[var(--text-secondary)] italic">No saved drafts found.</p>
-                            ) : (
-                                drafts.map(d => (
-                                    <div key={d.id} className="p-4 bg-[var(--bg-canvas)] rounded-2xl border border-[var(--border-color)] flex items-center justify-between group hover:border-[var(--primary-color)] transition-all">
-                                        <div className="flex-1 cursor-pointer" onClick={() => handleLoadDraft(d)}>
-                                            <h4 className="font-bold truncate">{d.title || '(No Title)'}</h4>
-                                            <p className="text-xs text-[var(--text-secondary)]">Updated: {new Date(d.lastUpdated).toLocaleString()}</p>
-                                        </div>
-                                        <button
-                                            onClick={() => handleDeleteDraft(d.id)}
-                                            className="p-2 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-                                ))
-                            )}
+                        {/* Publish Button and Settings (on mobile) */}
+                        <div className="flex items-center justify-end gap-3 md:gap-4 pb-1">
+                            <button
+                                onClick={() => setIsSettingsOpen(true)}
+                                className="lg:hidden p-3 rounded-xl border border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-card)] transition-all"
+                            >
+                                <MoreVertical size={20} />
+                            </button>
+                            <button
+                                onClick={handleSubmit}
+                                disabled={loading}
+                                className={`flex-1 sm:flex-none px-10 md:px-14 py-3 rounded-2xl font-black text-white transition-all shadow-lg active:scale-95 ${loading ? 'bg-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-[var(--primary-color)] to-[#ff4e50] hover:brightness-110 shadow-xl'}`}
+                            >
+                                <span className="text-sm md:text-base">{loading ? 'Publishing...' : scheduledDate ? 'Schedule Post' : 'Publish Post'}</span>
+                            </button>
                         </div>
                     </div>
                 </div>
-            )}
+            </div>
 
             <AdvancedSettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
                 options={advancedOptions}
                 onSave={setAdvancedOptions}
+                drafts={drafts}
+                onLoadDraft={handleLoadDraft}
+                onSaveDraft={handleManualSave}
+                onDeleteDraft={handleDeleteDraft}
+                scheduledDate={scheduledDate}
+                onScheduledDateChange={setScheduledDate}
             />
         </div>
     );

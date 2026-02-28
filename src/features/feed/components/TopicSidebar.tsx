@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { TrendingTag, UnifiedDataService } from '../../../services/unified';
-import { Hash, TrendingUp } from 'lucide-react';
+import { Hash, TrendingUp, Lightbulb } from 'lucide-react';
+import { SearchModal } from './SearchModal';
 
 export function TopicSidebar() {
     const navigate = useNavigate();
     const { tag: activeTag } = useParams();
-    const currentUsername = localStorage.getItem('hive_user');
     const [tags, setTags] = useState<TrendingTag[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
 
     useEffect(() => {
         async function loadTags() {
@@ -30,11 +31,7 @@ export function TopicSidebar() {
     };
 
     const handleJoinClick = () => {
-        if (!currentUsername) {
-            alert("Please log in to join communities.");
-            return;
-        }
-        alert("Please visit a specific community page to join it.");
+        setIsSearchModalOpen(true);
     };
 
     return (
@@ -101,19 +98,47 @@ export function TopicSidebar() {
                 </div>
             </div>
 
-            {/* Promotion Section (Ecency style) */}
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-lg overflow-hidden relative">
-                <div className="absolute -right-4 -bottom-4 opacity-20 transform rotate-12">
-                    <Hash size={120} />
+            {/* Banners Container */}
+            <div className="flex flex-col gap-4">
+                {/* Promotion Section (Ecency style) */}
+                <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-[2rem] p-6 text-white shadow-xl overflow-hidden relative">
+                    <div className="absolute -right-6 -bottom-6 opacity-20 transform rotate-12 pointer-events-none">
+                        <Hash size={160} strokeWidth={3} />
+                    </div>
+                    <h4 className="text-xl font-black mb-3 relative z-10 tracking-tight">Promote Your Tag</h4>
+                    <p className="text-sm text-blue-50/90 mb-8 relative z-10 leading-relaxed font-medium">
+                        Want your community tag to trend? Use the promotion features to reach more users.
+                    </p>
+                    <div className="px-1">
+                        <button disabled className="w-full py-3 bg-white text-blue-600 rounded-xl text-sm font-black hover:bg-white/90 transition-colors relative z-10 outline outline-2 outline-offset-[3px] outline-white/80 cursor-not-allowed opacity-90 shadow-sm">
+                            Coming Soon
+                        </button>
+                    </div>
                 </div>
-                <h4 className="font-bold mb-2 relative z-10">Promote Your Tag</h4>
-                <p className="text-xs text-blue-50/80 mb-4 relative z-10 leading-relaxed">
-                    Want your community tag to trend? Use the promotion features to reach more users.
-                </p>
-                <button className="w-full py-2 bg-white text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-50 transition-colors relative z-10">
-                    Learn More
-                </button>
+
+                {/* Suggest Feature Section */}
+                <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-[2rem] p-6 shadow-sm overflow-hidden relative group hover:border-[var(--primary-color)]/30 transition-colors">
+                    <div className="absolute -right-4 -bottom-4 opacity-[0.03] transform rotate-[15deg] pointer-events-none group-hover:scale-110 transition-transform duration-500">
+                        <Lightbulb size={120} strokeWidth={2} />
+                    </div>
+                    <h4 className="text-base font-black text-[var(--text-primary)] mb-2 relative z-10 tracking-tight flex items-center gap-2">
+                        <Lightbulb size={16} className="text-[var(--primary-color)]" />
+                        Have an idea?
+                    </h4>
+                    <p className="text-[13px] font-medium text-[var(--text-secondary)] mb-6 relative z-10 leading-relaxed">
+                        Request or suggest a feature to help us improve the Breakaway experience.
+                    </p>
+                    <button disabled className="w-full py-2.5 bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] rounded-xl text-[13px] font-black relative z-10 cursor-not-allowed opacity-70 shadow-sm">
+                        Coming Soon
+                    </button>
+                </div>
             </div>
+
+            <SearchModal
+                isOpen={isSearchModalOpen}
+                onClose={() => setIsSearchModalOpen(false)}
+                initialTab="communities"
+            />
         </div>
     );
 }

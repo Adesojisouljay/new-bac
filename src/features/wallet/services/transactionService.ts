@@ -3,7 +3,7 @@ import { KeychainSDK } from 'keychain-sdk';
 const keychain = new KeychainSDK(window);
 
 // Types for wallet operations
-export type OperationType = 'transfer' | 'power_up' | 'power_down' | 'delegate' | 'delegate_rc' | 'deposit_savings' | 'withdraw_savings' | 'vote' | 'comment' | 'reblog' | 'limit_order_create' | 'limit_order_cancel' | 'witness_vote' | 'proposal_vote' | 'messaging' | 'follow' | 'subscribe';
+export type OperationType = 'transfer' | 'power_up' | 'power_down' | 'delegate' | 'delegate_rc' | 'deposit_savings' | 'withdraw_savings' | 'vote' | 'comment' | 'reblog' | 'limit_order_create' | 'limit_order_cancel' | 'witness_vote' | 'proposal_vote' | 'messaging' | 'follow' | 'subscribe' | 'cross_post';
 
 interface BaseOperation {
     username: string;
@@ -134,7 +134,15 @@ interface MessagingOperation extends BaseOperation {
     message: string;
 }
 
-export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation;
+interface CrossPostOperation extends BaseOperation {
+    type: 'cross_post';
+    targetCommunity: string;
+    originAuthor: string;
+    originPermlink: string;
+    originTitle: string;
+}
+
+export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation | CrossPostOperation;
 
 export const transactionService = {
     /**
@@ -149,7 +157,7 @@ export const transactionService = {
         const username = op.username;
 
         // Check if this is a Posting-level operation that can be relayed
-        const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc', 'messaging', 'follow', 'subscribe'];
+        const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc', 'messaging', 'follow', 'subscribe', 'cross_post'];
 
         if (postingOps.includes(op.type)) {
             const relayAccount = 'breakaway.app';
@@ -272,6 +280,29 @@ export const transactionService = {
                         id: "community",
                         json: JSON.stringify([subOp.isSubscribing ? 'subscribe' : 'unsubscribe', { community: subOp.community }])
                     }]];
+                    break;
+                }
+                case 'cross_post': {
+                    const cpOp = op as CrossPostOperation;
+                    const cpPermlink = `cross-${Math.random().toString(36).substring(2, 11)}`;
+                    hiveOps = [
+                        ["comment", {
+                            parent_author: "",
+                            parent_permlink: cpOp.targetCommunity,
+                            author: cpOp.username,
+                            permlink: cpPermlink,
+                            title: cpOp.originTitle,
+                            body: `https://peakd.com/@${cpOp.originAuthor}/${cpOp.originPermlink}`,
+                            json_metadata: JSON.stringify({
+                                community: cpOp.targetCommunity,
+                                tags: ["cross-post"],
+                                app: "breakaway/1.0",
+                                original_author: cpOp.originAuthor,
+                                original_permlink: cpOp.originPermlink,
+                                cross_post_receive: 1
+                            })
+                        }]
+                    ];
                     break;
                 }
                 default:
@@ -581,6 +612,35 @@ export const transactionService = {
                         method: 'Posting' as any,
                         json: json,
                         display_msg: subOp.isSubscribing ? `Join ${subOp.community}` : `Leave ${subOp.community}`
+                    });
+                    break;
+                }
+                case 'cross_post': {
+                    const cpOp = op as CrossPostOperation;
+                    const cpPermlink = `cross-${Math.random().toString(36).substring(2, 11)}`;
+                    const cpOpData = [
+                        "comment",
+                        {
+                            parent_author: "",
+                            parent_permlink: cpOp.targetCommunity,
+                            author: cpOp.username,
+                            permlink: cpPermlink,
+                            title: cpOp.originTitle,
+                            body: `https://peakd.com/@${cpOp.originAuthor}/${cpOp.originPermlink}`,
+                            json_metadata: JSON.stringify({
+                                community: cpOp.targetCommunity,
+                                tags: ["cross-post"],
+                                app: "breakaway/1.0",
+                                original_author: cpOp.originAuthor,
+                                original_permlink: cpOp.originPermlink,
+                                cross_post_receive: 1
+                            })
+                        }
+                    ];
+                    result = await keychain.broadcast({
+                        username: cpOp.username,
+                        operations: [cpOpData as any],
+                        method: "Posting" as any
                     });
                     break;
                 }
