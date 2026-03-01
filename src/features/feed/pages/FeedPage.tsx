@@ -659,6 +659,11 @@ export default function FeedPage() {
                                                 ? community.roles.find(([uname]) => uname === user)?.[1]
                                                 : undefined
                                             }
+                                            onUnreblog={() => {
+                                                if (excludeReblogs) {
+                                                    setPosts(prev => prev.filter(p => p.id !== post.id));
+                                                }
+                                            }}
                                         />
                                     ))}
                                 </div>

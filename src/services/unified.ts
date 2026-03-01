@@ -374,7 +374,7 @@ export const UnifiedDataService = {
      * Fetches a post.
      * Strategy: Try API first (for indexed/faster data), fall back to Hive blockchain.
      */
-    getPost: async (author: string, permlink: string): Promise<Post | null> => {
+    getPost: async (author: string, permlink: string, observer?: string): Promise<Post | null> => {
         try {
             // 1. Try Off-chain API (simulated for now)
             // return await apiClient.get<Post>(`/posts/${author}/${permlink}`);
@@ -384,7 +384,7 @@ export const UnifiedDataService = {
 
             // 2. Fallback to Hive (Bridge API for richer data)
             try {
-                const result: any = await hiveClient.call('bridge', 'get_post', { author, permlink });
+                const result: any = await hiveClient.call('bridge', 'get_post', { author, permlink, observer: observer || '' });
                 if (!result || result.author === '') {
                     // Fallback to get_content if bridge fails or returns empty (sometimes happens)
                     const fallback: any = await hiveClient.database.call('get_content', [author, permlink]);
@@ -417,6 +417,19 @@ export const UnifiedDataService = {
                     };
                 }
 
+                // Explicitly fetch reblogged_by for single posts to be robust
+                let reblogged_by = result.reblogged_by || [];
+                if (reblogged_by.length === 0) {
+                    try {
+                        const rebloggers = await hiveClient.call('condenser_api', 'get_reblogged_by', [author, permlink]);
+                        if (Array.isArray(rebloggers)) {
+                            reblogged_by = rebloggers;
+                        }
+                    } catch (e) {
+                        console.warn('Failed to fetch rebloggers via condenser_api', e);
+                    }
+                }
+
                 return {
                     id: `${result.author}/${result.permlink}`,
                     author: result.author,
@@ -434,7 +447,7 @@ export const UnifiedDataService = {
                     beneficiary_payout_value: result.beneficiary_payout_value,
                     active_votes: result.active_votes,
                     children: result.children,
-                    reblogged_by: result.reblogged_by || [],
+                    reblogged_by,
                     community: result.community,
                     community_title: result.community_title,
                     author_reputation: UnifiedDataService.formatReputation(result.author_reputation),

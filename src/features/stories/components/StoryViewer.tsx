@@ -354,10 +354,14 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                         className="absolute inset-y-0 left-0 w-1/2 cursor-pointer z-[65] group/nav flex items-center justify-start p-4"
                         onClick={(e) => {
                             e.stopPropagation();
-                            if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+                            if (currentIndex > 0) {
+                                setCurrentIndex(currentIndex - 1);
+                            } else if (onPrev) {
+                                onPrev();
+                            }
                         }}
                     >
-                        {currentIndex > 0 && (
+                        {(currentIndex > 0 || onPrev) && (
                             <div className="p-2 rounded-full bg-black/20 text-white/40 group-hover/nav:bg-black/40 group-hover/nav:text-white transition-all">
                                 <ChevronLeft size={32} />
                             </div>
@@ -370,6 +374,8 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                             e.stopPropagation();
                             if (currentIndex < group.stories.length - 1) {
                                 setCurrentIndex(currentIndex + 1);
+                            } else if (onNext) {
+                                onNext();
                             } else {
                                 onClose();
                             }

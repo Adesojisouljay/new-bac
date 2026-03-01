@@ -13,7 +13,7 @@ import { useNotification } from '../../../contexts/NotificationContext';
 
 export default function PostViewPage() {
     const { author, permlink } = useParams();
-    const { showNotification } = useNotification();
+    const { showNotification, showConfirm } = useNotification();
     const [post, setPost] = useState<Post | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -47,6 +47,7 @@ export default function PostViewPage() {
     const [showVoteSlider, setShowVoteSlider] = useState(false);
     const [reblogging, setReblogging] = useState(false);
     const [reblogged, setReblogged] = useState(false);
+    const [isHoveringReblog, setIsHoveringReblog] = useState(false);
 
     useEffect(() => {
         if (loading) return;
@@ -100,7 +101,8 @@ export default function PostViewPage() {
             setLoading(true);
             setError(null);
             try {
-                const data = await UnifiedDataService.getPost(author, permlink);
+                const observer = localStorage.getItem('hive_user') || '';
+                const data = await UnifiedDataService.getPost(author, permlink, observer);
                 if (data) {
                     setPost(data);
 
@@ -258,25 +260,31 @@ export default function PostViewPage() {
 
         if (!post) return;
 
-        // Use a simple confirm since showConfirm was removed to keep it simple, or just reblog
-        if (!window.confirm("Are you sure you want to reblog this post to your profile?")) return;
+        const actionTitle = reblogged ? "Undo Reblog" : "Reblog Post";
+        const actionMsg = reblogged
+            ? "Are you sure you want to remove this post from your profile?"
+            : "Are you sure you want to reblog this post to your profile?";
+
+        const confirmed = await showConfirm(actionTitle, actionMsg);
+        if (!confirmed) return;
 
         setReblogging(true);
         const result = await transactionService.broadcast({
-            type: 'reblog',
+            type: reblogged ? 'unreblog' : 'reblog',
             username,
             author: post.author,
             permlink: post.permlink
-        }, (_data) => {
+        }, () => {
             showNotification("Action required: Sign with HiveAuth mobile app.", 'info');
         });
 
         setReblogging(false);
         if (result.success) {
-            setReblogged(true);
-            showNotification("Reblogged successfully", 'success');
+            const newReblogged = !reblogged;
+            setReblogged(newReblogged);
+            showNotification(newReblogged ? "Reblogged successfully" : "Reblog removed successfully", 'success');
         } else {
-            showNotification("Reblog failed: " + result.error, 'error');
+            showNotification(`${reblogged ? 'Undo reblog' : 'Reblog'} failed: ` + result.error, 'error');
         }
     };
 
@@ -452,6 +460,14 @@ export default function PostViewPage() {
                         setVoted(false);
                     }
                 }
+
+                // Check reblogs
+                const alreadyReblogged = !!(post.reblogged_by && Array.isArray(post.reblogged_by) &&
+                    post.reblogged_by.some(u => u?.toLowerCase() === username));
+                setReblogged(alreadyReblogged);
+            } else {
+                setReblogged(false);
+                setVoted(false);
             }
 
             // Check bookmark status
@@ -1133,13 +1149,21 @@ export default function PostViewPage() {
                                                     setShowMoreMenu(false);
                                                     handleReblog();
                                                 }}
-                                                disabled={reblogging || reblogged}
+                                                onMouseEnter={() => setIsHoveringReblog(true)}
+                                                onMouseLeave={() => setIsHoveringReblog(false)}
+                                                disabled={reblogging}
                                                 className="flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-[var(--bg-canvas)] transition-all group"
                                             >
                                                 <div className="w-8 h-8 rounded-lg bg-[var(--text-secondary)]/10 text-[var(--text-secondary)] group-hover:bg-[var(--primary-color)]/10 group-hover:text-[var(--primary-color)] flex items-center justify-center transition-colors">
-                                                    {reblogging ? <div className="animate-spin h-3 w-3 border-2 border-current rounded-full border-t-transparent" /> : <Repeat size={16} />}
+                                                    {reblogging ? (
+                                                        <div className="animate-spin h-3 w-3 border-2 border-current rounded-full border-t-transparent" />
+                                                    ) : (
+                                                        <Repeat size={16} className={reblogged ? 'text-red-500' : ''} />
+                                                    )}
                                                 </div>
-                                                <span className="text-xs font-black text-[var(--text-primary)]">{reblogged ? 'Reblogged' : 'Reblog'}</span>
+                                                <span className={`text-xs font-black ${reblogged ? 'text-red-500' : 'text-[var(--text-primary)]'}`}>
+                                                    {reblogged ? (isHoveringReblog ? 'Undo Reblog?' : 'Reblogged') : 'Reblog'}
+                                                </span>
                                             </button>
 
                                             <button className="flex items-center gap-3 px-4 py-3 rounded-2xl opacity-40 cursor-not-allowed group">

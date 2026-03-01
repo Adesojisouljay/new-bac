@@ -3,7 +3,7 @@ import { KeychainSDK } from 'keychain-sdk';
 const keychain = new KeychainSDK(window);
 
 // Types for wallet operations
-export type OperationType = 'transfer' | 'power_up' | 'power_down' | 'delegate' | 'delegate_rc' | 'deposit_savings' | 'withdraw_savings' | 'vote' | 'comment' | 'reblog' | 'limit_order_create' | 'limit_order_cancel' | 'witness_vote' | 'proposal_vote' | 'messaging' | 'follow' | 'subscribe' | 'cross_post';
+export type OperationType = 'transfer' | 'power_up' | 'power_down' | 'delegate' | 'delegate_rc' | 'deposit_savings' | 'withdraw_savings' | 'vote' | 'comment' | 'reblog' | 'unreblog' | 'limit_order_create' | 'limit_order_cancel' | 'witness_vote' | 'proposal_vote' | 'messaging' | 'follow' | 'subscribe' | 'cross_post';
 
 interface BaseOperation {
     username: string;
@@ -102,6 +102,12 @@ interface ReblogOperation extends BaseOperation {
     permlink: string;
 }
 
+interface UnreblogOperation extends BaseOperation {
+    type: 'unreblog';
+    author: string;
+    permlink: string;
+}
+
 interface LimitOrderCreateOperation extends BaseOperation {
     type: 'limit_order_create';
     amount_to_sell: string; // "10.000 HIVE" or "1.000 HBD"
@@ -189,7 +195,7 @@ interface CommunityUpdateOperation extends BaseOperation {
     };
 }
 
-export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation | CrossPostOperation | ClaimRewardOperation | SetProxyOperation | CommunityPinOperation | CommunityMuteOperation | CommunitySetRoleOperation | CommunityUpdateOperation;
+export type WalletOperation = TransferOperation | PowerUpOperation | PowerDownOperation | DelegateOperation | DelegateRCOperation | SavingsOperation | ProfileUpdateOperation | VoteOperation | CommentOperation | ReblogOperation | UnreblogOperation | LimitOrderCreateOperation | LimitOrderCancelOperation | WitnessVoteOperation | ProposalVoteOperation | MessagingOperation | FollowOperation | SubscribeOperation | CrossPostOperation | ClaimRewardOperation | SetProxyOperation | CommunityPinOperation | CommunityMuteOperation | CommunitySetRoleOperation | CommunityUpdateOperation;
 
 export const transactionService = {
     /**
@@ -204,7 +210,7 @@ export const transactionService = {
         const username = op.username;
 
         // Check if this is a Posting-level operation that can be relayed
-        const postingOps = ['vote', 'comment', 'reblog', 'profile_update', 'delegate_rc', 'messaging', 'follow', 'subscribe', 'cross_post'];
+        const postingOps = ['vote', 'comment', 'reblog', 'unreblog', 'profile_update', 'delegate_rc', 'messaging', 'follow', 'subscribe', 'cross_post'];
 
         if (postingOps.includes(op.type)) {
             const relayAccount = 'breakaway.app';
@@ -280,6 +286,15 @@ export const transactionService = {
                         required_posting_auths: [op.username],
                         id: 'follow',
                         json: JSON.stringify(['reblog', { account: op.username, author: op.author, permlink: op.permlink }])
+                    }]];
+                    break;
+                case 'unreblog':
+                    // We'll use the 'reblog' with delete: 'delete' format, which is a common alternative convention
+                    hiveOps = [["custom_json", {
+                        required_auths: [],
+                        required_posting_auths: [op.username],
+                        id: 'follow',
+                        json: JSON.stringify(['reblog', { account: op.username, author: op.author, permlink: op.permlink, delete: 'delete' }])
                     }]];
                     break;
                 case 'profile_update':
@@ -663,6 +678,29 @@ export const transactionService = {
                         display_msg: 'Reblog Post'
                     });
                     break;
+                case 'unreblog':
+                    const unreblogJson = {
+                        required_auths: [],
+                        required_posting_auths: [op.username],
+                        id: 'follow',
+                        json: JSON.stringify([
+                            'reblog',
+                            {
+                                account: op.username,
+                                author: op.author,
+                                permlink: op.permlink,
+                                delete: 'delete'
+                            }
+                        ])
+                    };
+                    result = await keychain.custom({
+                        username: op.username,
+                        id: unreblogJson.id,
+                        method: 'Posting' as any,
+                        json: unreblogJson.json,
+                        display_msg: 'Undo Reblog'
+                    });
+                    break;
                 case 'limit_order_create':
                     const createOrderOp = [
                         "limit_order_create",
@@ -948,6 +986,23 @@ export const transactionService = {
                             account: op.username,
                             author: op.author,
                             permlink: op.permlink
+                        }
+                    ])
+                }]];
+                keyType = 'posting';
+                break;
+            case 'unreblog':
+                operation = [["custom_json", {
+                    required_auths: [],
+                    required_posting_auths: [op.username],
+                    id: 'follow',
+                    json: JSON.stringify([
+                        'reblog',
+                        {
+                            account: op.username,
+                            author: op.author,
+                            permlink: op.permlink,
+                            delete: 'delete'
                         }
                     ])
                 }]];

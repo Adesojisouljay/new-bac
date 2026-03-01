@@ -14,9 +14,10 @@ import { pointsService } from '../../../services/pointsService';
 interface PostCardProps {
     post: Post;
     viewerRole?: string; // caller passes the logged-in user's own role in this community
+    onUnreblog?: () => void;
 }
 
-export function PostCard({ post, viewerRole }: PostCardProps) {
+export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
     const { showNotification, showConfirm } = useNotification();
     const { config } = useCommunity();
     const community = config?.id || 'hive-106130';
@@ -27,6 +28,7 @@ export function PostCard({ post, viewerRole }: PostCardProps) {
     const [downvoted, setDownvoted] = useState(false);
     const [reblogging, setReblogging] = useState(false);
     const [reblogged, setReblogged] = useState(false);
+    const [isHoveringReblog, setIsHoveringReblog] = useState(false);
     const [showVoteSlider, setShowVoteSlider] = useState(false);
     const [showPayoutDetails, setShowPayoutDetails] = useState(false);
     const [showVoters, setShowVoters] = useState(false);
@@ -186,12 +188,17 @@ export function PostCard({ post, viewerRole }: PostCardProps) {
             return;
         }
 
-        const confirmed = await showConfirm("Reblog Post", "Are you sure you want to reblog this post to your profile?");
+        const actionTitle = reblogged ? "Undo Reblog" : "Reblog Post";
+        const actionMsg = reblogged
+            ? "Are you sure you want to remove this post from your profile?"
+            : "Are you sure you want to reblog this post to your profile?";
+
+        const confirmed = await showConfirm(actionTitle, actionMsg);
         if (!confirmed) return;
 
         setReblogging(true);
         const result = await transactionService.broadcast({
-            type: 'reblog',
+            type: reblogged ? 'unreblog' : 'reblog',
             username,
             author: post.author,
             permlink: post.permlink
@@ -201,13 +208,18 @@ export function PostCard({ post, viewerRole }: PostCardProps) {
 
         setReblogging(false);
         if (result.success) {
-            setReblogged(true);
-            showNotification("Reblogged successfully", 'success');
-            // Award reblog points (fire-and-forget)
-            const username = localStorage.getItem('hive_user');
-            if (username) pointsService.awardPoints(username, community, 'reblog', community);
+            const newReblogged = !reblogged;
+            setReblogged(newReblogged);
+            showNotification(newReblogged ? "Reblogged successfully" : "Reblog removed successfully", 'success');
+
+            // Award reblog points (only when reblogging, not undoing)
+            if (newReblogged) {
+                pointsService.awardPoints(username, community, 'reblog', community);
+            } else if (onUnreblog) {
+                onUnreblog();
+            }
         } else {
-            showNotification("Reblog failed: " + result.error, 'error');
+            showNotification(`${reblogged ? 'Undo reblog' : 'Reblog'} failed: ` + result.error, 'error');
         }
     };
 
@@ -352,11 +364,19 @@ export function PostCard({ post, viewerRole }: PostCardProps) {
                         {/* Reblog/Reply Pills */}
                         <button
                             onClick={(e) => { e.preventDefault(); handleReblog(); }}
-                            disabled={reblogging || reblogged}
-                            className={`flex items-center gap-2 h-9 px-4 rounded-full border border-[var(--border-color)] bg-[var(--bg-canvas)] text-xs font-bold transition-all ${reblogged ? 'bg-[var(--primary-color)] text-white' : 'hover:border-[var(--primary-color)] text-[var(--text-secondary)]'}`}
+                            onMouseEnter={() => setIsHoveringReblog(true)}
+                            onMouseLeave={() => setIsHoveringReblog(false)}
+                            disabled={reblogging}
+                            className={`flex items-center gap-2 h-9 px-4 rounded-full border transition-all ${reblogged ? 'bg-red-500/10 border-red-500/30 text-red-500 shadow-sm' : 'border-[var(--border-color)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-red-500/50 hover:text-red-500'}`}
                         >
-                            {reblogging ? <div className="animate-spin h-3 w-3 border-2 border-current rounded-full border-t-transparent" /> : <Repeat size={14} />}
-                            <span className="hidden sm:inline">Reblog</span>
+                            {reblogging ? (
+                                <div className="animate-spin h-3 w-3 border-2 border-current rounded-full border-t-transparent" />
+                            ) : (
+                                <Repeat size={14} className={reblogged ? 'text-red-500' : ''} />
+                            )}
+                            <span className="sm:inline font-bold text-xs">
+                                {reblogged ? (isHoveringReblog ? 'Undo Reblog?' : 'Reblogged') : 'Reblog'}
+                            </span>
                         </button>
 
                         <Link

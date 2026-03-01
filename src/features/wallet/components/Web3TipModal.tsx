@@ -31,6 +31,11 @@ const INTEGRATED_CHAINS = [
     'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'
 ];
 
+const SYMBOL_MAP: Record<string, string> = {
+    'TRX': 'TRON',
+    'MATIC': 'POLYGON'
+};
+
 type Step = 'select_chain' | 'enter_amount' | 'unlocking' | 'sending' | 'done' | 'error';
 
 export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) {
@@ -68,7 +73,10 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
                     setRecipientHasWallet(false);
                 } else {
                     const addrMap: Record<string, string> = {};
-                    chainTokens.forEach(t => { addrMap[t.symbol] = t.meta?.address || ''; });
+                    chainTokens.forEach(t => {
+                        const normalized = SYMBOL_MAP[t.symbol] || t.symbol;
+                        addrMap[normalized] = t.meta?.address || '';
+                    });
                     setRecipientAddresses(addrMap);
 
                     // Auto-select first available chain
@@ -110,12 +118,18 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
                     const tokens = await fetchHiveMetadata(senderUsername);
                     const chainTokens = tokens.filter(t => t.type === 'CHAIN');
                     const mockWallets: any = { mnemonic: '' };
-                    const info: Web3WalletInfo[] = chainTokens.map(t => ({
-                        chain: t.symbol, symbol: t.symbol,
-                        address: t.meta?.address || '', imageUrl: t.meta?.imageUrl || '',
-                        balance: 0, price: 0, change24h: 0, usdValue: 0,
-                    }));
-                    chainTokens.forEach(t => { mockWallets[t.symbol] = { address: t.meta?.address, imageUrl: t.meta?.imageUrl }; });
+                    const info: Web3WalletInfo[] = chainTokens.map(t => {
+                        const normalized = SYMBOL_MAP[t.symbol] || t.symbol;
+                        return {
+                            chain: normalized, symbol: t.symbol,
+                            address: t.meta?.address || '', imageUrl: t.meta?.imageUrl || '',
+                            balance: 0, price: 0, change24h: 0, usdValue: 0,
+                        };
+                    });
+                    chainTokens.forEach(t => {
+                        const normalized = SYMBOL_MAP[t.symbol] || t.symbol;
+                        mockWallets[normalized] = { address: t.meta?.address, imageUrl: t.meta?.imageUrl };
+                    });
                     if (info.length > 0) {
                         setSenderInfo(info);
                         try {
@@ -130,16 +144,18 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
         })();
     }, [senderUsername]);
 
-    // ── Fetch fee estimate when chain & amount change ─────────────────────────
+    // ── Fetch fee estimate when chain OR amount changes ────────────────────────
     useEffect(() => {
-        if (!selectedChain || !amount || isNaN(Number(amount))) { setFee(null); return; }
+        if (!selectedChain) { setFee(null); return; }
         const recipientAddr = recipientAddresses[selectedChain];
         const senderAddr = senderWallets[selectedChain]?.address || senderInfo.find(i => i.chain === selectedChain)?.address || '';
         if (!senderAddr || !recipientAddr) return;
+
         const timer = setTimeout(async () => {
             setFetchingFee(true);
             try {
-                const res = await web3WalletService.estimateFee(selectedChain, senderAddr, recipientAddr, Number(amount));
+                // Fetch fee using 0 amount for initial "base" fee estimation if amount empty
+                const res = await web3WalletService.estimateFee(selectedChain, senderAddr, recipientAddr, Number(amount) || 0);
                 if (res.success) setFee(typeof res.fee === 'object' ? res.fee.fee : Number(res.fee));
             } catch { /* ignore */ } finally { setFetchingFee(false); }
         }, 500);
@@ -329,20 +345,20 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
             <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
 
                 {/* Header */}
-                <div className="p-6 border-b border-[var(--border-color)] flex justify-between items-center">
+                <div className="p-4 px-6 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-canvas)]/50">
                     <div>
-                        <h2 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
-                            <Wallet size={18} className="text-[var(--primary-color)]" />
+                        <h2 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
+                            <Wallet size={16} className="text-[var(--primary-color)]" />
                             Tip @{recipientUsername}
                         </h2>
-                        <p className="text-xs text-[var(--text-secondary)] mt-0.5">Send crypto directly from your Web3 wallet</p>
+                        <p className="text-[10px] text-[var(--text-secondary)] opacity-80">Send crypto from your Web3 wallet</p>
                     </div>
                     <button onClick={onClose} className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)] rounded-full transition-colors">
                         <X size={18} />
                     </button>
                 </div>
 
-                <div className="p-6 space-y-5">
+                <div className="p-5 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
 
                     {/* ── Step: Processing ── */}
                     {(step === 'unlocking' || step === 'sending') && (
@@ -358,38 +374,40 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
                     {(step === 'select_chain' || step === 'enter_amount') && (
                         <>
                             <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-2 block">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-1.5 block">
                                     Select Chain
                                 </label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {availableChains.map(chain => {
-                                        const accent = CHAIN_ACCENT[chain] || '#888';
-                                        const info = senderInfo.find(i => i.chain === chain);
-                                        const isSelected = selectedChain === chain;
-                                        return (
-                                            <button
-                                                key={chain}
-                                                onClick={() => { setSelectedChain(chain); setStep('enter_amount'); setAmount(''); }}
-                                                className={`relative flex flex-col items-center gap-1.5 p-3 rounded-2xl border transition-all ${isSelected
-                                                    ? 'border-[var(--primary-color)] bg-[var(--primary-color)]/5 shadow-md'
-                                                    : 'border-[var(--border-color)] hover:border-[var(--text-secondary)] bg-[var(--bg-canvas)]'
-                                                    }`}
-                                            >
-                                                {info?.imageUrl ? (
-                                                    <img src={info.imageUrl} alt={chain} className="w-7 h-7 object-contain" />
-                                                ) : (
-                                                    <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold" style={{ backgroundColor: `${accent}20`, color: accent }}>{chain[0]}</div>
-                                                )}
-                                                <span className="text-[9px] font-black uppercase tracking-wider text-[var(--text-primary)]">{chain.replace('_', ' ')}</span>
-                                                <span className="text-[8px] text-[var(--text-secondary)] opacity-70">
-                                                    {info?.balance !== undefined ? info.balance.toFixed(4) : '—'}
-                                                </span>
-                                                {isSelected && (
-                                                    <div className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[var(--primary-color)]" />
-                                                )}
-                                            </button>
-                                        );
-                                    })}
+                                <div className="max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {availableChains.map(chain => {
+                                            const accent = CHAIN_ACCENT[chain] || '#888';
+                                            const info = senderInfo.find(i => i.chain === chain);
+                                            const isSelected = selectedChain === chain;
+                                            return (
+                                                <button
+                                                    key={chain}
+                                                    onClick={() => { setSelectedChain(chain); setStep('enter_amount'); setAmount(''); }}
+                                                    className={`relative flex flex-col items-center gap-1 p-2.5 rounded-xl border transition-all ${isSelected
+                                                        ? 'border-[var(--primary-color)] bg-[var(--primary-color)]/5 shadow-md'
+                                                        : 'border-[var(--border-color)] hover:border-[var(--text-secondary)] bg-[var(--bg-canvas)]'
+                                                        }`}
+                                                >
+                                                    {info?.imageUrl ? (
+                                                        <img src={info.imageUrl} alt={chain} className="w-6 h-6 object-contain" />
+                                                    ) : (
+                                                        <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: `${accent}20`, color: accent }}>{chain[0]}</div>
+                                                    )}
+                                                    <span className="text-[8px] font-black uppercase tracking-wider text-[var(--text-primary)] truncate max-w-full">{chain.replace('_', ' ')}</span>
+                                                    <span className="text-[8px] text-[var(--text-secondary)] opacity-70">
+                                                        {info?.balance !== undefined ? info.balance.toFixed(3) : '—'}
+                                                    </span>
+                                                    {isSelected && (
+                                                        <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[var(--primary-color)]" />
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
                             </div>
 
@@ -398,17 +416,17 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
                                 <>
                                     {/* Wallet status: if locked, prompt unlock */}
                                     {isLocked && !senderWallets[selectedChain] && (
-                                        <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3">
-                                            <span className="text-xl shrink-0">🔒</span>
+                                        <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 flex items-center gap-3">
+                                            <span className="text-lg shrink-0">🔒</span>
                                             <div className="flex-1">
-                                                <p className="text-xs font-bold text-amber-500 mb-1">Wallet Locked</p>
-                                                <p className="text-[10px] text-[var(--text-secondary)]">
-                                                    Your wallet needs to be unlocked to sign transactions.
+                                                <p className="text-[10px] font-bold text-amber-500">Wallet Locked</p>
+                                                <p className="text-[9px] text-[var(--text-secondary)] opacity-70">
+                                                    Unlock to sign transactions.
                                                 </p>
                                             </div>
                                             <button
                                                 onClick={handleUnlock}
-                                                className="shrink-0 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white rounded-lg"
+                                                className="shrink-0 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white rounded-lg hover:brightness-110 active:scale-95 transition-all"
                                                 style={{ backgroundColor: accentColor }}
                                             >
                                                 Unlock
@@ -418,12 +436,20 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
 
                                     {/* Handle Integrated vs Not Yet Integrated */}
                                     {!INTEGRATED_CHAINS.includes(selectedChain) ? (
-                                        <div className="space-y-6">
+                                        <div className="space-y-4">
+                                            {/* Summary for Unsupported */}
+                                            <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-4 flex flex-col gap-2">
+                                                <div className="flex justify-between items-center text-[10px]">
+                                                    <span className="text-[var(--text-secondary)]">Available Balance</span>
+                                                    <span className="font-black text-[var(--text-primary)]">{senderBalance(selectedChain).toFixed(6)} {selectedChain}</span>
+                                                </div>
+                                            </div>
+
                                             <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-6 text-center space-y-3">
                                                 <div className="w-12 h-12 bg-[var(--primary-color)]/10 text-[var(--primary-color)] rounded-full flex items-center justify-center mx-auto text-xl">
                                                     ⏳
                                                 </div>
-                                                <h4 className="font-bold text-[var(--text-primary)]">{selectedChain} Integration Coming Soon</h4>
+                                                <h4 className="font-bold text-[var(--text-primary)] text-sm">{selectedChain} Integration Coming Soon</h4>
                                                 <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed">
                                                     We're currently working on adding secure signing support for {selectedChain}.
                                                     In the meantime, you can tip @{recipientUsername} using other coins they support below.
@@ -431,7 +457,7 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
                                             </div>
 
                                             {/* Alternative Suggestions */}
-                                            <div className="space-y-3">
+                                            <div className="space-y-2">
                                                 <label className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">
                                                     Supported Alternatives
                                                 </label>
@@ -444,17 +470,17 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
                                                                 <button
                                                                     key={chain}
                                                                     onClick={() => setSelectedChain(chain)}
-                                                                    className="flex items-center gap-2 p-2.5 rounded-xl border border-[var(--border-color)] bg-[var(--bg-canvas)] hover:border-[var(--primary-color)] transition-all text-left"
+                                                                    className="flex items-center gap-2 p-2 rounded-xl border border-[var(--border-color)] bg-[var(--bg-card)] hover:border-[var(--primary-color)] transition-all text-left"
                                                                 >
                                                                     {info?.imageUrl ? (
-                                                                        <img src={info.imageUrl} alt={chain} className="w-5 h-5 object-contain" />
+                                                                        <img src={info.imageUrl} alt={chain} className="w-4 h-4 object-contain" />
                                                                     ) : (
-                                                                        <div className="w-5 h-5 bg-[var(--primary-color)]/20 rounded-md" />
+                                                                        <div className="w-4 h-4 bg-[var(--primary-color)]/20 rounded-md" />
                                                                     )}
                                                                     <div className="flex flex-col">
-                                                                        <span className="text-[10px] font-bold text-[var(--text-primary)]">{chain}</span>
-                                                                        <span className="text-[8px] text-[var(--text-secondary)]">
-                                                                            {senderBalance(chain).toFixed(4)} avail.
+                                                                        <span className="text-[9px] font-bold text-[var(--text-primary)]">{chain}</span>
+                                                                        <span className="text-[8px] text-[var(--text-secondary)] opacity-70">
+                                                                            {senderBalance(chain).toFixed(3)}
                                                                         </span>
                                                                     </div>
                                                                 </button>
@@ -465,72 +491,84 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
                                         </div>
                                     ) : (
                                         <>
-                                            {/* Amount input */}
-                                            <div>
-                                                <div className="flex justify-between items-center mb-2">
-                                                    <label className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Amount</label>
-                                                    <span className="text-[10px] text-[var(--text-secondary)]">
-                                                        Balance: <span className="font-bold text-[var(--text-primary)]">
-                                                            {senderBalance(selectedChain).toFixed(6)} {selectedChain}
-                                                        </span>
+                                            {/* Prominent Balance + Fee Info Card */}
+                                            <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-4 flex flex-col gap-2.5 shadow-sm">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Your Balance</span>
+                                                    <span className="text-sm font-black text-[var(--text-primary)]" style={{ color: accentColor }}>
+                                                        {senderBalance(selectedChain).toFixed(6)} {selectedChain}
                                                     </span>
                                                 </div>
-                                                <div className="relative">
-                                                    <input
-                                                        type="number"
-                                                        value={amount}
-                                                        onChange={e => setAmount(e.target.value)}
-                                                        placeholder="0.00"
-                                                        className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-3 pr-20 text-sm text-[var(--text-primary)] focus:border-[var(--primary-color)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all placeholder:opacity-30"
-                                                    />
-                                                    <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                                                        <button onClick={() => setAmount(senderBalance(selectedChain).toString())} className="text-[9px] font-black text-[var(--primary-color)] hover:brightness-110">MAX</button>
-                                                        <span className="text-[10px] font-bold text-[var(--text-secondary)]">{selectedChain}</span>
-                                                    </div>
+                                                <div className="h-px bg-[var(--border-color)] opacity-50" />
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Network Fee</span>
+                                                    {fetchingFee ? (
+                                                        <Loader2 className="animate-spin text-[var(--text-secondary)]" size={12} />
+                                                    ) : (
+                                                        <span className="text-[11px] font-bold text-[var(--text-primary)]">
+                                                            {fee !== null ? `≈ ${fee.toFixed(6)}` : '—'} {selectedChain}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
 
-                                            {/* Fee estimate */}
-                                            {amount && !isNaN(Number(amount)) && (
-                                                <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl p-3 space-y-1.5 text-xs">
-                                                    <div className="flex justify-between">
-                                                        <span className="text-[var(--text-secondary)]">Tip amount</span>
-                                                        <span className="font-bold">{Number(amount).toFixed(6)} {selectedChain}</span>
+                                            {/* Amount input */}
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <div className="flex justify-between items-center mb-1.5">
+                                                        <label className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Tip amount</label>
                                                     </div>
-                                                    <div className="flex justify-between">
-                                                        <span className="text-[var(--text-secondary)]">Network fee</span>
-                                                        {fetchingFee ? (
-                                                            <span className="text-[var(--text-secondary)] animate-pulse">Calculating…</span>
-                                                        ) : (
-                                                            <span className="font-bold">{fee !== null ? `≈${fee.toFixed(6)}` : '—'} {selectedChain}</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex justify-between border-t border-[var(--border-color)] pt-1.5">
-                                                        <span className="font-bold text-[var(--text-secondary)]">Recipient gets</span>
-                                                        <span className="font-black" style={{ color: accentColor }}>{Number(amount).toFixed(6)} {selectedChain}</span>
+                                                    <div className="relative">
+                                                        <input
+                                                            type="number"
+                                                            value={amount}
+                                                            onChange={e => setAmount(e.target.value)}
+                                                            placeholder="0.00"
+                                                            className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-2.5 pr-20 text-sm text-[var(--text-primary)] focus:border-[var(--primary-color)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all placeholder:opacity-30"
+                                                        />
+                                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                                                            <button onClick={() => setAmount(senderBalance(selectedChain).toString())} className="text-[9px] font-black text-[var(--primary-color)] hover:brightness-110">MAX</button>
+                                                            <span className="text-[10px] font-bold text-[var(--text-secondary)]">{selectedChain}</span>
+                                                        </div>
                                                     </div>
                                                 </div>
-                                            )}
 
-                                            {/* Recipient address preview */}
-                                            {recipientAddresses[selectedChain] && (
-                                                <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl p-3">
-                                                    <span className="shrink-0">To:</span>
-                                                    <code className="truncate font-mono opacity-70">{recipientAddresses[selectedChain]}</code>
-                                                </div>
-                                            )}
+                                                {/* Summary Calculation */}
+                                                {amount && !isNaN(Number(amount)) && Number(amount) > 0 && (
+                                                    <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl p-3 flex flex-col gap-1.5 text-[10px]">
+                                                        <div className="flex justify-between font-bold">
+                                                            <span className="text-[var(--text-secondary)] opacity-80">Total to Deduct</span>
+                                                            <span className="text-[var(--text-primary)]">
+                                                                {(Number(amount) + (fee || 0)).toFixed(6)} {selectedChain}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex justify-between border-t border-[var(--border-color)] pt-1.5">
+                                                            <span className="font-black text-[var(--text-secondary)] uppercase tracking-wider">Recipient Receives</span>
+                                                            <span className="text-sm font-black" style={{ color: accentColor }}>{Number(amount).toFixed(6)} {selectedChain}</span>
+                                                        </div>
+                                                    </div>
+                                                )}
 
-                                            {/* CTA */}
-                                            <button
-                                                onClick={handleSendTip}
-                                                disabled={!amount || isNaN(Number(amount)) || Number(amount) <= 0 || !senderWallets[selectedChain]}
-                                                className="w-full py-4 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-40 disabled:cursor-not-allowed"
-                                                style={{ backgroundColor: accentColor, boxShadow: `0 8px 24px ${accentColor}33` }}
-                                            >
-                                                {senderWallets[selectedChain]
-                                                    ? `Send ${amount || '0'} ${selectedChain} Tip 💸`
-                                                    : 'Unlock wallet to send'}
-                                            </button>
+                                                {/* Recipient address preview */}
+                                                {recipientAddresses[selectedChain] && (
+                                                    <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] bg-[var(--bg-canvas)]/30 border border-[var(--border-color)] rounded-xl p-2.5">
+                                                        <span className="shrink-0 opacity-50">To:</span>
+                                                        <code className="truncate font-mono opacity-40 text-[9px]">{recipientAddresses[selectedChain]}</code>
+                                                    </div>
+                                                )}
+
+                                                {/* CTA */}
+                                                <button
+                                                    onClick={handleSendTip}
+                                                    disabled={!amount || isNaN(Number(amount)) || Number(amount) <= 0 || !senderWallets[selectedChain]}
+                                                    className="w-full py-3.5 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-40 disabled:cursor-not-allowed"
+                                                    style={{ backgroundColor: accentColor, boxShadow: `0 8px 24px ${accentColor}33` }}
+                                                >
+                                                    {senderWallets[selectedChain]
+                                                        ? `Send ${amount || '0'} ${selectedChain} Tip 💸`
+                                                        : 'Unlock wallet to send'}
+                                                </button>
+                                            </div>
                                         </>
                                     )}
                                 </>
