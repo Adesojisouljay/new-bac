@@ -9,12 +9,85 @@ interface StoryCreatorProps {
     onSuccess: () => void;
 }
 
+const STORY_CONTAINER_ACCOUNT = 'breakaway.app';
+
+/** Deterministic daily container — same formula as backend storyChain.js */
+function getTodayContainer(): { author: string; permlink: string } {
+    const now = new Date();
+    const y = now.getUTCFullYear();
+    const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(now.getUTCDate()).padStart(2, '0');
+    return {
+        author: STORY_CONTAINER_ACCOUNT,
+        permlink: `bac-stories-${y}-${m}-${d}`
+    };
+}
+
+/**
+ * Broadcast the story comment via Hive Keychain's requestBroadcast.
+ * This is the most reliable Keychain method — works with any posting-level op.
+ * Returns true on success, false on cancel/failure.
+ */
+async function broadcastViaKeychain(
+    username: string,
+    container: { author: string; permlink: string },
+    content: { type: string; text?: string; imageUrl?: string }
+): Promise<boolean> {
+    const keychain = (window as any).hive_keychain;
+    if (!keychain) {
+        console.warn('[Story] Keychain not installed');
+        return false;
+    }
+
+    const permlink = `bac-story-${username}-${Date.now()}`;
+    let body = content.text || '';
+    if (content.imageUrl) {
+        body = content.imageUrl + (content.text ? `\n\n${content.text}` : '');
+    }
+    if (!body.trim()) body = '📸 (Story)';
+
+    const ops = [
+        ['comment', {
+            parent_author: container.author,
+            parent_permlink: container.permlink,
+            author: username,
+            permlink,
+            title: '',
+            body,
+            json_metadata: JSON.stringify({
+                app: 'bac/stories/1.0',
+                type: 'story',
+                content,
+                tags: ['bac-stories', 'breakaway']
+            })
+        }]
+    ];
+
+    return new Promise((resolve) => {
+        keychain.requestBroadcast(
+            username,
+            ops,
+            'posting',
+            (response: any) => {
+                if (response.success) {
+                    console.log(`✅ [Story] Onchain! tx: ${response.result?.id}`);
+                    resolve(true);
+                } else {
+                    console.warn('[Story] Keychain broadcast rejected/cancelled:', response.message);
+                    resolve(false);
+                }
+            }
+        );
+    });
+}
+
 export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }) => {
     const [content, setContent] = useState('');
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isPosting, setIsPosting] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
+    const [postingStatus, setPostingStatus] = useState('');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const username = localStorage.getItem('hive_user');
@@ -42,34 +115,55 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
 
         setIsPosting(true);
         try {
+            // --- Build content ---
             let storyContent: any = { type: 'text', text: content };
 
             if (imageFile) {
                 setIsUploading(true);
+                setPostingStatus('Uploading image...');
                 try {
                     const imageUrl = await cloudinaryService.uploadFile(imageFile, 'image');
-                    storyContent = {
-                        type: 'image',
-                        imageUrl,
-                        text: content // Optional caption
-                    };
+                    storyContent = { type: 'image', imageUrl, text: content };
                 } catch (err: any) {
                     showNotification(`Image upload failed: ${err.message}`, 'error');
-                    setIsPosting(false);
-                    setIsUploading(false);
                     return;
+                } finally {
+                    setIsUploading(false);
                 }
             }
 
-            await storyService.postStory(username, storyContent);
-            showNotification('Story posted!', 'success');
-            onSuccess();
-            onClose();
+            // --- Step 1: Post onchain via Keychain FIRST ---
+            const keychainInstalled = !!(window as any).hive_keychain;
+            if (keychainInstalled) {
+                setPostingStatus('Confirm in Keychain...');
+                const container = getTodayContainer();
+                const success = await broadcastViaKeychain(username, container, storyContent);
+                if (success) {
+                    // --- Step 2: Save offchain to backend (after onchain confirmed) ---
+                    setPostingStatus('Saving story...');
+                    await storyService.postStory(username, storyContent);
+                    showNotification('Story posted onchain! ⛓', 'success');
+                    onSuccess();
+                    onClose();
+                } else {
+                    // User cancelled Keychain — ask if they want to save offchain only
+                    showNotification('Keychain cancelled — story not posted', 'warning');
+                    // Still allow modal to close; offchain not saved since user bailed
+                }
+            } else {
+                // No Keychain — offchain only
+                setPostingStatus('Saving story...');
+                await storyService.postStory(username, storyContent);
+                showNotification('Story posted!', 'success');
+                onSuccess();
+                onClose();
+            }
         } catch (error) {
             showNotification('Failed to post story', 'error');
         } finally {
             setIsPosting(false);
             setIsUploading(false);
+            setPostingStatus('');
         }
     };
 
@@ -113,26 +207,27 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
                     <textarea
                         value={content}
                         onChange={(e) => setContent(e.target.value)}
-                        placeholder={imageFile ? "Add a caption..." : "What's happening? (Stories last 24 hours)"}
+                        placeholder={imageFile ? 'Add a caption...' : "What's happening? (Stories last 24 hours)"}
                         className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-4 min-h-[120px] text-lg focus:outline-none focus:border-[var(--primary-color)] resize-none"
                     />
 
                     <div className="flex justify-end gap-3">
                         <button
                             onClick={onClose}
-                            className="px-6 py-3 rounded-xl font-bold text-[var(--text-secondary)] hover:bg-white/5"
+                            disabled={isPosting}
+                            className="px-6 py-3 rounded-xl font-bold text-[var(--text-secondary)] hover:bg-white/5 disabled:opacity-40"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={handlePost}
-                            disabled={isPosting || (!content.trim() && !imageFile)}
+                            disabled={isPosting || isUploading || (!content.trim() && !imageFile)}
                             className="px-8 py-3 bg-[var(--primary-color)] text-white rounded-xl font-bold hover:opacity-90 disabled:opacity-50 transition-all shadow-lg shadow-[var(--primary-color)]/20 flex items-center gap-2"
                         >
-                            {(isPosting || isUploading) ? (
+                            {isPosting ? (
                                 <>
                                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    {isUploading ? 'Uploading...' : 'Posting...'}
+                                    <span>{postingStatus || 'Posting...'}</span>
                                 </>
                             ) : (
                                 <>

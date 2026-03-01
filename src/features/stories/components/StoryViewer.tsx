@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { GroupedStory } from '../services/storyService';
 import { formatDistanceToNow } from 'date-fns';
 import { useNotification } from '../../../contexts/NotificationContext';
@@ -33,6 +34,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
 
     const { showNotification } = useNotification();
     const { config } = useCommunity();
+    const navigate = useNavigate();
     const story = group.stories[currentIndex];
     const username = localStorage.getItem('hive_user');
 
@@ -178,27 +180,50 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                     ))}
                 </div>
 
-                {/* Header info */}
-                <div className="absolute top-8 left-6 flex items-center gap-3 z-[70]">
+                {/* Header info — clickable to visit profile */}
+                <div
+                    className="absolute top-8 left-6 flex items-center gap-3 z-[70] cursor-pointer group/profile"
+                    onClick={() => { onClose(); navigate(`/${group.username}`); }}
+                >
                     <img
                         src={`https://images.hive.blog/u/${group.username}/avatar`}
                         alt={group.username}
-                        className="w-10 h-10 rounded-full border border-white/20"
+                        className="w-10 h-10 rounded-full border border-white/20 group-hover/profile:border-white/60 transition-all"
                     />
                     <div className="flex flex-col">
-                        <span className="font-bold text-white">@{group.username}</span>
-                        <span className="text-[10px] text-white/60">{formatDistanceToNow(new Date(story.timestamp))} ago</span>
+                        <span className="font-bold text-white group-hover/profile:underline">
+                            @{group.username}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-white/60">{formatDistanceToNow(new Date(story.timestamp))} ago</span>
+                            {(story.isOnchain || story.hiveTrxId) && (
+                                <span className="text-[9px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-full px-1.5 py-0.5">
+                                    ⛓ Onchain
+                                </span>
+                            )}
+                        </div>
                     </div>
                 </div>
 
                 {/* Story Content */}
-                <div className="flex-1 w-full flex items-center justify-center text-center p-8">
+                <div className="flex-1 w-full flex flex-col items-center justify-center text-center p-8 gap-4">
                     {story.content.type === 'text' ? (
                         <h2 className="text-3xl font-medium text-white leading-tight break-words max-w-full">
                             {story.content.text}
                         </h2>
                     ) : (
-                        <img src={story.content.imageUrl} alt="Story" className="max-w-full max-h-full object-contain rounded-2xl" />
+                        <>
+                            <img
+                                src={story.content.imageUrl}
+                                alt="Story"
+                                className="max-w-full max-h-[65%] object-contain rounded-2xl"
+                            />
+                            {story.content.text && (
+                                <p className="text-lg text-white/90 leading-snug break-words max-w-sm">
+                                    {story.content.text}
+                                </p>
+                            )}
+                        </>
                     )}
                 </div>
 
