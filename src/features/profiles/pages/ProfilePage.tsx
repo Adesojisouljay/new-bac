@@ -547,7 +547,17 @@ export default function ProfilePage() {
                             </div>
                         ) : (
                             <div className="space-y-4">
-                                {filteredFeed.map(post => <PostCard key={post.id} post={post} />)}
+                                {filteredFeed.map(post => (
+                                    <PostCard
+                                        key={post.id}
+                                        post={post}
+                                        onUnreblog={() => {
+                                            if (activeTab === 'blog') {
+                                                setFeed(prev => prev.filter(p => p.id !== post.id));
+                                            }
+                                        }}
+                                    />
+                                ))}
                                 {loadingMore && !searchQuery && (
                                     <div className="py-4 text-center text-sm font-medium text-[var(--text-secondary)] animate-pulse">
                                         Loading more...
