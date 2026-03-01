@@ -22,6 +22,7 @@ interface ModerationActionsModalProps {
         is_nsfw?: boolean;
     };
     onSuccess?: () => void;
+    onPinChange?: (pinned: boolean) => void;
 }
 
 type ModTab = 'post' | 'user' | 'settings';
@@ -36,7 +37,8 @@ export function ModerationActionsModal({
     postPermlink,
     isPinned = false,
     communityProps,
-    onSuccess
+    onSuccess,
+    onPinChange
 }: ModerationActionsModalProps) {
     const { showNotification } = useNotification();
     const username = localStorage.getItem('hive_user') || '';
@@ -49,7 +51,7 @@ export function ModerationActionsModal({
     const [loading, setLoading] = useState(false);
 
     // Post actions state
-    const [pinned, setPinned] = useState(isPinned);
+    const pinned = isPinned;
 
     // Mute user state
     const [muteTarget, setMuteTarget] = useState(postAuthor || '');
@@ -90,7 +92,30 @@ export function ModerationActionsModal({
         }
     };
 
-    const handlePin = () => broadcast({
+    const broadcastWithPinCallback = async (op: any) => {
+        setLoading(true);
+        try {
+            const result = await transactionService.broadcast(op, () => {
+                showNotification('Please sign with your Hive wallet', 'info');
+            });
+            if (result.success) {
+                showNotification('Action completed successfully!', 'success');
+                if (op.type === 'community_pin') {
+                    onPinChange?.(op.pinned); // notify PostCard of new pin state
+                }
+                onSuccess?.();
+                onClose();
+            } else {
+                showNotification(`Failed: ${result.error}`, 'error');
+            }
+        } catch (e: any) {
+            showNotification(`Error: ${e.message}`, 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePin = () => broadcastWithPinCallback({
         type: 'community_pin',
         username,
         community,

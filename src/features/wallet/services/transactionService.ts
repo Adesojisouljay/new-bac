@@ -364,11 +364,12 @@ export const transactionService = {
                 }
                 case 'community_pin': {
                     const pOp = op as CommunityPinOperation;
+                    // Hive community API: 'pinPost' to pin, 'unpinPost' to unpin — no 'pinned' field
                     hiveOps = [["custom_json", {
                         required_auths: [],
                         required_posting_auths: [pOp.username],
                         id: 'community',
-                        json: JSON.stringify(["pinPost", { community: pOp.community, account: pOp.account, permlink: pOp.permlink, pinned: pOp.pinned }])
+                        json: JSON.stringify([pOp.pinned ? "pinPost" : "unpinPost", { community: pOp.community, account: pOp.account, permlink: pOp.permlink }])
                     }]];
                     break;
                 }
@@ -777,9 +778,10 @@ export const transactionService = {
                 }
                 case 'community_pin': {
                     const pOp = op as CommunityPinOperation;
+                    // Hive community API: 'pinPost' to pin, 'unpinPost' to unpin
                     result = await keychain.broadcast({
                         username: pOp.username,
-                        operations: [["custom_json", { required_auths: [], required_posting_auths: [pOp.username], id: 'community', json: JSON.stringify(["pinPost", { community: pOp.community, account: pOp.account, permlink: pOp.permlink, pinned: pOp.pinned }]) }] as any],
+                        operations: [["custom_json", { required_auths: [], required_posting_auths: [pOp.username], id: 'community', json: JSON.stringify([pOp.pinned ? "pinPost" : "unpinPost", { community: pOp.community, account: pOp.account, permlink: pOp.permlink }]) }] as any],
                         method: "Posting" as any
                     });
                     break;

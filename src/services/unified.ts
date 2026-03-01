@@ -17,7 +17,13 @@ export interface Post {
     beneficiary_payout_value?: string;
     active_votes?: any[];
     children?: number;
-    stats?: any;
+    stats?: {
+        total_votes?: number;
+        flag_weight?: number;
+        gray?: boolean;
+        hide?: boolean;
+        is_pinned?: boolean;
+    };
     reblogged_by?: string[];
     author_reputation?: number;
     community?: string;

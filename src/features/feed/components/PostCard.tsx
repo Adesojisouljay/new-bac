@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Post } from '../../../services/unified';
 import { transactionService } from '../../wallet/services/transactionService';
-import { ThumbsUp, ThumbsDown, MessageSquare, Repeat, Shield } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, Repeat, Shield, Pin } from 'lucide-react';
 import { VoteSlider } from './VoteSlider';
 import { VoterListModal } from './VoterListModal';
 import { ModerationActionsModal } from '../../community/components/ModerationActionsModal';
@@ -31,6 +31,10 @@ export function PostCard({ post, viewerRole }: PostCardProps) {
     const [showPayoutDetails, setShowPayoutDetails] = useState(false);
     const [showVoters, setShowVoters] = useState(false);
     const [showModerationModal, setShowModerationModal] = useState(false);
+    const [pinnedOverride, setPinnedOverride] = useState<boolean | undefined>(undefined);
+
+    // Derived: use local override if set (after pin/unpin action), else use API value
+    const isPinned = pinnedOverride !== undefined ? pinnedOverride : (post.stats?.is_pinned ?? false);
 
     // Strip markdown for clean preview
     const stripMarkdown = (text: string) => {
@@ -222,7 +226,7 @@ export function PostCard({ post, viewerRole }: PostCardProps) {
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
                 </Link>
 
-                {/* Community Badge Overlay (Top Right of Image) - More Subtle Design */}
+                {/* Community Badge Overlay (Top Right of Image) */}
                 {post.community && config?.id === 'global' && (
                     <Link
                         to={`/c/${post.community}`}
@@ -230,6 +234,14 @@ export function PostCard({ post, viewerRole }: PostCardProps) {
                     >
                         {post.community}
                     </Link>
+                )}
+
+                {/* Pinned Badge (Top Left of Image) — uses local override for instant feedback */}
+                {isPinned && (
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/90 backdrop-blur-sm text-white text-[9px] font-black uppercase tracking-widest shadow-lg">
+                        <Pin size={9} />
+                        Pinned
+                    </div>
                 )}
             </div>
 
@@ -440,6 +452,8 @@ export function PostCard({ post, viewerRole }: PostCardProps) {
                     userRole={viewerRole || 'guest'}
                     postAuthor={post.author}
                     postPermlink={post.permlink}
+                    isPinned={isPinned}
+                    onPinChange={setPinnedOverride}
                 />
             )}
         </article>
