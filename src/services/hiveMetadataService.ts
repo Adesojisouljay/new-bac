@@ -21,12 +21,17 @@ export async function fetchHiveMetadata(username: string): Promise<HiveWalletTok
 
         let metadata: any = {};
         try {
-            metadata = JSON.parse(account.posting_json_metadata || '{}');
+            metadata = JSON.parse(account.posting_json_metadata || account.json_metadata || '{}');
         } catch (e) {
-            metadata = {};
+            try {
+                metadata = JSON.parse(account.json_metadata || '{}');
+            } catch (e2) {
+                metadata = {};
+            }
         }
 
-        return metadata?.profile?.tokens || [];
+        const tokens = metadata?.profile?.tokens || metadata?.tokens || [];
+        return Array.isArray(tokens) ? tokens : [];
     } catch (error) {
         console.error('Failed to fetch Hive metadata:', error);
         return [];
@@ -92,7 +97,7 @@ export async function updateHiveMetadata(username: string, tokens: HiveWalletTok
 export function buildHiveWalletTokens(wallets?: any): HiveWalletToken[] {
     if (!wallets) return [];
 
-    const chains = ['BTC', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20'];
+    const chains = ['BTC', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
 
     const tokens: HiveWalletToken[] = [
         { symbol: 'HIVE', type: 'HIVE', meta: { show: true } },

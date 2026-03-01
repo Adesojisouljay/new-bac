@@ -6,6 +6,7 @@ import { useNotification } from '../../../contexts/NotificationContext';
 import { pointsService } from '../../../services/pointsService';
 import { useCommunity } from '../../community/context/CommunityContext';
 import { WalletActionsModal } from '../../wallet/components/WalletActionsModal';
+import { Web3TipModal } from '../../wallet/components/Web3TipModal';
 import { messageService } from '../../messages/services/messageService';
 import { Send, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -28,9 +29,12 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
     const [voting, setVoting] = useState(false);
     const [voted, setVoted] = useState(false);
     const [showTipModal, setShowTipModal] = useState(false);
+    const [showTipMenu, setShowTipMenu] = useState(false);
+    const [showWeb3Tip, setShowWeb3Tip] = useState(false);
     const [isReplying, setIsReplying] = useState(false);
     const [replyContent, setReplyContent] = useState('');
     const [sendingReply, setSendingReply] = useState(false);
+    const [progress, setProgress] = useState(0);
 
     const { showNotification } = useNotification();
     const { config } = useCommunity();
@@ -47,12 +51,13 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
             setCurrentIndex(0);
         }
         setVoted(false);
+        setProgress(0);
     }, [group.username, initialStoryId]);
 
     // Keyboard navigation
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (showTipModal || isReplying) return;
+            if (showTipModal || showTipMenu || showWeb3Tip || isReplying) return;
 
             if (e.key === 'ArrowLeft') {
                 if (currentIndex > 0) {
@@ -75,25 +80,39 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [currentIndex, group.stories.length, onClose, onNext, onPrev, showTipModal, isReplying]);
+    }, [currentIndex, group.stories.length, onClose, onNext, onPrev, showTipModal, showTipMenu, showWeb3Tip, isReplying]);
 
-    // Auto-advance
+    // Auto-advance with granular progress (allows pausing)
     useEffect(() => {
-        if (showTipModal || isReplying) return; // Pause auto-advance while interacting
+        if (showTipModal || showTipMenu || showWeb3Tip || isReplying) return;
 
-        const timer = setTimeout(() => {
-            if (currentIndex < group.stories.length - 1) {
-                setCurrentIndex(currentIndex + 1);
-                setVoted(false); // Reset vote state for next story
-            } else if (onNext) {
-                onNext();
-            } else {
-                onClose();
-            }
-        }, 5000); // 5 seconds per story
+        const interval = setInterval(() => {
+            setProgress(prev => {
+                const next = prev + (100 / (5000 / 50)); // 100% over 5 seconds (50ms intervals)
+                if (next >= 100) {
+                    if (currentIndex < group.stories.length - 1) {
+                        setCurrentIndex(currentIndex + 1);
+                        setVoted(false);
+                        return 0;
+                    } else if (onNext) {
+                        onNext();
+                        return 0;
+                    } else {
+                        onClose();
+                        return 100;
+                    }
+                }
+                return next;
+            });
+        }, 50);
 
-        return () => clearTimeout(timer);
-    }, [currentIndex, group.stories.length, onClose, onNext, showTipModal, isReplying]);
+        return () => clearInterval(interval);
+    }, [currentIndex, group.stories.length, onClose, onNext, showTipModal, showTipMenu, showWeb3Tip, isReplying]);
+
+    // Reset progress when index manually changed
+    useEffect(() => {
+        setProgress(0);
+    }, [currentIndex]);
 
     if (!story) return null;
 
@@ -166,18 +185,20 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
             <div className="w-full max-w-lg h-full max-h-[850px] relative flex flex-col items-center justify-center p-4">
                 {/* Progress Indicators */}
                 <div className="absolute top-4 left-4 right-4 flex gap-1 z-[70]">
-                    {group.stories.map((_, idx) => (
-                        <div key={idx} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
-                            <div
-                                className={`h-full bg-white transition-all duration-[5000ms] ease-linear ${idx < currentIndex ? 'w-full' : idx === currentIndex && !showTipModal && !isReplying ? 'w-full' : idx === currentIndex ? 'w-[50%]' : 'w-0'
-                                    }`}
-                                style={{
-                                    width: idx < currentIndex ? '100%' : (idx === currentIndex && !showTipModal && !isReplying ? '100%' : (idx === currentIndex ? '50%' : '0%')),
-                                    transitionDuration: idx === currentIndex && !showTipModal && !isReplying ? '5000ms' : '0ms'
-                                }}
-                            />
-                        </div>
-                    ))}
+                    {group.stories.map((_, idx) => {
+                        const isPaused = showTipModal || showTipMenu || showWeb3Tip || isReplying;
+                        return (
+                            <div key={idx} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-white transition-all duration-75 ease-linear"
+                                    style={{
+                                        width: idx < currentIndex ? '100%' : idx === currentIndex ? `${progress}%` : '0%',
+                                        opacity: idx === currentIndex && isPaused ? 0.6 : 1,
+                                    }}
+                                />
+                            </div>
+                        );
+                    })}
                 </div>
 
                 {/* Header info — clickable to visit profile */}
@@ -240,8 +261,9 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                         <span className="text-[10px] font-bold text-white/60">{(story.stats?.likes || 0) + (voted ? 1 : 0)}</span>
                     </button>
 
+                    {/* Tip button */}
                     <button
-                        onClick={() => setShowTipModal(true)}
+                        onClick={() => setShowTipMenu(true)}
                         className="flex flex-col items-center gap-1 group"
                     >
                         <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-yellow-500/20 transition-all border border-white/10">
@@ -249,6 +271,40 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                         </div>
                         <span className="text-[10px] font-bold text-white/60">Tip</span>
                     </button>
+
+                    {/* Tip type selector overlay */}
+                    {showTipMenu && (
+                        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-[80] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden min-w-[220px]">
+                                <div className="px-4 py-3 border-b border-[var(--border-color)] flex items-center justify-between">
+                                    <span className="text-xs font-black uppercase tracking-widest text-[var(--text-secondary)]">Send a Tip</span>
+                                    <button onClick={() => setShowTipMenu(false)} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-lg leading-none">✕</button>
+                                </div>
+                                <div className="p-2 flex flex-col gap-1">
+                                    <button
+                                        onClick={() => { setShowTipMenu(false); setShowTipModal(true); }}
+                                        className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[var(--bg-canvas)] transition-all text-left w-full group/hive"
+                                    >
+                                        <span className="text-2xl">🐝</span>
+                                        <div>
+                                            <p className="text-sm font-bold text-[var(--text-primary)] group-hover/hive:text-[var(--primary-color)] transition-colors">HIVE / HBD</p>
+                                            <p className="text-[10px] text-[var(--text-secondary)]">Send from your Hive wallet</p>
+                                        </div>
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowTipMenu(false); setShowWeb3Tip(true); }}
+                                        className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[var(--bg-canvas)] transition-all text-left w-full group/web3"
+                                    >
+                                        <span className="text-2xl">🌐</span>
+                                        <div>
+                                            <p className="text-sm font-bold text-[var(--text-primary)] group-hover/web3:text-[var(--primary-color)] transition-colors">Web3 Crypto</p>
+                                            <p className="text-[10px] text-[var(--text-secondary)]">BTC · ETH · SOL · TRON · and more</p>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <button
                         onClick={() => setIsReplying(!isReplying)}
@@ -291,7 +347,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
             </div>
 
             {/* Navigation Overlays */}
-            {!showTipModal && !isReplying && (
+            {!showTipModal && !showTipMenu && !showWeb3Tip && !isReplying && (
                 <>
                     {/* Previous area */}
                     <div
@@ -326,7 +382,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                 </>
             )}
 
-            {/* Tipping Modal */}
+            {/* Tipping Modal — HIVE */}
             {username && (
                 <WalletActionsModal
                     isOpen={showTipModal}
@@ -341,6 +397,14 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                         showNotification(`Tip sent to @${group.username}!`, 'success');
                         setShowTipModal(false);
                     }}
+                />
+            )}
+
+            {/* Tipping Modal — Web3 */}
+            {showWeb3Tip && (
+                <Web3TipModal
+                    recipientUsername={group.username}
+                    onClose={() => setShowWeb3Tip(false)}
                 />
             )}
         </div>
