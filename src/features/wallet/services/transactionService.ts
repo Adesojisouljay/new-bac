@@ -1,4 +1,5 @@
 import { KeychainSDK } from 'keychain-sdk';
+import { accountManager, StoredAccount } from '../../auth/services/authService';
 
 const keychain = new KeychainSDK(window);
 
@@ -205,28 +206,33 @@ export const transactionService = {
         op: WalletOperation,
         onAuthChallenge?: (data: { qr: string; uuid: string }) => void
     ): Promise<{ success: boolean; result?: any; error?: string }> => {
-        // Detect login method from localStorage
-        const method = localStorage.getItem('hive_auth_method') || 'keychain';
+        // Detect login method from stored accounts
+        const accounts = accountManager.getAll();
+        const activeAccount = accounts.find((a: StoredAccount) => a.username.toLowerCase() === op.username.toLowerCase());
+        const method = activeAccount?.method || localStorage.getItem('hive_auth_method') || 'keychain';
         const username = op.username;
+
+        console.log(`[Transaction] Broadcasting ${op.type} for @${username} using ${method}`);
 
         // Check if this is a Posting-level operation that can be relayed
         const postingOps = ['vote', 'comment', 'reblog', 'unreblog', 'profile_update', 'delegate_rc', 'messaging', 'follow', 'subscribe', 'cross_post'];
 
         if (postingOps.includes(op.type)) {
-            const relayAccount = 'breakaway.app';
             const { authService } = await import('../../auth/services/authService');
-            console.log(`[Transaction] Checking delegation for ${username} to ${relayAccount}...`);
-            const isDelegated = await authService.checkDelegation(username, relayAccount);
+            console.log(`[Transaction] Checking delegation for ${username}...`);
+            const isDelegated = await authService.checkDelegation(username);
             console.log(`[Transaction] isDelegated: ${isDelegated}`);
 
             if (isDelegated) {
                 console.log(`🚀 [Relay] Attempting broadcast for ${op.type} via platform relay...`);
                 const relayResult = await transactionService.broadcastRelay(op);
                 if (relayResult.success) {
+                    console.log(`✅ [Relay] Broadcast successful!`);
                     return relayResult;
                 }
-                console.warn(`[Relay] Relay failed, falling back to standard signature: ${relayResult.error}`);
-                // Continue to standard broadcast below
+                console.error(`❌ [Relay] Relay failed, falling back to standard signature:`, relayResult.error);
+            } else {
+                console.log(`[Transaction] No delegation found for ${username}, skipping relay.`);
             }
         }
 

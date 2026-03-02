@@ -2,10 +2,12 @@ import { Link } from 'react-router-dom';
 import { useCommunity } from '../features/community/context/CommunityContext';
 import { ThemeToggle } from './ThemeToggle';
 import { UserDropdown } from './UserDropdown';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
+import { QRCodeSVG } from 'qrcode.react';
 import { LoginModal } from '../features/auth/components/LoginModal';
 import { NotificationDropdown } from '../features/notifications/components/NotificationDropdown';
-import { accountManager, StoredAccount } from '../features/auth/services/authService';
+import { authService, accountManager, StoredAccount } from '../features/auth/services/authService';
 import { pointsService } from '../services/pointsService';
 import { OnboardingFlow } from '../features/auth/components/OnboardingFlow';
 import { useChat } from '../contexts/ChatContext';
@@ -21,6 +23,7 @@ export function Navbar() {
     const [user, setUser] = useState<string | null>(accountManager.getActive());
     const [accounts, setAccounts] = useState<StoredAccount[]>(accountManager.getAll());
     const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+    const [pointsQR, setPointsQR] = useState<string | null>(null);
     const { unreadCount } = useChat();
 
     const refreshAccounts = () => {
@@ -28,16 +31,48 @@ export function Navbar() {
         setUser(accountManager.getActive());
     };
 
-    const handleLoginSuccess = (username: string, method: 'keychain' | 'hiveauth', preSigned?: any) => {
+    const handleLoginSuccess = async (username: string, method: 'keychain' | 'hiveauth', preSigned?: any) => {
         accountManager.add(username, method);
         refreshAccounts();
-        // Silently get a points JWT so we can award points for actions
+        setIsLoginModalOpen(false);
+        setPointsQR(null);
+
+        // 1. First, check if user is already delegated (Posting Authority)
+        await authService.checkDelegation(username.toLowerCase());
+
+        // 2. Silent login to Points backend using the Login signature we just got!
         const community = config?.id || 'hive-106130';
-        pointsService.loginToPointsBackend(username, community, method, preSigned)
-            .catch((err) => {
-                console.error(`❌ [Navbar] Points backend login failed for @${username}:`, err);
-            });
+        const pointsSuccess = await pointsService.loginToPointsBackend(
+            username,
+            community,
+            method,
+            preSigned,
+            (data: { qr: string; uuid: string }) => {
+                // If silent auth fails and needs a prompt/QR (mostly for HAS Desktop)
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                if (isMobile) {
+                    window.location.href = data.qr;
+                } else {
+                    setPointsQR(data.qr);
+                }
+            }
+        );
+
+        if (pointsSuccess) {
+            toast.success('Login Successful!');
+        }
     };
+
+    useEffect(() => {
+        pointsService.resumePendingAuth((data: { qr: string; uuid: string }) => {
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            if (isMobile && data.qr) {
+                window.location.href = data.qr;
+            } else if (data.qr) {
+                setPointsQR(data.qr);
+            }
+        }).catch(console.error);
+    }, []);
 
     const handleSwitch = (username: string) => {
         accountManager.setActive(username);
@@ -176,6 +211,28 @@ export function Navbar() {
                 onClose={() => setIsOnboardingOpen(false)}
                 creator={user || undefined}
             />
+            {/* Points Auth QR Modal (Desktop Fallback) */}
+            {pointsQR && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-[var(--bg-card)] rounded-3xl p-8 max-w-sm w-full shadow-2xl border border-[var(--border-color)] text-center animate-in zoom-in-95 duration-200">
+                        <h3 className="text-xl font-bold mb-2">Authorize Points</h3>
+                        <p className="text-[var(--text-secondary)] text-sm mb-6">
+                            Please scan this QR code with your Hive wallet to enable One-Tap actions and points.
+                        </p>
+
+                        <div className="bg-white p-4 rounded-2xl inline-block mb-6 shadow-inner">
+                            <QRCodeSVG value={pointsQR} size={200} />
+                        </div>
+
+                        <button
+                            onClick={() => setPointsQR(null)}
+                            className="w-full py-3 rounded-xl bg-[var(--bg-canvas)] hover:bg-[var(--border-color)] font-semibold transition-colors border border-[var(--border-color)]"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            )}
         </>
     );
 }
