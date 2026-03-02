@@ -63,7 +63,7 @@ export const DelegationBanner: React.FC = () => {
             }
 
             try {
-                const isDelegated = await authService.checkDelegation(activeUser, 'breakaway.app');
+                const isDelegated = await authService.checkDelegation(activeUser);
                 const hasToken = !!localStorage.getItem('points_auth_token');
                 console.log("DelegationBanner: Status - isDelegated:", isDelegated, "hasToken:", hasToken);
 
@@ -90,7 +90,19 @@ export const DelegationBanner: React.FC = () => {
             if (needsTokenOnly) {
                 console.log("DelegationBanner: Delegation already active, requesting points token only...");
                 const { pointsService } = await import('../../../services/pointsService');
-                const pResult = await pointsService.loginToPointsBackend(activeUser, community, method);
+                const pResult = await pointsService.loginToPointsBackend(
+                    activeUser,
+                    community,
+                    method,
+                    undefined,
+                    (data: { qr: string; uuid: string }) => {
+                        console.log("DelegationBanner: Received Points Auth QR");
+                        setHasQR(data.qr);
+                        if (isMobile && data.qr) {
+                            window.location.href = data.qr;
+                        }
+                    }
+                );
                 if (pResult) {
                     setIsVisible(false);
                     sessionStorage.setItem(`delegation_dismissed_${activeUser}`, 'true');
@@ -113,13 +125,12 @@ export const DelegationBanner: React.FC = () => {
 
             const result = await authService.authorizeRelay(
                 activeUser,
-                'breakaway.app',
                 method,
-                ({ qr }) => {
+                (data: { qr: string; uuid: string }) => {
                     console.log("DelegationBanner: Received QR/Challenge");
-                    setHasQR(qr);
-                    if (isMobile && qr) {
-                        window.location.href = qr;
+                    setHasQR(data.qr);
+                    if (isMobile && data.qr) {
+                        window.location.href = data.qr;
                     }
                 },
                 existingSession
@@ -184,12 +195,12 @@ export const DelegationBanner: React.FC = () => {
 
                     <div className="flex-1 text-center md:text-left space-y-2">
                         <h3 className="text-xl font-bold text-[var(--text-primary)] flex items-center justify-center md:justify-start gap-2">
-                            {needsTokenOnly ? "Complete One-Tap Setup" : "Enable One-Tap Posting"} 🚀
+                            {needsTokenOnly ? "Last Step: Authorize Points" : "Enable One-Tap Posting"} 🚀
                         </h3>
                         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                             {needsTokenOnly
-                                ? "You've delegated authority, but we still need a one-time signature to authorize reward points."
-                                : "Grant breakaway.app posting authority to interact seamlessly without signing every vote or comment."
+                                ? "Delegation complete! Now just one final 'Verify Key' prompt to authorize your reward points."
+                                : "Grant breakaway.app posting authority once, then post and vote instantly without any more prompts."
                             }
                         </p>
                     </div>

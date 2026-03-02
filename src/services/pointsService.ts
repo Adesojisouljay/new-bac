@@ -69,13 +69,49 @@ export const pointsService = {
         username: string,
         community: string,
         method: 'keychain' | 'hiveauth' = 'keychain',
-        preSigned?: { sig: string; ts?: string; message?: string }
+        preSigned?: { sig: any; ts?: string; message?: string },
+        onChallenge?: (data: { qr: string; uuid: string }) => void
     ): Promise<boolean> => {
         try {
-            if (preSigned) {
+            // Helper for robust signature extraction
+            const extractSig = (obj: any): string | null => {
+                if (!obj) return null;
+                if (typeof obj === 'string') return obj;
+                if (typeof obj !== 'object') return null;
+
+                if (obj.sig && typeof obj.sig === 'string') return obj.sig;
+                if (obj.signature && typeof obj.signature === 'string') return obj.signature;
+                if (obj.challenge) {
+                    if (typeof obj.challenge === 'string') return obj.challenge;
+                    if (typeof obj.challenge === 'object') {
+                        if (obj.challenge.sig) return obj.challenge.sig;
+                        if (obj.challenge.signature) return obj.challenge.signature;
+                    }
+                }
+                if (obj.data?.challenge) return extractSig(obj.data.challenge);
+
+                for (const key of Object.keys(obj)) {
+                    if (typeof obj[key] === 'string' && obj[key].length > 80) return obj[key];
+                    if (typeof obj[key] === 'object') {
+                        const found = extractSig(obj[key]);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            };
+
+            if (preSigned && preSigned.sig) {
                 console.log(`[Points] Using pre-signed signature for ${username}, skipping prompt.`);
                 const ts = preSigned.ts || Date.now().toString();
-                const sig = preSigned.sig;
+                let sig = extractSig(preSigned.sig);
+
+                console.log(`[Points] Final signature: ${typeof sig === 'string' ? sig.substring(0, 10) + '...' : 'INVALID'}`);
+
+                if (!sig) {
+                    console.error("[Points] Failed to extract signature from pre-signed data.");
+                    return false;
+                }
+
                 const messageArg = preSigned.message ? `&message=${encodeURIComponent(preSigned.message)}` : '';
 
                 const res = await fetch(
@@ -86,15 +122,17 @@ export const pointsService = {
                     const data = await res.json();
                     const token = data?.response?.token;
                     if (token) {
-                        console.log(`✅ [Points] Silent auth successful for @${username}`);
+                        console.log('[Points] Successfully authenticated with pre-signed proof.');
                         setPointsToken(token);
+                        localStorage.removeItem('pending_points_auth');
                         return true;
                     }
                 } else {
                     const errText = await res.text().catch(() => 'No error text');
-                    console.warn(`[Points] Silent auth failed (${res.status}): ${errText}`);
+                    console.error(`[Points] Pre-signed auth failed:`, errText);
+                    localStorage.removeItem('pending_points_auth');
+                    return false;
                 }
-                console.warn('[Points] Falling back to prompt-based auth...');
             }
 
             console.log(`[Points] Attempting login for ${username} via ${method}...`);
@@ -106,6 +144,7 @@ export const pointsService = {
                 const keychain = (window as any).hive_keychain;
                 if (!keychain) {
                     console.error('[Points] Keychain not found');
+                    localStorage.removeItem('pending_points_auth');
                     return false;
                 }
 
@@ -120,48 +159,107 @@ export const pointsService = {
 
                 if (!signed.success) {
                     console.error('[Points] Keychain signature failed');
+                    localStorage.removeItem('pending_points_auth');
                     return false;
                 }
                 signature = signed.result;
             } else {
                 // HiveAuth support
                 const { default: HAS } = await import("hive-auth-wrapper");
-                const { HAS_SERVER, HAS_STATIC_KEY } = await import('../features/auth/services/authService');
+                const { HAS_SERVER, HAS_STATIC_KEY, APP_META } = await import('../features/auth/services/authService');
 
                 const auth = {
                     username,
                     key: HAS_STATIC_KEY,
-                    host: HAS_SERVER
+                    host: HAS_SERVER,
+                    token: undefined,
+                    expire: undefined
                 };
 
-                const challenge = {
-                    key_type: 'posting',
+                // Try to load existing session to avoid re-auth if possible
+                const storedSession = localStorage.getItem('hive_auth_session');
+                if (storedSession) {
+                    try {
+                        const session = JSON.parse(storedSession);
+                        if (session.username === username) {
+                            auth.token = session.token;
+                            auth.expire = session.expire;
+                            auth.key = session.key;
+                        }
+                    } catch (e) { }
+                }
+
+                // [Auth Resume] Save state before we might be redirected or refreshed
+                localStorage.setItem('pending_points_auth', JSON.stringify({
+                    username,
+                    community,
+                    method,
+                    ts,
+                    message
+                }));
+
+                const challenge_data = {
+                    key_type: 'posting' as const,
                     challenge: message
                 };
 
                 const result = await new Promise<any>((resolve) => {
-                    HAS.challenge(auth, challenge, (evt: any) => {
+                    HAS.authenticate(auth, APP_META, challenge_data, (evt: any) => {
                         console.log("[Points] HiveAuth challenge event:", evt);
+                        if (onChallenge) {
+                            const qr_data = { ...evt };
+                            delete qr_data.cmd;
+                            delete qr_data.expire;
+                            qr_data.host = HAS_SERVER;
+
+                            const json = JSON.stringify(qr_data);
+                            const uri = `has://auth_req/${btoa(json)}`;
+                            onChallenge({ qr: uri, uuid: evt.uuid });
+                        }
                     })
                         .then((res: any) => resolve({ success: true, result: res }))
-                        .catch((err: any) => resolve({ success: false, error: err }));
+                        .catch((err: any) => {
+                            console.error("[Points] HAS Challenge error:", err);
+                            resolve({ success: false, error: err });
+                        });
                 });
 
-                if (!result.success || !result.result?.data?.challenge?.sig) {
+                if (!result.success || !result.result) {
                     console.error('[Points] HiveAuth signature failed:', result.error);
+                    localStorage.removeItem('pending_points_auth');
                     return false;
                 }
-                signature = result.result.data.challenge.sig;
+
+                // Use the ultra-robust extraction logic for the response
+                const extracted = extractSig(result.result);
+                if (!extracted) {
+                    console.error('[Points] Could not extract signature from HAS result:', result.result);
+                    localStorage.removeItem('pending_points_auth');
+                    return false;
+                }
+                signature = extracted;
+
+                // Persist the session if a new token was received
+                if (result.result.data?.token) {
+                    const session = {
+                        username,
+                        token: result.result.data.token,
+                        expire: result.result.data.expire,
+                        key: auth.key
+                    };
+                    localStorage.setItem('hive_auth_session', JSON.stringify(session));
+                }
             }
 
             console.log(`[Points] Proof obtained, authenticating with backend...`);
             const res = await fetch(
-                `${POINTS_API_URL}/auth/login?username=${encodeURIComponent(username)}&ts=${ts}&sig=${encodeURIComponent(signature)}&community=${encodeURIComponent(community)}`
+                `${POINTS_API_URL}/auth/login?username=${encodeURIComponent(username)}&ts=${ts}&sig=${encodeURIComponent(signature)}&community=${encodeURIComponent(community)}&message=${encodeURIComponent(message)}`
             );
 
             if (!res.ok) {
                 const errText = await res.text();
                 console.error(`[Points] Backend authentication failed (${res.status}):`, errText);
+                localStorage.removeItem('pending_points_auth');
                 return false;
             }
 
@@ -170,12 +268,40 @@ export const pointsService = {
             if (token) {
                 console.log('[Points] Successfully authenticated with backend.');
                 setPointsToken(token);
+                localStorage.removeItem('pending_points_auth');
                 return true;
             }
             console.error('[Points] Token missing in backend response');
+            localStorage.removeItem('pending_points_auth');
             return false;
         } catch (e) {
             console.error('[Points] Login failed with error:', e);
+            localStorage.removeItem('pending_points_auth');
+            return false;
+        }
+    },
+
+    /**
+     * Resume a login that was interrupted by a page refresh (common on mobile).
+     */
+    resumePendingAuth: async (onChallenge?: (data: { qr: string; uuid: string }) => void): Promise<boolean> => {
+        const pending = localStorage.getItem('pending_points_auth');
+        if (!pending) return false;
+
+        try {
+            const { username, community, method } = JSON.parse(pending);
+            console.log(`[Points] Resuming pending auth for @${username}...`);
+
+            // Only HiveAuth needs "resumption" because Keychain is usually synchronous or handled by extension
+            if (method !== 'hiveauth') {
+                localStorage.removeItem('pending_points_auth');
+                return false;
+            }
+
+            return await pointsService.loginToPointsBackend(username, community, method, undefined, onChallenge);
+        } catch (e) {
+            console.error("[Points] Failed to resume pending auth:", e);
+            localStorage.removeItem('pending_points_auth');
             return false;
         }
     },

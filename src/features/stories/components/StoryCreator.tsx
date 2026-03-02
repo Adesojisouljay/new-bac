@@ -2,12 +2,14 @@ import React, { useState, useRef } from 'react';
 import { storyService } from '../services/storyService';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { cloudinaryService } from '../../../services/cloudinaryService';
-import { Image, X, Upload } from 'lucide-react';
+import { Image, X, Upload, Smartphone } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface StoryCreatorProps {
     onClose: () => void;
     onSuccess: () => void;
 }
+
 
 const STORY_CONTAINER_ACCOUNT = 'breakaway.app';
 
@@ -23,64 +25,6 @@ function getTodayContainer(): { author: string; permlink: string } {
     };
 }
 
-/**
- * Broadcast the story comment via Hive Keychain's requestBroadcast.
- * This is the most reliable Keychain method — works with any posting-level op.
- * Returns true on success, false on cancel/failure.
- */
-async function broadcastViaKeychain(
-    username: string,
-    container: { author: string; permlink: string },
-    content: { type: string; text?: string; imageUrl?: string }
-): Promise<boolean> {
-    const keychain = (window as any).hive_keychain;
-    if (!keychain) {
-        console.warn('[Story] Keychain not installed');
-        return false;
-    }
-
-    const permlink = `bac-story-${username}-${Date.now()}`;
-    let body = content.text || '';
-    if (content.imageUrl) {
-        body = content.imageUrl + (content.text ? `\n\n${content.text}` : '');
-    }
-    if (!body.trim()) body = '📸 (Story)';
-
-    const ops = [
-        ['comment', {
-            parent_author: container.author,
-            parent_permlink: container.permlink,
-            author: username,
-            permlink,
-            title: '',
-            body,
-            json_metadata: JSON.stringify({
-                app: 'bac/stories/1.0',
-                type: 'story',
-                content,
-                tags: ['bac-stories', 'breakaway']
-            })
-        }]
-    ];
-
-    return new Promise((resolve) => {
-        keychain.requestBroadcast(
-            username,
-            ops,
-            'posting',
-            (response: any) => {
-                if (response.success) {
-                    console.log(`✅ [Story] Onchain! tx: ${response.result?.id}`);
-                    resolve(true);
-                } else {
-                    console.warn('[Story] Keychain broadcast rejected/cancelled:', response.message);
-                    resolve(false);
-                }
-            }
-        );
-    });
-}
-
 export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }) => {
     const [content, setContent] = useState('');
     const [imageFile, setImageFile] = useState<File | null>(null);
@@ -88,6 +32,7 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
     const [isPosting, setIsPosting] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [postingStatus, setPostingStatus] = useState('');
+    const [hasQr, setHasQr] = useState<string | null>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const username = localStorage.getItem('hive_user');
@@ -132,33 +77,51 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
                 }
             }
 
-            // --- Step 1: Post onchain via Keychain FIRST ---
-            const keychainInstalled = !!(window as any).hive_keychain;
-            if (keychainInstalled) {
-                setPostingStatus('Confirm in Keychain...');
-                const container = getTodayContainer();
-                const success = await broadcastViaKeychain(username, container, storyContent);
-                if (success) {
-                    // --- Step 2: Save offchain to backend (after onchain confirmed) ---
-                    setPostingStatus('Saving story...');
-                    await storyService.postStory(username, storyContent);
-                    showNotification('Story posted onchain! ⛓', 'success');
-                    onSuccess();
-                    onClose();
-                } else {
-                    // User cancelled Keychain — ask if they want to save offchain only
-                    showNotification('Keychain cancelled — story not posted', 'warning');
-                    // Still allow modal to close; offchain not saved since user bailed
-                }
-            } else {
-                // No Keychain — offchain only
+            // --- Step 1: Post via unified transaction service (handles One-Tap relay) ---
+            setPostingStatus('Broadcasting onchain...');
+            const container = getTodayContainer();
+            const permlink = `bac-story-${username}-${Date.now()}`;
+
+            let body = storyContent.text || '';
+            if (storyContent.imageUrl) {
+                body = storyContent.imageUrl + (storyContent.text ? `\n\n${storyContent.text}` : '');
+            }
+            if (!body.trim()) body = '📸 (Story)';
+
+            const { transactionService } = await import('../../../features/wallet/services/transactionService');
+
+            const result = await transactionService.broadcast({
+                type: 'comment',
+                username,
+                parent_author: container.author,
+                parent_permlink: container.permlink,
+                permlink,
+                title: '',
+                body,
+                json_metadata: JSON.stringify({
+                    app: 'bac/stories/1.0',
+                    type: 'story',
+                    content: storyContent,
+                    tags: ['bac-stories', 'breakaway']
+                })
+            }, (hasData) => {
+                // If the user uses HiveAuth and relay isn't available, show the QR
+                setPostingStatus('Please scan QR to authorize...');
+                setHasQr(hasData.qr);
+            });
+
+            if (result.success) {
+                // --- Step 2: Save offchain to backend (after onchain confirmed) ---
                 setPostingStatus('Saving story...');
                 await storyService.postStory(username, storyContent);
-                showNotification('Story posted!', 'success');
+                showNotification('Story posted onchain! ⛓', 'success');
                 onSuccess();
                 onClose();
+            } else {
+                showNotification(result.error || 'Broadcast failed', 'error');
             }
         } catch (error) {
+            console.error('[Story] Post error:', error);
             showNotification('Failed to post story', 'error');
         } finally {
             setIsPosting(false);
@@ -203,6 +166,22 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
                         accept="image/*"
                         onChange={handleImageSelect}
                     />
+
+                    {hasQr && (
+                        <div className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl space-y-4">
+                            <QRCodeSVG value={hasQr} size={200} />
+                            <div className="flex items-center gap-2 text-sm text-[var(--bg-canvas)] font-bold">
+                                <Smartphone size={16} />
+                                <span>Scan with HiveAuth compatible wallet</span>
+                            </div>
+                            <button
+                                onClick={() => setHasQr(null)}
+                                className="text-xs text-red-500 font-bold hover:underline"
+                            >
+                                Cancel HiveAuth
+                            </button>
+                        </div>
+                    )}
 
                     <textarea
                         value={content}
