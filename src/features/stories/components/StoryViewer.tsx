@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GroupedStory } from '../services/storyService';
+import { GroupedStory, storyService } from '../services/storyService';
+
 import { formatDistanceToNow } from 'date-fns';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { pointsService } from '../../../services/pointsService';
@@ -8,7 +9,11 @@ import { useCommunity } from '../../community/context/CommunityContext';
 import { WalletActionsModal } from '../../wallet/components/WalletActionsModal';
 import { Web3TipModal } from '../../wallet/components/Web3TipModal';
 import { messageService } from '../../messages/services/messageService';
-import { Send, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Send, ChevronLeft, ChevronRight, Heart } from 'lucide-react';
+import { transactionService } from '../../wallet/services/transactionService';
+import { VoteSlider } from '../../feed/components/VoteSlider';
+
+
 
 interface StoryViewerProps {
     group: GroupedStory;
@@ -35,11 +40,16 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
     const [replyContent, setReplyContent] = useState('');
     const [sendingReply, setSendingReply] = useState(false);
     const [progress, setProgress] = useState(0);
+    const [showVoteSlider, setShowVoteSlider] = useState(false);
+    const [hasTipped, setHasTipped] = useState(false);
+
+
 
     const { showNotification } = useNotification();
     const { config } = useCommunity();
     const navigate = useNavigate();
     const story = group.stories[currentIndex];
+    const [likes, setLikes] = useState(story?.stats?.likes || 0);
     const username = localStorage.getItem('hive_user');
 
     // Reset index when group changes or initialStoryId changes
@@ -51,8 +61,29 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
             setCurrentIndex(0);
         }
         setVoted(false);
+        setHasTipped(group.stories[initialStoryId ? group.stories.findIndex(s => s._id === initialStoryId) : 0]?.hasTipped || false);
+        setLikes(group.stories[initialStoryId ? group.stories.findIndex(s => s._id === initialStoryId) : 0]?.stats?.likes || 0);
         setProgress(0);
     }, [group.username, initialStoryId]);
+
+
+    // Fetch real-time votes from Hive
+    useEffect(() => {
+        const fetchVotes = async () => {
+            if (story && story.username && story.permlink) {
+                const votes = await storyService.getStoryVotes(story.username, story.permlink);
+                if (votes && votes.length > 0) {
+                    setLikes(votes.length);
+                    if (username) {
+                        const userVote = votes.find((v: any) => v.voter === username);
+                        if (userVote) setVoted(true);
+                    }
+                }
+            }
+        };
+        fetchVotes();
+    }, [story?.username, story?.permlink, username]);
+
 
     // Keyboard navigation
     useEffect(() => {
@@ -84,7 +115,8 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
 
     // Auto-advance with granular progress (allows pausing)
     useEffect(() => {
-        if (showTipModal || showTipMenu || showWeb3Tip || isReplying) return;
+        if (showTipModal || showTipMenu || showWeb3Tip || isReplying || voting || showVoteSlider) return;
+
 
         const interval = setInterval(() => {
             setProgress(prev => {
@@ -107,16 +139,20 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
         }, 50);
 
         return () => clearInterval(interval);
-    }, [currentIndex, group.stories.length, onClose, onNext, showTipModal, showTipMenu, showWeb3Tip, isReplying]);
+    }, [currentIndex, group.stories.length, onClose, onNext, showTipModal, showTipMenu, showWeb3Tip, isReplying, voting]);
+
 
     // Reset progress when index manually changed
     useEffect(() => {
         setProgress(0);
-    }, [currentIndex]);
+        setHasTipped(story?.hasTipped || false);
+    }, [currentIndex, story?.hasTipped]);
+
+
 
     if (!story) return null;
 
-    const handleLike = async () => {
+    const handleLike = async (weight: number = 10000) => {
         if (!username) {
             showNotification('Please login to like stories', 'warning');
             return;
@@ -124,17 +160,36 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
 
         if (voted) return;
 
-        setVoting(true);
-        // Off-chain story likes are broadcasted via socket in the backend
-        // Here we just award some points for the social action
+        if (!story.permlink) {
+            showNotification("Post not found on chain", 'warning');
+            return;
+        }
 
-        setTimeout(() => {
-            setVoting(false);
+        setVoting(true);
+        const result = await transactionService.broadcast({
+            type: 'vote',
+            username,
+            author: story.username,
+            permlink: story.permlink,
+            weight: weight
+        }, () => {
+            showNotification("Action required: Sign with HiveAuth mobile app.", 'info');
+        });
+
+        setVoting(false);
+        setShowVoteSlider(false);
+
+        if (result.success) {
             setVoted(true);
+            setLikes(prev => prev + 1);
             showNotification('Liked!', 'success');
             if (config?.id) pointsService.awardPoints(username, config.id, 'upvote', config.id);
-        }, 500);
+        } else {
+            showNotification("Vote failed: " + result.error, 'error');
+        }
     };
+
+
 
     const handleSendReply = async () => {
         if (!username) {
@@ -186,8 +241,9 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                 {/* Progress Indicators */}
                 <div className="absolute top-4 left-4 right-4 flex gap-1 z-[70]">
                     {group.stories.map((_, idx) => {
-                        const isPaused = showTipModal || showTipMenu || showWeb3Tip || isReplying;
+                        const isPaused = showTipModal || showTipMenu || showWeb3Tip || isReplying || voting || showVoteSlider;
                         return (
+
                             <div key={idx} className="h-1 flex-1 bg-white/20 rounded-full overflow-hidden">
                                 <div
                                     className="h-full bg-white transition-all duration-75 ease-linear"
@@ -250,27 +306,57 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
 
                 {/* Interactions */}
                 <div className="w-full p-6 flex items-center justify-center gap-8 z-[70]">
-                    <button
-                        onClick={handleLike}
-                        disabled={voting || voted}
-                        className="flex flex-col items-center gap-1 group"
-                    >
-                        <div className={`w-12 h-12 rounded-full bg-white/10 flex items-center justify-center transition-all border border-white/10 ${voted ? 'bg-red-500/40 border-red-500' : 'group-hover:bg-red-500/20'}`}>
-                            <span className={`text-xl ${voting ? 'animate-pulse' : ''}`}>❤️</span>
-                        </div>
-                        <span className="text-[10px] font-bold text-white/60">{(story.stats?.likes || 0) + (voted ? 1 : 0)}</span>
-                    </button>
+                    <div className="relative flex flex-col items-center">
+                        {showVoteSlider && (
+                            <VoteSlider
+                                onVote={handleLike}
+                                onClose={() => setShowVoteSlider(false)}
+                                isVoting={voting}
+                                className="bottom-full mb-4 right-1/2 translate-x-1/2"
+                                showTriangle={true}
+                            />
+                        )}
+                        <button
+                            onClick={() => !voted && setShowVoteSlider(!showVoteSlider)}
+                            disabled={voting}
+                            className="flex flex-col items-center gap-1 group"
+                        >
+                            <div className={`w-12 h-12 rounded-full backdrop-blur-md flex items-center justify-center transition-all border ${voted
+                                ? 'bg-red-500/20 border-red-500 text-red-500'
+                                : 'bg-white/10 border-white/10 text-white hover:bg-white/20'
+                                }`}>
+                                {voting ? (
+                                    <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                    <Heart
+                                        size={24}
+                                        fill={voted ? "currentColor" : "none"}
+                                        className={voted ? "animate-pulse" : ""}
+                                    />
+                                )}
+                            </div>
+                            <span className="text-[10px] font-bold text-white/60">{likes}</span>
+                        </button>
+                    </div>
+
+
 
                     {/* Tip button */}
                     <button
                         onClick={() => setShowTipMenu(true)}
                         className="flex flex-col items-center gap-1 group"
                     >
-                        <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-yellow-500/20 transition-all border border-white/10">
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all border ${hasTipped
+                            ? 'bg-red-500/20 border-red-500'
+                            : 'bg-white/10 border-white/10 group-hover:bg-yellow-500/20'
+                            }`}>
                             <span className="text-xl">💎</span>
                         </div>
-                        <span className="text-[10px] font-bold text-white/60">Tip</span>
+                        <span className={`text-[10px] font-bold ${hasTipped ? 'text-red-500' : 'text-white/60'}`}>
+                            {hasTipped ? 'Tipped' : 'Tip'}
+                        </span>
                     </button>
+
 
                     {/* Tip type selector overlay */}
                     {showTipMenu && (
@@ -400,8 +486,12 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                         memo: `Tip for story: ${story.content.text || 'image story'}`
                     }}
                     onSuccess={() => {
+                        const rawUser = localStorage.getItem('hive_user');
+                        const currentUser = rawUser ? rawUser.replace(/^@/, '') : null;
+                        if (currentUser) storyService.recordTip(story._id, currentUser);
                         showNotification(`Tip sent to @${group.username}!`, 'success');
                         setShowTipModal(false);
+                        setHasTipped(true);
                     }}
                 />
             )}
@@ -411,8 +501,16 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                 <Web3TipModal
                     recipientUsername={group.username}
                     onClose={() => setShowWeb3Tip(false)}
+                    onSuccess={() => {
+                        const rawUser = localStorage.getItem('hive_user');
+                        const currentUser = rawUser ? rawUser.replace(/^@/, '') : null;
+                        if (currentUser) storyService.recordTip(story._id, currentUser);
+                        setHasTipped(true);
+                    }}
                 />
             )}
+
+
         </div>
     );
 };

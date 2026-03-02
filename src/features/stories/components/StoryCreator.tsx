@@ -111,13 +111,22 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
             });
 
             if (result.success) {
+                // Determine transaction ID based on broadcast method (result.result for HAS/Relay, result.result.id for Keychain)
+                const hiveTrxId = result.result?.id || result.result?.txid || (typeof result.result === 'string' ? result.result : null);
+
                 // --- Step 2: Save offchain to backend (after onchain confirmed) ---
-                setPostingStatus('Saving story...');
-                await storyService.postStory(username, storyContent);
-                showNotification('Story posted onchain! ⛓', 'success');
-                onSuccess();
-                onClose();
+                setPostingStatus('Finalizing story sync (3s)...');
+
+                // Add 3-second delay as requested by user to ensure sync reliability
+                setTimeout(async () => {
+                    await storyService.postStory(username, storyContent, hiveTrxId, permlink);
+
+                    showNotification('Story posted onchain! ⛓', 'success');
+                    onSuccess();
+                    onClose();
+                }, 3000);
             } else {
+
                 showNotification(result.error || 'Broadcast failed', 'error');
             }
         } catch (error) {

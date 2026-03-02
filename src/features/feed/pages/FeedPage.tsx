@@ -12,6 +12,9 @@ import { StoryBar } from '../../stories/components/StoryBar';
 import { GlobalSidebar } from '../components/GlobalSidebar';
 import { TopicSidebar } from '../components/TopicSidebar';
 import { PostCard } from '../components/PostCard';
+import { ShortsFeed } from '../../shorts/components/ShortsFeed';
+import { ShortCreator } from '../../shorts/components/ShortCreator';
+import { Play, Plus } from 'lucide-react';
 
 export default function FeedPage() {
     const { config } = useCommunity();
@@ -62,6 +65,10 @@ export default function FeedPage() {
     const [activities, setActivities] = useState<Activity[]>([]);
     const [lastActivityId, setLastActivityId] = useState<number | undefined>(undefined);
     const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+    // Shorts State
+    const [showShorts, setShowShorts] = useState(false);
+    const [showShortCreator, setShowShortCreator] = useState(false);
 
     // Fetch Community Details
     useEffect(() => {
@@ -363,7 +370,34 @@ export default function FeedPage() {
 
                     {activeTab === 'posts' && (
                         <>
-                            <StoryBar />
+                            <div className="flex items-stretch gap-4 mb-6">
+                                <div className="flex-1">
+                                    <StoryBar />
+                                </div>
+                                <div className="flex flex-col relative">
+                                    <button
+                                        onClick={() => setShowShorts(true)}
+                                        className="h-full min-h-[90px] w-28 bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-[var(--primary-color)] transition-all shadow-sm active:scale-95 group overflow-hidden relative"
+                                    >
+                                        <div className="w-10 h-10 bg-[var(--bg-canvas)] rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                                            <Play size={20} className="fill-[var(--primary-color)] text-[var(--primary-color)]" />
+                                        </div>
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Shorts</span>
+
+                                        {/* Small Plus Overlay for Upload */}
+                                        <div
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowShortCreator(true);
+                                            }}
+                                            className="absolute top-2 right-2 w-6 h-6 bg-[var(--primary-color)] text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 active:scale-90 transition-all pointer-events-auto"
+                                            title="Upload Short"
+                                        >
+                                            <Plus size={14} strokeWidth={3} />
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
                                 <div className="flex flex-col">
                                     <h2 className="text-2xl font-black text-[var(--text-primary)] leading-tight uppercase tracking-tight">
@@ -772,6 +806,33 @@ export default function FeedPage() {
                 )}
 
             </div>
+
+            {/* Shorts Feed Modal */}
+            {showShorts && (
+                <ShortsFeed
+                    onClose={() => setShowShorts(false)}
+                    communityId={config.id}
+                />
+            )}
+
+            {/* Short Creator Trigger (Custom Overlay or Button) */}
+            <button
+                onClick={() => setShowShortCreator(true)}
+                className="fixed bottom-24 right-8 z-40 w-14 h-14 bg-[var(--primary-color)] text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-90 transition-all lg:hidden"
+                title="Create Short"
+            >
+                <Play size={24} className="fill-white" />
+            </button>
+
+            {showShortCreator && (
+                <ShortCreator
+                    onClose={() => setShowShortCreator(false)}
+                    onSuccess={() => {
+                        setShowShortCreator(false);
+                        setShowShorts(true);
+                    }}
+                />
+            )}
         </div >
     );
 }

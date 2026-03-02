@@ -16,11 +16,12 @@ export const StoryBar: React.FC = () => {
     const loadStories = useCallback(async () => {
         setIsLoading(true);
         try {
+            const currentUser = (localStorage.getItem('hive_user') || '').replace(/^@/, '');
             const olderDate = showOlder ? storyService.getYesterdayDateStr() : undefined;
-            const stories = await storyService.getCombinedStories(olderDate);
+            const stories = await storyService.getCombinedStories(olderDate, currentUser || undefined);
+
 
             // Filter out logged-in user's stories from the shared list
-            const currentUser = (localStorage.getItem('hive_user') || '').replace(/^@/, '');
             const filteredStories = stories.filter(group => group.username !== currentUser);
             const userGroup = stories.find(group => group.username === currentUser) || null;
 
@@ -61,7 +62,7 @@ export const StoryBar: React.FC = () => {
 
     return (
         <>
-            <div className="flex items-center bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl mb-6 shadow-sm min-h-[90px] overflow-hidden">
+            <div className="flex items-center bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm min-h-[90px] overflow-hidden h-full">
                 {/* My Story Creator (Fixed Left) */}
                 <div
                     className="flex flex-col items-center justify-center gap-1 w-[80px] py-3 flex-shrink-0 bg-[var(--bg-card)] z-10 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)] dark:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.3)] relative"

@@ -13,12 +13,16 @@ export interface Story {
     timestamp: string;
     expiresAt: string | null;
     hiveTrxId?: string | null;
+    permlink?: string | null;
     isOnchain?: boolean;
     stats: {
         likes: number;
         tips: number;
     };
+    hasTipped?: boolean;
 }
+
+
 
 export interface GroupedStory {
     username: string;
@@ -31,9 +35,13 @@ class StoryService {
     /**
      * Get today's offchain stories grouped by user (24hr default, as before)
      */
-    async getStories(communityId: string = 'breakaway'): Promise<GroupedStory[]> {
+    async getStories(communityId: string = 'breakaway', viewer?: string): Promise<GroupedStory[]> {
         try {
-            const response = await fetch(`${this.BACKEND_URL}/api/stories?communityId=${communityId}`);
+            const url = new URL(`${this.BACKEND_URL}/api/stories`);
+            url.searchParams.append('communityId', communityId);
+            if (viewer) url.searchParams.append('viewer', viewer);
+
+            const response = await fetch(url.toString());
             if (response.ok) {
                 const data = await response.json();
                 return data.stories;
@@ -44,6 +52,7 @@ class StoryService {
             return [];
         }
     }
+
 
     /**
      * Get onchain stories from Hive for a specific date (defaults to today)
@@ -71,10 +80,11 @@ class StoryService {
      * Onchain stories for users not in offchain are appended.
      * @param showOlderDate - If set, also fetch onchain stories for that date
      */
-    async getCombinedStories(showOlderDate?: string): Promise<GroupedStory[]> {
+    async getCombinedStories(showOlderDate?: string, viewer?: string): Promise<GroupedStory[]> {
         const [offchain, onchainToday, onchainOlder] = await Promise.all([
-            this.getStories(),
+            this.getStories('breakaway', viewer),
             this.getOnchainStories(null),
+
             showOlderDate ? this.getOnchainStories(showOlderDate) : Promise.resolve([] as GroupedStory[])
         ]);
 
@@ -118,15 +128,30 @@ class StoryService {
     /**
      * Post a new story (offchain via socket, onchain via backend relay)
      */
-    async postStory(username: string, content: StoryContent): Promise<void> {
+    async postStory(username: string, content: StoryContent, hiveTrxId?: string, permlink?: string): Promise<void> {
         // Emit via socket for real-time speed (offchain)
         socketService.emit('send_story', {
             username,
             content,
-            communityId: 'breakaway'
+            communityId: 'breakaway',
+            hiveTrxId,
+            permlink
         });
         // Note: onchain broadcast is handled server-side in the createStory controller
         // when a postingKey is provided (relay users). Keychain users broadcast client-side.
+    }
+
+    /**
+     * Get active votes for a story from Hive
+     */
+    async getStoryVotes(author: string, permlink: string): Promise<any[]> {
+        try {
+            const { getActiveVotes } = await import('../../../services/hive/client');
+            return await getActiveVotes(author, permlink);
+        } catch (error) {
+            console.error('Failed to get story votes:', error);
+            return [];
+        }
     }
 
     /**
@@ -137,6 +162,22 @@ class StoryService {
         d.setUTCDate(d.getUTCDate() - 1);
         return d.toISOString().split('T')[0];
     }
+
+    /**
+     * Record a tip in the backend
+     */
+    async recordTip(storyId: string, username: string): Promise<void> {
+        try {
+            await fetch(`${this.BACKEND_URL}/api/stories/${storyId}/tip`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username })
+            });
+        } catch (error) {
+            console.error('Failed to record story tip:', error);
+        }
+    }
 }
+
 
 export const storyService = new StoryService();

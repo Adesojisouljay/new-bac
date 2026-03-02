@@ -23,3 +23,28 @@ export const getHiveProfile = async (username: string) => {
         throw error;
     }
 };
+
+export const getActiveVotes = async (author: string, permlink: string) => {
+    try {
+        return await hiveClient.database.call('get_active_votes', [author, permlink]);
+    } catch (error) {
+        console.error('Failed to fetch active votes:', error);
+        return [];
+    }
+};
+export const getContentReplies = async (author: string, permlink: string) => {
+    try {
+        return await hiveClient.database.call('get_content_replies', [author, permlink]);
+    } catch (error) {
+        console.error('Failed to fetch content replies:', error);
+        return [];
+    }
+};
+export const getContent = async (author: string, permlink: string) => {
+    try {
+        return await hiveClient.database.call('get_content', [author, permlink]);
+    } catch (error) {
+        console.error('Failed to fetch content:', error);
+        return null;
+    }
+};

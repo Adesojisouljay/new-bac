@@ -1,5 +1,9 @@
 export const cloudinaryService = {
-    uploadFile: async (file: File, resourceType: 'image' | 'video' = 'image'): Promise<string> => {
+    uploadFile: async (
+        file: File,
+        resourceType: 'image' | 'video' = 'image',
+        onProgress?: (progress: number) => void
+    ): Promise<string> => {
         const url = import.meta.env.VITE_CLOUDINARY_URL;
         const preset = import.meta.env.VITE_CLOUDINARY_PRESET;
 
@@ -7,26 +11,35 @@ export const cloudinaryService = {
             throw new Error('Cloudinary configuration missing');
         }
 
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', preset);
+        return new Promise((resolve, reject) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('upload_preset', preset);
 
-        try {
-            const response = await fetch(`${url}/${resourceType}/upload`, {
-                method: 'POST',
-                body: formData,
-            });
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', `${url}/${resourceType}/upload`);
 
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Upload failed');
+            if (onProgress) {
+                xhr.upload.onprogress = (event) => {
+                    if (event.lengthComputable) {
+                        const percentComplete = (event.loaded / event.total) * 100;
+                        onProgress(percentComplete);
+                    }
+                };
             }
 
-            const data = await response.json();
-            return data.secure_url;
-        } catch (error: any) {
-            console.error('[Cloudinary] Upload error:', error);
-            throw new Error(error.message || 'Network error during upload');
-        }
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    const response = JSON.parse(xhr.responseText);
+                    resolve(response.secure_url);
+                } else {
+                    const error = JSON.parse(xhr.responseText);
+                    reject(new Error(error.message || 'Upload failed'));
+                }
+            };
+
+            xhr.onerror = () => reject(new Error('Network error during upload'));
+            xhr.send(formData);
+        });
     }
 };
