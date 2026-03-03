@@ -33,9 +33,9 @@ export interface Web3WalletInfo {
     publicKey?: string;
     imageUrl: string;
     balance: number;
-    price: number;
-    change24h: number;
-    usdValue: number;
+    price: number | null;
+    change24h: number | null;
+    usdValue: number | null;
 }
 
 const ENCRYPTED_MNEMONIC_KEY = 'web3_mnemonic_enc';
@@ -91,7 +91,8 @@ export const addressStorage = {
         localStorage.setItem(`${PUBLIC_ADDRESSES_KEY}_${normalize(username)}`, JSON.stringify(addresses));
     },
     clear: (username: string) => {
-        localStorage.removeItem(`${PUBLIC_ADDRESSES_KEY}_${normalize(username)}`);
+        const norm = normalize(username);
+        localStorage.removeItem(`${PUBLIC_ADDRESSES_KEY}_${norm}`);
     },
 };
 

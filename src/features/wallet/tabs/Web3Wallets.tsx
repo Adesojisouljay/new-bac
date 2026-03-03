@@ -54,7 +54,6 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const [loadingInfo, setLoadingInfo] = useState(false);
     const [qrTarget, setQrTarget] = useState<Web3WalletInfo | null>(null);
     const [generating, setGenerating] = useState(false);
-    const [isLocked, setIsLocked] = useState(false);
     const [sendTarget, setSendTarget] = useState<Web3WalletInfo | null>(null);
     const [swapTarget, setSwapTarget] = useState<Web3WalletInfo | null>(null);
     const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
@@ -81,19 +80,21 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
             setRawWallets(derived);
             fetchBalances(derived);
+            return derived;
         } catch (err: any) {
             showNotification(`Failed to derive wallets: ${err.message}`, 'error');
+            throw err;
         } finally {
             setLoading(false);
         }
-    }, [showNotification]);
+    }, [showNotification, username]);
 
-    const fetchBalances = async (wallets: RawWallets) => {
-        setLoadingInfo(true);
+    const fetchBalances = async (wallets: RawWallets, isSilent = false) => {
+        if (!isSilent) setLoadingInfo(true);
         try {
             const info = await web3WalletService.getWalletInfo(wallets);
 
-            // Check for deposits
+            // 1. Check for deposits (keep this accurate!)
             info.forEach(newCard => {
                 const prevBalance = previousBalancesRef.current[newCard.chain];
                 if (prevBalance !== undefined && newCard.balance > prevBalance) {
@@ -106,13 +107,53 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 previousBalancesRef.current[newCard.chain] = newCard.balance;
             });
 
-            setWalletInfo(info);
+            // 2. Merge new results with existing state to avoid flicker and maintain stale prices
+            setWalletInfo(prev => {
+                if (prev.length === 0) return info;
+                const next = [...prev];
+                info.forEach(latest => {
+                    const idx = next.findIndex(p => p.chain === latest.chain);
+                    if (idx === -1) {
+                        next.push(latest);
+                    } else {
+                        const old = next[idx];
+                        const balance = latest.balance;
+                        // Stale Price Preservation: If balance > 0 but new price is 0/null, keep the old price if we have it
+                        const oldPrice = old.price || 0;
+                        const latestPrice = latest.price || 0;
+                        const price = (balance > 0 && latestPrice <= 0 && oldPrice > 0) ? oldPrice : latestPrice;
+
+                        const usdValue = balance * price;
+                        const change24h = (latest.change24h === 0 && (old.change24h || 0) !== 0) ? old.change24h : latest.change24h;
+
+                        next[idx] = { ...latest, price, usdValue, change24h };
+                    }
+                });
+                return next;
+            });
         } catch (err: any) {
             console.warn('Balance fetch failed (non-critical):', err.message);
         } finally {
-            setLoadingInfo(false);
+            if (!isSilent) setLoadingInfo(false);
         }
     };
+
+    // ── Polling for Background Deposits ─────────────────────────────────────
+    const walletAddresses = walletInfo.map(w => w.address).join(',');
+    useEffect(() => {
+        if (walletInfo.length === 0) return;
+
+        const pollId = setInterval(() => {
+            console.log(`[Web3Wallets] Polling for ${walletInfo.length} chains...`);
+            const currentWallets: any = { mnemonic: '' };
+            walletInfo.forEach(w => {
+                currentWallets[w.chain] = { address: w.address, imageUrl: w.imageUrl };
+            });
+            fetchBalances(currentWallets as RawWallets, true); // Silent refresh
+        }, 30000);
+
+        return () => clearInterval(pollId);
+    }, [walletAddresses, username]); // Only reset if the list of addresses changes
 
     // ── Load state on mount ──────────────────────────────────────────────────
     useEffect(() => {
@@ -124,55 +165,58 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 console.log('[Web3Wallets] Fetching remote metadata...');
                 const tokens = await fetchHiveMetadata(username);
                 console.log('[Web3Wallets] Remote metadata tokens found:', tokens.length);
-                const hasRemoteMetadata = tokens.some(t => t.type === 'CHAIN');
 
                 // 2. Check local Address Cache (most reliable for current user)
                 const cachedAddresses = addressStorage.get(username);
                 console.log('[Web3Wallets] Local address cache check:', !!cachedAddresses);
 
-                // 3. Prepare View-Only Wallets (Prefer Local Cache -> Fallback to Hive)
+                // 3. Prepare View-Only Wallets (Merge Remote Metadata + Local Cache)
+                const combinedWallets: Record<string, { address: string; imageUrl: string }> = {};
+
+                // A. Start with remote metadata (ground truth from Hive)
+                tokens.filter(t => t.type === 'CHAIN').forEach(t => {
+                    if (t.symbol && t.meta.address) {
+                        combinedWallets[t.symbol] = {
+                            address: t.meta.address,
+                            imageUrl: t.meta.imageUrl || ''
+                        };
+                    }
+                });
+
+                // B. Overlay with local cache (public addresses we know)
+                if (cachedAddresses) {
+                    Object.entries(cachedAddresses).forEach(([chain, data]) => {
+                        combinedWallets[chain] = data;
+                    });
+                }
+
+                // C. Build initial info and mock wallets for balance fetching
                 const initialInfo: Web3WalletInfo[] = [];
                 const mockWallets: any = { mnemonic: '' };
 
-                if (cachedAddresses) {
-                    Object.entries(cachedAddresses).forEach(([chain, data]) => {
-                        initialInfo.push({
-                            chain,
-                            symbol: chain,
-                            address: data.address,
-                            imageUrl: data.imageUrl,
-                            balance: 0,
-                            price: 0,
-                            change24h: 0,
-                            usdValue: 0
-                        });
-                        mockWallets[chain] = data;
+                Object.entries(combinedWallets).forEach(([chain, data]) => {
+                    initialInfo.push({
+                        chain,
+                        symbol: chain,
+                        address: data.address,
+                        imageUrl: data.imageUrl,
+                        balance: 0,
+                        price: null,
+                        change24h: null,
+                        usdValue: null
                     });
-                } else if (hasRemoteMetadata) {
-                    tokens.filter(t => t.type === 'CHAIN').forEach(t => {
-                        initialInfo.push({
-                            chain: t.symbol,
-                            symbol: t.symbol,
-                            address: t.meta.address || '',
-                            imageUrl: t.meta.imageUrl || '',
-                            balance: 0,
-                            price: 0,
-                            change24h: 0,
-                            usdValue: 0
-                        });
-                        mockWallets[t.symbol] = { address: t.meta.address || '', imageUrl: t.meta.imageUrl || '' };
-                    });
-                }
+                    mockWallets[chain] = data;
+                });
 
                 if (initialInfo.length > 0) {
                     console.log('[Web3Wallets] Setting initial wallet info (view-only):', initialInfo.length);
                     setWalletInfo(initialInfo);
+                    // Crucial: Use the constructed mockWallets for immediate balance fetching
                     fetchBalances(mockWallets as RawWallets);
                 }
 
                 // 4. Check local storage for encrypted mnemonic
-                const encrypted = mnemonicStorage.getEncrypted(username);
-                setIsLocked(!!encrypted);
+                mnemonicStorage.getEncrypted(username);
             } catch (err: any) {
                 console.error('[Web3Wallets] Initialization CRITICAL error:', err);
             } finally {
@@ -203,9 +247,9 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
             if (signature.success && signature.result) {
                 const mnemonic = await decryptMnemonic(encrypted, salt, signature.result);
-                await deriveAndFetch(mnemonic);
-                setIsLocked(false);
+                const derived = await deriveAndFetch(mnemonic);
                 setAuthQR(null);
+                return derived;
             } else {
                 throw new Error(signature.error || 'Signature failed');
             }
@@ -318,7 +362,6 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
             setRawWallets(derived);
             fetchBalances(derived);
-            setIsLocked(false);
             setPendingMnemonic(null);
             setAuthQR(null);
             showNotification(updateHive ? 'Web3 Wallet initialized and linked!' : 'Local access secured!', 'success');
@@ -349,7 +392,6 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         addressStorage.clear(username);
         setRawWallets(null);
         setWalletInfo([]);
-        setIsLocked(false);
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -472,38 +514,14 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    {isOwner && (
-                        <>
-                            {/* If we have a vault but it is locked, balances are already loading, so "Unlock" is optional here */}
-                            {!rawWallets && isLocked && (
-                                <button
-                                    onClick={handleUnlock}
-                                    className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-[var(--primary-color)] bg-[var(--primary-color)]/10 border border-[var(--primary-color)]/20 rounded-xl hover:bg-[var(--primary-color)]/20 transition-all"
-                                >
-                                    Unlock Full Access
-                                </button>
-                            )}
-
-                            {/* If we have NO vault but we have Hive addresses */}
-                            {!rawWallets && !isLocked && walletInfo.length > 0 && (
-                                <button
-                                    onClick={handleImport}
-                                    className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-white bg-[var(--primary-color)] rounded-xl shadow-lg shadow-[var(--primary-color)]/20"
-                                >
-                                    Complete Setup
-                                </button>
-                            )}
-
-                            <button
-                                onClick={handleReset}
-                                className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
-                            >
-                                Remove
-                            </button>
-                        </>
-                    )}
-                </div>
+                {isOwner && (
+                    <button
+                        onClick={handleReset}
+                        className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
+                    >
+                        Remove
+                    </button>
+                )}
             </div>
 
             {/* Wallet Grid */}
@@ -592,8 +610,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                                     <>
                                         <button
                                             onClick={() => setSendTarget(card as any)}
-                                            disabled={!isLocked && !rawWallets}
-                                            className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-all disabled:opacity-30 disabled:cursor-not-allowed group/btn"
+                                            className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-all group/btn"
                                         >
                                             Send
                                         </button>

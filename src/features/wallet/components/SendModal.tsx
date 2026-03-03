@@ -12,7 +12,7 @@ interface SendModalProps {
     imageUrl?: string;
     privateKey?: string;
     balance: number;
-    onUnlock: () => Promise<void>;
+    onUnlock: () => Promise<any>;
     onClose: () => void;
     onSuccess: (amount: string, hash: string) => void;
 }
@@ -91,17 +91,29 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
     }, [to, resolvedAddress, sendMode, amount, chain, address]);
 
     const handleSend = async () => {
-        if (!privateKey) {
+        let currentPrivateKey = privateKey;
+
+        // If not unlocked, trigger seamless unlock first
+        if (!currentPrivateKey) {
             setLoading(true);
             try {
-                await onUnlock();
+                const derived = await onUnlock();
+                if (derived && derived[chain]) {
+                    currentPrivateKey = (derived[chain] as any).privateKey;
+                }
+
+                if (!currentPrivateKey) {
+                    showNotification('Authorization succeeded but keys were not found', 'error');
+                    setLoading(false);
+                    return;
+                }
                 showNotification('Wallet authorized successfully!', 'success');
+                // Continue with transaction...
             } catch (err: any) {
                 showNotification(err.message || 'Authorization failed', 'error');
-            } finally {
                 setLoading(false);
+                return;
             }
-            return;
         }
 
         const destination = sendMode === 'username' ? resolvedAddress : to;
@@ -127,7 +139,7 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
 
             // 2. Sign locally based on the chain
             if (chain === 'ETH' || chain === 'BNB') {
-                signedTx = await signingService.signEthTransaction(privateKey, {
+                signedTx = await signingService.signEthTransaction(currentPrivateKey, {
                     to: destination,
                     value: (Number(amount) * 1e18).toString(), // simplified wei conversion
                     nonce: params.nonce,
@@ -136,14 +148,14 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                     chainId: params.chainId
                 });
             } else if (chain === 'SOL') {
-                signedTx = await signingService.signSolTransaction(privateKey, {
+                signedTx = await signingService.signSolTransaction(currentPrivateKey, {
                     from: address,
                     to: destination,
                     amount: Number(amount),
                     recentBlockhash: params.recentBlockhash
                 });
             } else if (chain === 'BTC') {
-                signedTx = await signingService.signBtcTransaction(privateKey, {
+                signedTx = await signingService.signBtcTransaction(currentPrivateKey, {
                     from: address,
                     to: destination,
                     amount: Number(amount),
@@ -152,13 +164,13 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                 });
             } else if (chain === 'TRON') {
                 // TRON backend gives us the transaction object
-                signedTx = await signingService.signTronTransaction(privateKey, {
+                signedTx = await signingService.signTronTransaction(currentPrivateKey, {
                     to: destination,
                     amount: Number(amount),
                     transaction: params.transaction
                 });
             } else if (chain === 'APTOS') {
-                signedTx = await signingService.signAptosTransaction(privateKey, {
+                signedTx = await signingService.signAptosTransaction(currentPrivateKey, {
                     to: destination,
                     amount: Number(amount),
                     sequenceNumber: params.sequenceNumber,
@@ -363,7 +375,7 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                         className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none ${!privateKey ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : 'bg-green-600 shadow-green-600/25'}`}
                     >
                         {loading ? 'Processing...' : (
-                            !privateKey ? 'Authorize to Sign' : `Confirm Send ${amount} ${chain}`
+                            !privateKey ? 'Confirm (Sign with Keychain)' : `Send ${amount} ${chain}`
                         )}
                         {!loading && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
                     </button>
