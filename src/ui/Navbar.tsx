@@ -92,7 +92,8 @@ export function Navbar() {
     return (
         <>
             <header className="fixed top-0 w-full border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/80 backdrop-blur-md z-50 transition-colors duration-300">
-                <div className="w-full max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between gap-8">
+                <div className="w-full max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between gap-2 md:gap-8">
+
                     {/* Logo Section */}
                     <Link to="/" className="flex items-center gap-2 flex-shrink-0">
                         {dynamicConfig?.hiveCommunityId === 'global' ? (
@@ -123,13 +124,14 @@ export function Navbar() {
 
                     {/* Right Side Actions */}
                     <div className="flex items-center gap-4 flex-shrink-0">
-                        {/* Mobile Search Icon (Hidden since it's on BottomNav) */}
+                        {/* Mobile Search Icon */}
                         <button
                             onClick={() => setIsSearchModalOpen(true)}
-                            className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors hidden"
+                            className="p-2 text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors md:hidden"
                         >
                             <Search size={22} />
                         </button>
+
 
                         <ThemeToggle />
 

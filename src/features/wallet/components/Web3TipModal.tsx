@@ -17,7 +17,9 @@ interface Web3TipModalProps {
     /** The Hive username of the person being tipped */
     recipientUsername: string;
     onClose: () => void;
+    onSuccess?: () => void;
 }
+
 
 const CHAIN_ACCENT: Record<string, string> = {
     BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', TRON: '#ef0027',
@@ -38,7 +40,8 @@ const SYMBOL_MAP: Record<string, string> = {
 
 type Step = 'select_chain' | 'enter_amount' | 'unlocking' | 'sending' | 'done' | 'error';
 
-export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) {
+export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipModalProps) {
+
     const { showNotification } = useNotification();
     const senderUsername = (localStorage.getItem('hive_user') || '').replace(/^@/, '');
 
@@ -237,8 +240,10 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
             const hash = await web3WalletService.broadcastTransaction(selectedChain, signedTx);
             setTxHash(hash);
             setStep('done');
+            if (onSuccess) onSuccess();
             showNotification(`Tipped ${amount} ${selectedChain} to @${recipientUsername}! 🎉`, 'success');
         } catch (err: any) {
+
             setErrorMsg(err.message || 'Transaction failed');
             setStep('error');
         }
@@ -256,7 +261,8 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
     // ─────────────────────────────────────────────────────────────────────────
     if (loadingRecipient || loadingSender) {
         return (
-            <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+
                 <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-10 flex flex-col items-center gap-4 shadow-2xl">
                     <Loader2 className="animate-spin text-[var(--primary-color)]" size={32} />
                     <p className="text-sm text-[var(--text-secondary)]">Loading wallet data…</p>
@@ -270,7 +276,8 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
     // ─────────────────────────────────────────────────────────────────────────
     if (!recipientHasWallet || availableChains.length === 0) {
         return (
-            <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+
                 <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center space-y-4">
                     <div className="w-16 h-16 bg-[var(--bg-canvas)] rounded-full flex items-center justify-center mx-auto text-3xl">🔗</div>
                     <h3 className="text-lg font-bold">No Web3 Wallet</h3>
@@ -290,7 +297,8 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
     // ─────────────────────────────────────────────────────────────────────────
     if (step === 'done') {
         return (
-            <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+
                 <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center space-y-4">
                     <div className="w-16 h-16 bg-green-500/10 text-green-400 rounded-full flex items-center justify-center mx-auto">
                         <CheckCircle2 size={36} />
@@ -315,7 +323,8 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
     // ─────────────────────────────────────────────────────────────────────────
     if (step === 'error') {
         return (
-            <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+
                 <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center space-y-4">
                     <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto">
                         <AlertCircle size={32} />
@@ -341,7 +350,8 @@ export function Web3TipModal({ recipientUsername, onClose }: Web3TipModalProps) 
     // Main modal
     // ─────────────────────────────────────────────────────────────────────────
     return (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+
             <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
 
                 {/* Header */}

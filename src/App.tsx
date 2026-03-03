@@ -15,6 +15,7 @@ const Governance = lazy(() => import('./features/governance/pages/GovernancePage
 const Messages = lazy(() => import('./features/messages/pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
 const Analytics = lazy(() => import('./features/analytics/pages/AnalyticsPage').then(m => ({ default: m.AnalyticsPage })));
 const Wallet = lazy(() => import('./features/wallet/pages/WalletPage'));
+const ShortsFeed = lazy(() => import('./features/shorts/components/ShortsFeed').then(m => ({ default: m.ShortsFeed })));
 import { DelegationBanner } from './features/auth/components/DelegationBanner';
 import { BottomNav } from './ui/BottomNav';
 
@@ -24,11 +25,12 @@ const Layout = () => {
       <Navbar />
       <DelegationBanner />
 
-      <main className="w-full pt-20 pb-24 lg:pb-12">
+      <main className="w-full pt-20 pb-20 lg:pb-12 h-screen overflow-y-auto custom-scrollbar md:h-auto md:overflow-visible">
         <Suspense fallback={<div className="flex justify-center p-12 text-[var(--text-secondary)]">Loading...</div>}>
           <Outlet />
         </Suspense>
       </main>
+
 
       <BottomNav />
     </div>
@@ -91,7 +93,9 @@ const AppContent = () => {
         <Route path="governance/:tab?" element={<Governance />} />
         <Route path="messages" element={<Messages />} />
         <Route path="analytics" element={<Analytics />} />
+        <Route path="shorts" element={<ShortsFeed />} />
         <Route path=":username/wallet" element={<Wallet />} />
+
         <Route path="*" element={<div>404 Not Found</div>} />
       </Route>
     </Routes>

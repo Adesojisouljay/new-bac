@@ -258,7 +258,8 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
             </div>
 
             {/* Content */}
-            <div className="p-6 flex flex-col justify-between flex-grow">
+            <div className="p-4 md:p-6 flex flex-col justify-between flex-grow min-w-0">
+
                 <div>
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
@@ -311,10 +312,11 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                     </div>
 
                     <Link to={`/post/${post.author}/${post.permlink}`}>
-                        <h2 className="text-xl font-black mb-3 text-[var(--text-primary)] line-clamp-2 leading-tight group-hover:text-[var(--primary-color)] transition-colors">
+                        <h2 className="text-lg md:text-xl font-black mb-2 md:mb-3 text-[var(--text-primary)] line-clamp-2 leading-tight group-hover:text-[var(--primary-color)] transition-colors">
                             {post.title}
                         </h2>
                     </Link>
+
 
                     <p className="text-[var(--text-secondary)] text-sm line-clamp-2 mb-6 leading-relaxed">
                         {stripMarkdown(post.body).substring(0, 150)}...
@@ -336,29 +338,30 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                             <button
                                 onClick={(e) => { e.preventDefault(); setShowVoteSlider(!showVoteSlider); }}
                                 disabled={voting || voted || downvoting || downvoted}
-                                className={`p-1.5 rounded-full transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'hover:bg-red-500/10 hover:text-red-500 text-[var(--text-secondary)]'}`}
+                                className={`p-1 md:p-1.5 rounded-full transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'hover:bg-red-500/10 hover:text-red-500 text-[var(--text-secondary)]'}`}
                                 title="Upvote"
                             >
                                 {voting ? (
-                                    <div className="animate-spin h-4 w-4 border-2 border-current rounded-full border-t-transparent" />
+                                    <div className="animate-spin h-3.5 w-3.5 border-2 border-current rounded-full border-t-transparent" />
                                 ) : (
-                                    <ThumbsUp size={16} fill={voted ? "currentColor" : "none"} />
+                                    <ThumbsUp size={14} className="md:size-[16px]" fill={voted ? "currentColor" : "none"} />
                                 )}
                             </button>
                             <button
                                 onClick={(e) => { e.preventDefault(); setShowVoters(true); }}
-                                className="px-3 text-xs font-bold text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors"
+                                className="px-1.5 md:px-3 text-[10px] md:text-xs font-bold text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors"
                             >
                                 {post.active_votes?.length || 0}
                             </button>
                             <button
                                 onClick={(e) => { e.preventDefault(); handleVote(-10000); }}
                                 disabled={voting || voted || downvoting || downvoted}
-                                className={`p-1.5 rounded-full transition-all ${downvoted ? 'bg-gray-700 text-white' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-[var(--text-secondary)]'}`}
+                                className={`p-1 md:p-1.5 rounded-full transition-all ${downvoted ? 'bg-gray-700 text-white' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-[var(--text-secondary)]'}`}
                                 title="Downvote"
                             >
-                                {downvoting ? <div className="animate-spin h-4 w-4 border-2 border-current rounded-full border-t-transparent" /> : <ThumbsDown size={14} />}
+                                {downvoting ? <div className="animate-spin h-3.5 w-3.5 border-2 border-current rounded-full border-t-transparent" /> : <ThumbsDown size={12} className="md:size-[14px]" />}
                             </button>
+
                         </div>
 
                         {/* Reblog/Reply Pills */}
@@ -367,25 +370,26 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                             onMouseEnter={() => setIsHoveringReblog(true)}
                             onMouseLeave={() => setIsHoveringReblog(false)}
                             disabled={reblogging}
-                            className={`flex items-center gap-2 h-9 px-4 rounded-full border transition-all ${reblogged ? 'bg-red-500/10 border-red-500/30 text-red-500 shadow-sm' : 'border-[var(--border-color)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-red-500/50 hover:text-red-500'}`}
+                            className={`flex items-center gap-1.5 h-8 md:h-9 px-2.5 md:px-4 rounded-full border transition-all ${reblogged ? 'bg-red-500/10 border-red-500/30 text-red-500 shadow-sm' : 'border-[var(--border-color)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-red-500/50 hover:text-red-500'}`}
                         >
                             {reblogging ? (
                                 <div className="animate-spin h-3 w-3 border-2 border-current rounded-full border-t-transparent" />
                             ) : (
                                 <Repeat size={14} className={reblogged ? 'text-red-500' : ''} />
                             )}
-                            <span className="sm:inline font-bold text-xs">
+                            <span className="hidden sm:inline font-bold text-xs whitespace-nowrap">
                                 {reblogged ? (isHoveringReblog ? 'Undo Reblog?' : 'Reblogged') : 'Reblog'}
                             </span>
                         </button>
 
                         <Link
                             to={`/post/${post.author}/${post.permlink}#comments`}
-                            className="flex items-center gap-2 h-9 px-4 rounded-full border border-[var(--border-color)] bg-[var(--bg-canvas)] text-xs font-bold text-[var(--text-secondary)] hover:border-[var(--primary-color)] transition-all"
+                            className="flex items-center gap-1.5 h-8 md:h-9 px-2.5 md:px-4 rounded-full border border-[var(--border-color)] bg-[var(--bg-canvas)] text-[10px] md:text-xs font-bold text-[var(--text-secondary)] hover:border-[var(--primary-color)] transition-all"
                         >
                             <MessageSquare size={14} />
                             <span>{post.children}</span>
                         </Link>
+
 
                         {/* Mod Actions button — only for mods/admins/owners of this community */}
                         {post.community && (() => {
@@ -406,14 +410,15 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
 
                     <div className="text-right relative">
                         <div
-                            className="cursor-help relative group"
+                            className="cursor-help relative group flex flex-col items-end"
                             onMouseEnter={() => setShowPayoutDetails(true)}
                             onMouseLeave={() => setShowPayoutDetails(false)}
                         >
-                            <div className="text-[10px] uppercase font-bold text-[var(--text-secondary)] mb-0.5">Earnings</div>
-                            <div className="text-sm font-black text-[var(--primary-color)]">
+                            <div className="text-[9px] md:text-[10px] uppercase font-bold text-[var(--text-secondary)] mb-0.5 whitespace-nowrap opacity-60">Earnings</div>
+                            <div className="text-xs md:text-sm font-black text-[var(--primary-color)] whitespace-nowrap">
                                 ${payoutAmount.toFixed(2)}
                             </div>
+
 
                             {/* Payout Details Popup */}
                             {showPayoutDetails && (

@@ -12,6 +12,12 @@ import { StoryBar } from '../../stories/components/StoryBar';
 import { GlobalSidebar } from '../components/GlobalSidebar';
 import { TopicSidebar } from '../components/TopicSidebar';
 import { PostCard } from '../components/PostCard';
+import { ShortsFeed } from '../../shorts/components/ShortsFeed';
+import { ShortCreator } from '../../shorts/components/ShortCreator';
+import { Filter, RefreshCw, ChevronDown, ChevronUp, Globe, Users, Heart, MessageCircle, Play, Plus } from 'lucide-react';
+
+
+
 
 export default function FeedPage() {
     const { config } = useCommunity();
@@ -62,6 +68,10 @@ export default function FeedPage() {
     const [activities, setActivities] = useState<Activity[]>([]);
     const [lastActivityId, setLastActivityId] = useState<number | undefined>(undefined);
     const [activitiesLoading, setActivitiesLoading] = useState(false);
+
+    // Shorts State
+    const [showShorts, setShowShorts] = useState(false);
+    const [showShortCreator, setShowShortCreator] = useState(false);
 
     // Fetch Community Details
     useEffect(() => {
@@ -363,17 +373,50 @@ export default function FeedPage() {
 
                     {activeTab === 'posts' && (
                         <>
-                            <StoryBar />
+                            <div className="mb-6 min-w-0 flex-1 flex items-stretch gap-4">
+                                <div className="flex-1 min-w-0">
+                                    <StoryBar />
+                                </div>
+
+                                {/* Original Desktop Shorts Card */}
+                                <div className="hidden md:flex flex-col relative shrink-0">
+                                    <button
+                                        onClick={() => setShowShorts(true)}
+                                        className="h-full min-h-[90px] w-28 bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-2xl flex flex-col items-center justify-center gap-2 hover:border-[var(--primary-color)] transition-all shadow-sm active:scale-95 group overflow-hidden relative"
+                                    >
+                                        <div className="w-10 h-10 bg-[var(--bg-canvas)] rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                                            <Play size={20} className="fill-[var(--primary-color)] text-[var(--primary-color)]" />
+                                        </div>
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Shorts</span>
+
+                                        {/* Plus Overlay for Upload */}
+                                        <div
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setShowShortCreator(true);
+                                            }}
+                                            className="absolute top-2 right-2 w-6 h-6 bg-[var(--primary-color)] text-white rounded-full flex items-center justify-center shadow-lg hover:scale-110 active:scale-90 transition-all pointer-events-auto"
+                                            title="Upload Short"
+                                        >
+                                            <Plus size={14} strokeWidth={3} />
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+
+
+
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
                                 <div className="flex flex-col">
-                                    <h2 className="text-2xl font-black text-[var(--text-primary)] leading-tight uppercase tracking-tight">
+                                    <h2 className="text-xl md:text-2xl font-black text-[var(--text-primary)] leading-tight uppercase tracking-tight">
                                         {isGlobal ? (community?.title || (tagParam === 'friends' ? 'Friends Feed' : (tagParam ? `#${tagParam}` : 'Global Feed'))) : (community?.title || 'Community')}
                                     </h2>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <div className="h-1 w-8 bg-[var(--primary-color)] rounded-full" />
-                                        <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Discovery Gateway</span>
+                                    <div className="flex items-center gap-2 mt-0.5 md:mt-1">
+                                        <div className="h-0.5 md:h-1 w-6 md:w-8 bg-[var(--primary-color)] rounded-full" />
+                                        <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] opacity-80">Discovery Gateway</span>
                                     </div>
                                 </div>
+
 
                                 {/* Desktop Navigation Area */}
                                 <div className="hidden md:flex items-center gap-4">
@@ -527,23 +570,27 @@ export default function FeedPage() {
                                             setShowMoreFilters(!showMoreFilters);
                                             setShowReblogFilters(false);
                                         }}
-                                        className={`w-full px-4 py-2.5 flex items-center justify-between gap-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--primary-color)]/30 transition-all active:scale-[0.98] ${['friends', 'payout', 'muted'].includes(tagParam || '') || ['friends', 'payout', 'muted'].includes(sortParam || '')
+                                        className={`w-full px-3 py-2 flex items-center justify-between gap-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--primary-color)]/30 transition-all active:scale-[0.98] shadow-sm ${['friends', 'payout', 'muted'].includes(tagParam || '') || ['friends', 'payout', 'muted'].includes(sortParam || '')
                                             ? 'border-[var(--primary-color)] text-[var(--primary-color)]'
                                             : ''
                                             }`}
                                     >
-                                        <span className="text-[10px] font-black uppercase tracking-widest">
-                                            {sortParam === 'trending' || (!sortParam && !tagParam) ? 'Trending' :
-                                                sortParam === 'hot' ? 'Hot' :
-                                                    sortParam === 'new' ? 'New' :
-                                                        tagParam === 'friends' || sortParam === 'friends' ? 'Friends' :
-                                                            tagParam === 'payout' || sortParam === 'payout' ? 'Payouts' :
-                                                                tagParam === 'muted' || sortParam === 'muted' ? 'Muted' : 'Feed'}
-                                        </span>
-                                        <svg className={`w-4 h-4 transition-transform ${showMoreFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-[var(--primary-color)] animate-pulse" />
+                                            <span className="text-[10px] font-black uppercase tracking-widest truncate max-w-[80px]">
+                                                {sortParam === 'trending' || (!sortParam && !tagParam) ? 'Trending' :
+                                                    sortParam === 'hot' ? 'Hot' :
+                                                        sortParam === 'new' ? 'New' :
+                                                            tagParam === 'friends' || sortParam === 'friends' ? 'Friends' :
+                                                                tagParam === 'payout' || sortParam === 'payout' ? 'Payouts' :
+                                                                    tagParam === 'muted' || sortParam === 'muted' ? 'Muted' : 'Feed'}
+                                            </span>
+                                        </div>
+                                        <svg className={`w-3.5 h-3.5 transition-transform ${showMoreFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" />
                                         </svg>
                                     </button>
+
 
                                     {showMoreFilters && (
                                         <div className="absolute left-0 mt-2 w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl transition-all z-10 p-1">
@@ -596,15 +643,19 @@ export default function FeedPage() {
                                             setShowReblogFilters(!showReblogFilters);
                                             setShowMoreFilters(false);
                                         }}
-                                        className="w-full px-4 py-2.5 flex items-center justify-between gap-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--primary-color)]/30 transition-all active:scale-[0.98]"
+                                        className="w-full px-3 py-2 flex items-center justify-between gap-2 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--primary-color)]/30 transition-all active:scale-[0.98] shadow-sm"
                                     >
-                                        <span className="text-[10px] font-black uppercase tracking-widest">
-                                            {excludeReblogs ? 'Exclude' : 'Include'}
-                                        </span>
-                                        <svg className={`w-4 h-4 transition-transform ${showReblogFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                        <div className="flex items-center gap-2">
+                                            <div className={`w-1.5 h-1.5 rounded-full ${excludeReblogs ? 'bg-amber-500' : 'bg-green-500'}`} />
+                                            <span className="text-[10px] font-black uppercase tracking-widest truncate max-w-[80px]">
+                                                {excludeReblogs ? 'Exclude' : 'Include'}
+                                            </span>
+                                        </div>
+                                        <svg className={`w-3.5 h-3.5 transition-transform ${showReblogFilters ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7" />
                                         </svg>
                                     </button>
+
 
                                     {showReblogFilters && (
                                         <div className="absolute right-0 mt-2 w-48 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl transition-all z-10 p-1">
@@ -772,6 +823,26 @@ export default function FeedPage() {
                 )}
 
             </div>
+
+            {/* Shorts Feed Modal */}
+            {showShorts && (
+                <ShortsFeed
+                    onClose={() => setShowShorts(false)}
+                    communityId={config.id}
+                />
+            )}
+
+
+
+            {showShortCreator && (
+                <ShortCreator
+                    onClose={() => setShowShortCreator(false)}
+                    onSuccess={() => {
+                        setShowShortCreator(false);
+                        setShowShorts(true);
+                    }}
+                />
+            )}
         </div >
     );
 }

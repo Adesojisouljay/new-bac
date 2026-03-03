@@ -370,7 +370,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // Mnemonic Modal (One-time)
     // ─────────────────────────────────────────────────────────────────────────
     if (pendingMnemonic) {
-        return <MnemonicModal mnemonic={pendingMnemonic} onConfirm={finalizeGeneration} />;
+        return <MnemonicModal mnemonic={pendingMnemonic} username={username} onConfirm={finalizeGeneration} />;
     }
 
     // ─────────────────────────────────────────────────────────────────────────

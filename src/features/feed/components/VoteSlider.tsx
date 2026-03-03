@@ -5,9 +5,11 @@ interface VoteSliderProps {
     onVote: (weight: number) => void;
     onClose: () => void;
     isVoting: boolean;
+    className?: string;
+    showTriangle?: boolean;
 }
 
-export function VoteSlider({ onVote, onClose, isVoting }: VoteSliderProps) {
+export function VoteSlider({ onVote, onClose, isVoting, className, showTriangle = true }: VoteSliderProps) {
     const [weight, setWeight] = useState(100);
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -16,8 +18,10 @@ export function VoteSlider({ onVote, onClose, isVoting }: VoteSliderProps) {
         onVote(weight * 100);
     };
 
+    const defaultClasses = "absolute bottom-full left-0 mb-3";
+
     return (
-        <div className="absolute bottom-full left-0 mb-3 w-64 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl p-4 animate-in fade-in slide-in-from-bottom-2 duration-200 z-50">
+        <div className={`${className ? 'absolute' : defaultClasses} w-64 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl p-4 animate-in fade-in slide-in-from-bottom-2 duration-200 z-50 ${className || ''}`}>
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2 text-[var(--primary-color)]">
                     <ThumbsUp size={16} fill="currentColor" />
@@ -69,7 +73,9 @@ export function VoteSlider({ onVote, onClose, isVoting }: VoteSliderProps) {
             </form>
 
             {/* Triangle Pointer */}
-            <div className="absolute -bottom-1.5 left-6 w-3 h-3 bg-[var(--bg-card)] border-r border-b border-[var(--border-color)] rotate-45" />
+            {showTriangle && (
+                <div className="absolute -bottom-1.5 left-6 w-3 h-3 bg-[var(--bg-card)] border-r border-b border-[var(--border-color)] rotate-45" />
+            )}
         </div>
     );
 }
