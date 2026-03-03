@@ -298,4 +298,25 @@ export const web3WalletService = {
         if (!res.ok) throw new Error(`Send failed (${res.status})`);
         return res.json();
     },
+
+    /**
+     * Log a Web3 transaction to the Hive blockchain for permanent history.
+     */
+    logTransactionToHive: async (username: string, data: { chain: string, to: string, amount: number, hash: string, type: 'send' | 'deposit' }) => {
+        const { authService } = await import('../features/auth/services/authService');
+        const logId = 'bac_web3_tx';
+        const payload = {
+            ...data,
+            app: 'bac-web3',
+            version: '1.0.0',
+            timestamp: Date.now()
+        };
+
+        try {
+            await authService.broadcastJson(username, logId, payload, 'Posting');
+            console.log(`[Web3Wallet] Logged ${data.type} to Hive:`, data.hash);
+        } catch (err) {
+            console.warn('[Web3Wallet] Failed to log transaction to Hive (non-critical):', err);
+        }
+    }
 };

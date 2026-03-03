@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { X, Send, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { web3WalletService } from '../../../services/web3WalletService';
+import { NotificationService } from '../../../services/notifications';
 import { signingService } from '../../../services/signingService';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { fetchHiveMetadata } from '../../../services/hiveMetadataService';
 import { User, Wallet as WalletIcon, Loader2, CheckCircle2 as ConfirmedIcon } from 'lucide-react';
 
 interface SendModalProps {
+    username: string;
     chain: string;
     address: string;
     imageUrl?: string;
@@ -17,7 +19,7 @@ interface SendModalProps {
     onSuccess: (amount: string, hash: string) => void;
 }
 
-export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnlock, onClose, onSuccess }: SendModalProps) {
+export function SendModal({ username, chain, address, imageUrl, privateKey, balance, onUnlock, onClose, onSuccess }: SendModalProps) {
     const [to, setTo] = useState('');
     const [sendMode, setSendMode] = useState<'username' | 'address'>('username');
     const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
@@ -185,10 +187,18 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
 
             setTxHash(hash);
             showNotification(`Successfully sent ${amount} ${chain}`, 'success');
-            setTimeout(() => {
-                onSuccess(amount, hash);
-                onClose();
-            }, 3000);
+
+            // 4. Record to Hive for permanent cross-device history (Non-blocking)
+            web3WalletService.logTransactionToHive(username, {
+                chain,
+                to: destination,
+                amount: Number(amount),
+                hash,
+                type: 'send'
+            });
+
+            // Call onSuccess immediately to update parent state, but DON'T auto-close
+            onSuccess(amount, hash);
         } catch (err: any) {
             setError(err.message || 'Transaction failed');
             showNotification(err.message || 'Failed to send transaction', 'error');
@@ -200,7 +210,13 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
     if (txHash) {
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+                <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl relative">
+                    <button
+                        onClick={onClose}
+                        className="absolute top-4 right-4 p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)] rounded-full transition-colors"
+                    >
+                        <X size={18} />
+                    </button>
                     <div className="w-16 h-16 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
                         <CheckCircle2 size={32} />
                     </div>
@@ -208,12 +224,22 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                     <p className="text-sm text-[var(--text-secondary)] mb-6 break-all font-mono opacity-70">
                         {txHash}
                     </p>
-                    <button
-                        onClick={onClose}
-                        className="w-full py-3 bg-[var(--primary-color)] text-white font-bold rounded-xl hover:brightness-110 active:scale-95 transition-all"
-                    >
-                        Close
-                    </button>
+                    <div className="flex flex-col gap-3">
+                        <a
+                            href={NotificationService.getExplorerUrl(chain, txHash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-3 bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold rounded-xl hover:bg-[var(--bg-card)] transition-all flex items-center justify-center gap-2"
+                        >
+                            View on Explorer ↗
+                        </a>
+                        <button
+                            onClick={onClose}
+                            className="w-full py-3 bg-[var(--primary-color)] text-white font-bold rounded-xl hover:brightness-110 active:scale-95 transition-all"
+                        >
+                            Done
+                        </button>
+                    </div>
                 </div>
             </div>
         );

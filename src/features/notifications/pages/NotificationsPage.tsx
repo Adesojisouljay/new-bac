@@ -12,11 +12,25 @@ export function NotificationsPage() {
         setLoading(true);
         const remoteData = await NotificationService.getNotifications(username, 50);
         const localData = NotificationService.getLocalNotifications(username);
+        const hiveLogData = await NotificationService.getWeb3History(username, 50);
 
-        // Merge and sort by date descending
-        const combined = [...localData, ...remoteData].sort((a, b) =>
-            new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
+        // Merge and sort by date descending with improved deduplication
+        const combined = [...localData, ...hiveLogData, ...remoteData]
+            .filter((v, i, a) => {
+                // Deduplicate by ID
+                const firstById = a.findIndex(t => t.id === v.id) === i;
+                if (!firstById) return false;
+
+                // Deduplicate by txHash (prefers local/hive logs over generic remote ones)
+                if (v.txHash) {
+                    const firstByHash = a.findIndex(t => t.txHash === v.txHash) === i;
+                    return firstByHash;
+                }
+                return true;
+            })
+            .sort((a, b) =>
+                new Date(b.date).getTime() - new Date(a.date).getTime()
+            );
 
         setNotifications(combined);
         setLoading(false);
@@ -100,6 +114,17 @@ export function NotificationsPage() {
                                     <span className="text-xs text-[var(--text-secondary)] uppercase font-bold tracking-wider">
                                         {new Date(n.date + 'Z').toLocaleString()}
                                     </span>
+                                    {(n.txHash || n.address) && (
+                                        <a
+                                            href={NotificationService.getExplorerUrl(n.chain || '', n.txHash, n.address)}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="text-[10px] text-[var(--primary-color)] font-bold hover:underline"
+                                        >
+                                            VIEW ON EXPLORER ↗
+                                        </a>
+                                    )}
                                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] font-bold">
                                         SCORE: {n.score}
                                     </span>

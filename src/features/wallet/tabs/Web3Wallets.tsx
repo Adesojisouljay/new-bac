@@ -58,6 +58,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const [swapTarget, setSwapTarget] = useState<Web3WalletInfo | null>(null);
     const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
     const [showImport, setShowImport] = useState(false);
+    const [activeMainTab, setActiveMainTab] = useState<'assets' | 'history'>('assets');
     const [authQR, setAuthQR] = useState<string | null>(null);
     const currentUser = localStorage.getItem('hive_user');
     const normalizedCurrentUser = currentUser?.replace(/^@/, '');
@@ -101,7 +102,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                     const amount = newCard.balance - prevBalance;
                     const msg = `Deposit Received: +${amount.toFixed(6)} ${newCard.chain}`;
                     showNotification(msg, 'success');
-                    NotificationService.addLocalNotification(username, msg, 'deposit');
+                    NotificationService.addLocalNotification(username, msg, 'deposit', 'wallet', undefined, newCard.chain, newCard.address);
                 }
                 // Update ref
                 previousBalancesRef.current[newCard.chain] = newCard.balance;
@@ -524,118 +525,144 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 )}
             </div>
 
-            {/* Wallet Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {mergedCards.map(card => {
-                    const accent = CHAIN_ACCENT[card.chain] || 'var(--primary-color)';
-                    return (
-                        <div
-                            key={card.chain}
-                            className="group bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-6 flex flex-col gap-4 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden"
-                        >
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-white/[0.03] -mr-8 -mt-8 rounded-full" />
+            {/* Tab Navigation */}
+            <div className="flex gap-4 border-b border-[var(--border-color)]">
+                <button
+                    onClick={() => setActiveMainTab('assets')}
+                    className={`pb-4 px-2 text-sm font-bold transition-all relative ${activeMainTab === 'assets' ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                >
+                    Assets
+                    {activeMainTab === 'assets' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--primary-color)] rounded-full" />}
+                </button>
+                <button
+                    onClick={() => setActiveMainTab('history')}
+                    className={`pb-4 px-2 text-sm font-bold transition-all relative ${activeMainTab === 'history' ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                >
+                    History
+                    {activeMainTab === 'history' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--primary-color)] rounded-full" />}
+                </button>
+            </div>
 
-                            {/* Top: Icon + Chain */}
-                            <div className="flex items-center justify-between z-10">
-                                <div className="flex items-center gap-3">
-                                    <div
-                                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner relative"
-                                        style={{ backgroundColor: `${accent}15` }}
-                                    >
-                                        <div className="absolute inset-0 rounded-xl border border-white/5" />
-                                        {card.imageUrl ? (
-                                            <img src={card.imageUrl} alt={card.chain} className="w-6 h-6 object-contain" />
-                                        ) : (
-                                            <span className="font-bold text-xs" style={{ color: accent }}>{card.chain[0]}</span>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <h4 className="font-bold text-[var(--text-primary)] leading-tight">{card.chain}</h4>
-                                        <p className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tighter opacity-70">Mainnet</p>
-                                    </div>
-                                </div>
-                                {card.change24h !== null && (
-                                    <div className={`text-[10px] font-black px-2 py-1 rounded-lg ${card.change24h >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
-                                        {card.change24h >= 0 ? '↑' : '↓'} {Math.abs(card.change24h).toFixed(2)}%
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Balance Info */}
-                            <div className="py-2 z-10">
-                                <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
-                                    {loadingInfo ? (
-                                        <div className="h-8 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" />
-                                    ) : card.balance !== null ? (
-                                        `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
-                                    ) : (
-                                        <span className="opacity-20">—</span>
-                                    )}
-                                    <span className="text-xs font-bold text-[var(--text-secondary)] ml-2 opacity-50">{card.chain}</span>
-                                </div>
-                                {!loadingInfo && card.usdValue !== null && (
-                                    <p className="text-xs font-bold text-[var(--text-secondary)] mt-1 opacity-70">
-                                        ≈ ${card.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </p>
-                                )}
-                            </div>
-
-                            {/* Address Display */}
+            {activeMainTab === 'assets' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    {mergedCards.map((card) => {
+                        const accent = CHAIN_ACCENT[card.chain] || 'var(--primary-color)';
+                        return (
                             <div
-                                onClick={() => {
-                                    navigator.clipboard.writeText(card.address);
-                                    showNotification(`${card.chain} address copied!`, 'success');
-                                }}
-                                className="bg-[var(--bg-canvas)]/50 border border-[var(--border-color)] rounded-2xl p-3 flex items-center gap-2 group/addr z-10 cursor-pointer hover:bg-[var(--bg-card)] transition-all"
+                                key={card.chain}
+                                className="group relative bg-[var(--bg-card)] border border-[var(--border-color)] rounded-[32px] p-6 hover:shadow-2xl hover:shadow-[var(--primary-color)]/5 transition-all duration-500 hover:-translate-y-1 overflow-hidden flex flex-col gap-4"
                             >
-                                <code className="text-[10px] font-mono font-bold text-[var(--text-secondary)] flex-1 truncate opacity-80 group-hover/addr:opacity-100 transition-opacity">
-                                    {card.address}
-                                </code>
-                                <div className="flex gap-1">
-                                    <CopyButton text={card.address} size="sm" />
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-white/[0.03] -mr-8 -mt-8 rounded-full" />
+
+                                {/* Top: Icon + Chain */}
+                                <div className="flex items-center justify-between z-10">
+                                    <div className="flex items-center gap-3">
+                                        <div
+                                            className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner relative"
+                                            style={{ backgroundColor: `${accent}15` }}
+                                        >
+                                            <div className="absolute inset-0 rounded-xl border border-white/5" />
+                                            {card.imageUrl ? (
+                                                <img src={card.imageUrl} alt={card.chain} className="w-6 h-6 object-contain" />
+                                            ) : (
+                                                <span className="font-bold text-xs" style={{ color: accent }}>{card.chain[0]}</span>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-[var(--text-primary)] leading-tight">{card.chain}</h4>
+                                            <p className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tighter opacity-70">Mainnet</p>
+                                        </div>
+                                    </div>
+                                    {card.change24h !== null && (
+                                        <div className={`text-[10px] font-black px-2 py-1 rounded-lg ${card.change24h >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
+                                            {card.change24h >= 0 ? '↑' : '↓'} {Math.abs(card.change24h).toFixed(2)}%
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Balance Info */}
+                                <div className="py-2 z-10">
+                                    <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
+                                        {loadingInfo ? (
+                                            <div className="h-8 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" />
+                                        ) : card.balance !== null ? (
+                                            `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
+                                        ) : (
+                                            <span className="opacity-20">—</span>
+                                        )}
+                                        <span className="text-xs font-bold text-[var(--text-secondary)] ml-2 opacity-50">{card.chain}</span>
+                                    </div>
+                                    {!loadingInfo && card.usdValue !== null && (
+                                        <p className="text-xs font-bold text-[var(--text-secondary)] mt-1 opacity-70">
+                                            ≈ ${card.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Address Display */}
+                                <div
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(card.address);
+                                        showNotification(`${card.chain} address copied!`, 'success');
+                                    }}
+                                    className="bg-[var(--bg-canvas)]/50 border border-[var(--border-color)] rounded-2xl p-3 flex items-center gap-2 group/addr z-10 cursor-pointer hover:bg-[var(--bg-card)] transition-all"
+                                >
+                                    <code className="text-[10px] font-mono font-bold text-[var(--text-secondary)] flex-1 truncate opacity-80 group-hover/addr:opacity-100 transition-opacity">
+                                        {card.address}
+                                    </code>
+                                    <div className="flex gap-1">
+                                        <CopyButton text={card.address} size="sm" />
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setQrTarget(card as any);
+                                            }}
+                                            className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-all active:scale-90"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex flex-wrap gap-2 z-10 mt-auto">
+                                    {isOwner && (
+                                        <>
+                                            <button
+                                                onClick={() => setSendTarget(card as any)}
+                                                className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-all group/btn"
+                                            >
+                                                Send
+                                            </button>
+                                            {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20'].includes(card.chain) && (
+                                                <button
+                                                    disabled
+                                                    className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed flex items-center justify-center gap-1.5"
+                                                >
+                                                    Swap
+                                                    <span className="px-1.5 py-0.5 rounded-md bg-[var(--primary-color)]/10 text-[var(--primary-color)] text-[8px]">Soon</span>
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
                                     <button
                                         onClick={() => setQrTarget(card as any)}
-                                        className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-all active:scale-90"
+                                        className={`${isOwner ? 'w-full' : 'w-full'} py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--primary-color)] hover:text-white transition-all`}
                                     >
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                                        </svg>
+                                        Receive
                                     </button>
                                 </div>
                             </div>
-
-                            {/* Action Buttons */}
-                            <div className="flex flex-wrap gap-2 z-10 mt-auto">
-                                {isOwner && (
-                                    <>
-                                        <button
-                                            onClick={() => setSendTarget(card as any)}
-                                            className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-all group/btn"
-                                        >
-                                            Send
-                                        </button>
-                                        {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20'].includes(card.chain) && (
-                                            <button
-                                                disabled
-                                                className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed flex items-center justify-center gap-1.5"
-                                            >
-                                                Swap
-                                                <span className="px-1.5 py-0.5 rounded-md bg-[var(--primary-color)]/10 text-[var(--primary-color)] text-[8px]">Soon</span>
-                                            </button>
-                                        )}
-                                    </>
-                                )}
-                                <button
-                                    onClick={() => setQrTarget(card as any)}
-                                    className={`${isOwner ? 'w-full' : 'w-full'} py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--primary-color)] hover:text-white transition-all`}
-                                >
-                                    Receive
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <Web3ActivityFeed username={username} />
+                </div>
+            )}
 
             {/* QR Modal */}
             {qrTarget && (
@@ -663,6 +690,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
             {/* Send Modal */}
             {sendTarget && (
                 <SendModal
+                    username={username}
                     chain={sendTarget.chain}
                     address={sendTarget.address}
                     imageUrl={sendTarget.imageUrl}
@@ -676,23 +704,14 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                         NotificationService.addLocalNotification(
                             username,
                             `Sent: -${Number(amt).toFixed(6)} ${sendTarget.chain} (Hash: ${shortHash})`,
-                            'send'
+                            'send',
+                            'wallet',
+                            hash,
+                            sendTarget.chain
                         );
                     }}
                 />
             )}
-            {/* Import Modal */}
-            {showImport && (
-                <ImportModal
-                    onClose={() => setShowImport(false)}
-                    onImport={onImportPhrase}
-                />
-            )}
-
-            {/* Recent Activity Feed */}
-            <div className="pt-8 border-t border-[var(--border-color)] mt-12">
-                <Web3ActivityFeed username={username} />
-            </div>
 
             {/* HiveAuth QR Overlay */}
             {authQR && (

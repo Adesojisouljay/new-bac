@@ -19,11 +19,25 @@ export function NotificationDropdown({ username }: NotificationDropdownProps) {
         setLoading(true);
         const remoteData = await NotificationService.getNotifications(username, 10);
         const localData = NotificationService.getLocalNotifications(username);
+        const hiveLogData = await NotificationService.getWeb3History(username, 50);
 
-        // Merge and sort by date descending
-        const combined = [...localData, ...remoteData].sort((a, b) =>
-            new Date(b.date).getTime() - new Date(a.date).getTime()
-        ).slice(0, 15);
+        // Merge and sort by date descending with improved deduplication
+        const combined = [...localData, ...hiveLogData, ...remoteData]
+            .filter((v, i, a) => {
+                // Deduplicate by ID
+                const firstById = a.findIndex(t => t.id === v.id) === i;
+                if (!firstById) return false;
+
+                // Deduplicate by txHash (prefers local which is earlier in the array)
+                if (v.txHash) {
+                    const firstByHash = a.findIndex(t => t.txHash === v.txHash) === i;
+                    return firstByHash;
+                }
+                return true;
+            })
+            .sort((a, b) =>
+                new Date(b.date).getTime() - new Date(a.date).getTime()
+            ).slice(0, 30);
 
         setNotifications(combined);
         setUnreadCount(NotificationService.getUnreadCount(combined, lastCheckedId));
@@ -131,8 +145,19 @@ export function NotificationDropdown({ username }: NotificationDropdownProps) {
                                             <p className="text-sm text-[var(--text-primary)] leading-tight mb-1 group-hover:text-[var(--primary-color)] transition-colors">
                                                 {n.msg}
                                             </p>
-                                            <p className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider">
+                                            <p className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-wider flex items-center gap-2">
                                                 {new Date(n.date + 'Z').toLocaleString()}
+                                                {(n.txHash || n.address) && (
+                                                    <a
+                                                        href={NotificationService.getExplorerUrl(n.chain || '', n.txHash, n.address)}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="text-[var(--primary-color)] hover:underline"
+                                                    >
+                                                        VIEW ↗
+                                                    </a>
+                                                )}
                                             </p>
                                         </div>
                                     </Link>
