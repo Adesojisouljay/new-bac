@@ -3,6 +3,8 @@ import { X, Send, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { web3WalletService } from '../../../services/web3WalletService';
 import { signingService } from '../../../services/signingService';
 import { useNotification } from '../../../contexts/NotificationContext';
+import { fetchHiveMetadata } from '../../../services/hiveMetadataService';
+import { User, Wallet as WalletIcon, Loader2, CheckCircle2 as ConfirmedIcon } from 'lucide-react';
 
 interface SendModalProps {
     chain: string;
@@ -17,6 +19,10 @@ interface SendModalProps {
 
 export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnlock, onClose, onSuccess }: SendModalProps) {
     const [to, setTo] = useState('');
+    const [sendMode, setSendMode] = useState<'username' | 'address'>('username');
+    const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+    const [isResolving, setIsResolving] = useState(false);
+    const [resolveError, setResolveError] = useState<string | null>(null);
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
     const [fee, setFee] = useState<number | null>(null);
@@ -26,11 +32,47 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
     const { showNotification } = useNotification();
 
     useEffect(() => {
+        const resolveUsername = async () => {
+            if (sendMode !== 'username' || !to) {
+                setResolvedAddress(null);
+                setResolveError(null);
+                return;
+            }
+
+            const cleanUsername = to.replace(/^@/, '').trim().toLowerCase();
+            if (!cleanUsername) return;
+
+            setIsResolving(true);
+            setResolveError(null);
+            try {
+                const tokens = await fetchHiveMetadata(cleanUsername);
+                const chainToken = tokens.find(t => t.symbol === chain && t.type === 'CHAIN');
+
+                if (chainToken?.meta?.address) {
+                    setResolvedAddress(chainToken.meta.address);
+                } else {
+                    setResolvedAddress(null);
+                    setResolveError(`@${cleanUsername} has no ${chain} address linked.`);
+                }
+            } catch (err) {
+                console.error('Resolution error:', err);
+                setResolveError('Failed to resolve Hive user data.');
+            } finally {
+                setIsResolving(false);
+            }
+        };
+
+        const timer = setTimeout(resolveUsername, 600);
+        return () => clearTimeout(timer);
+    }, [to, sendMode, chain]);
+
+    useEffect(() => {
         const fetchFee = async () => {
-            if (to && amount && !isNaN(Number(amount))) {
+            const destination = sendMode === 'username' ? resolvedAddress : to;
+            if (destination && amount && !isNaN(Number(amount))) {
                 setFetchingFee(true);
                 try {
-                    const res = await web3WalletService.estimateFee(chain, address, to, Number(amount));
+                    const res = await web3WalletService.estimateFee(chain, address, destination, Number(amount));
                     if (res.success) {
                         const feeVal = typeof res.fee === 'object' ? res.fee.fee : res.fee;
                         setFee(Number(feeVal));
@@ -46,7 +88,7 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
         };
         const timer = setTimeout(fetchFee, 500);
         return () => clearTimeout(timer);
-    }, [to, amount, chain, address]);
+    }, [to, resolvedAddress, sendMode, amount, chain, address]);
 
     const handleSend = async () => {
         if (!privateKey) {
@@ -62,7 +104,9 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
             return;
         }
 
-        if (!to || !amount || isNaN(Number(amount))) {
+        const destination = sendMode === 'username' ? resolvedAddress : to;
+
+        if (!destination || !amount || isNaN(Number(amount))) {
             setError('Please enter a valid recipient and amount');
             return;
         }
@@ -77,14 +121,14 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
 
         try {
             // 1. Get transaction parameters (nonce, gas, blockhash, etc.)
-            const params = await web3WalletService.getTxParams(chain, address, to, Number(amount));
+            const params = await web3WalletService.getTxParams(chain, address, destination, Number(amount));
 
             let signedTx = '';
 
             // 2. Sign locally based on the chain
             if (chain === 'ETH' || chain === 'BNB') {
                 signedTx = await signingService.signEthTransaction(privateKey, {
-                    to,
+                    to: destination,
                     value: (Number(amount) * 1e18).toString(), // simplified wei conversion
                     nonce: params.nonce,
                     gasLimit: params.gasLimit,
@@ -94,14 +138,14 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
             } else if (chain === 'SOL') {
                 signedTx = await signingService.signSolTransaction(privateKey, {
                     from: address,
-                    to,
+                    to: destination,
                     amount: Number(amount),
                     recentBlockhash: params.recentBlockhash
                 });
             } else if (chain === 'BTC') {
                 signedTx = await signingService.signBtcTransaction(privateKey, {
                     from: address,
-                    to,
+                    to: destination,
                     amount: Number(amount),
                     utxos: params.utxos,
                     feeRate: params.feeRate
@@ -109,13 +153,13 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
             } else if (chain === 'TRON') {
                 // TRON backend gives us the transaction object
                 signedTx = await signingService.signTronTransaction(privateKey, {
-                    to,
+                    to: destination,
                     amount: Number(amount),
                     transaction: params.transaction
                 });
             } else if (chain === 'APTOS') {
                 signedTx = await signingService.signAptosTransaction(privateKey, {
-                    to,
+                    to: destination,
                     amount: Number(amount),
                     sequenceNumber: params.sequenceNumber,
                     chainId: params.chainId
@@ -187,16 +231,67 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                     </div>
                 </div>
 
+                {/* Modes */}
+                <div className="flex bg-[var(--bg-canvas)] p-1 rounded-2xl mb-6 border border-[var(--border-color)]">
+                    <button
+                        onClick={() => { setSendMode('username'); setTo(''); }}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-xl transition-all ${sendMode === 'username' ? 'bg-[var(--bg-card)] text-[var(--primary-color)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        <User size={14} />
+                        Hive User
+                    </button>
+                    <button
+                        onClick={() => { setSendMode('address'); setTo(''); }}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-xl transition-all ${sendMode === 'address' ? 'bg-[var(--bg-card)] text-[var(--primary-color)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        <WalletIcon size={14} />
+                        Wallet Address
+                    </button>
+                </div>
+
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-1.5 ml-1">Recipient Address</label>
-                        <input
-                            type="text"
-                            value={to}
-                            onChange={(e) => setTo(e.target.value)}
-                            placeholder={`Enter ${chain} address`}
-                            className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] focus:border-[var(--primary-color)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all placeholder:opacity-30"
-                        />
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-1.5 ml-1">
+                            {sendMode === 'username' ? 'Hive Username' : 'Recipient Address'}
+                        </label>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                value={to}
+                                onChange={(e) => setTo(e.target.value)}
+                                placeholder={sendMode === 'username' ? "Enter username (e.g. @adesoji)" : `Enter ${chain} address`}
+                                className={`w-full bg-[var(--bg-canvas)] border rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all placeholder:opacity-30 ${resolveError ? 'border-red-500/50' : 'border-[var(--border-color)] focus:border-[var(--primary-color)]'}`}
+                            />
+                            {isResolving && (
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                    <Loader2 size={16} className="animate-spin text-[var(--primary-color)]" />
+                                </div>
+                            )}
+                            {resolvedAddress && !isResolving && sendMode === 'username' && (
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-green-500">
+                                    <ConfirmedIcon size={16} />
+                                </div>
+                            )}
+                        </div>
+
+                        {sendMode === 'username' && (
+                            <div className="mt-2 min-h-[1.5rem]">
+                                {isResolving && (
+                                    <p className="text-[10px] text-[var(--text-secondary)] animate-pulse pl-1">Resolving Hive user data...</p>
+                                )}
+                                {resolveError && (
+                                    <p className="text-[10px] text-red-500 pl-1 font-medium">{resolveError}</p>
+                                )}
+                                {resolvedAddress && !isResolving && (
+                                    <div className="flex flex-col gap-0.5 pl-1">
+                                        <p className="text-[10px] text-green-500 font-bold uppercase tracking-wider">Address Resolved</p>
+                                        <p className="text-[11px] font-mono text-[var(--text-secondary)] break-all opacity-80 leading-tight">
+                                            {resolvedAddress}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     <div>
