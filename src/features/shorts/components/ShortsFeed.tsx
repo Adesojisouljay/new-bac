@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+
 import { shortService, Short } from '../services/shortService';
 import { socketService } from '../../../services/socketService';
 import {
@@ -14,8 +16,11 @@ import {
     DollarSign,
     Video,
     X,
-    Send
+    Send,
+    Plus
 } from 'lucide-react';
+import { ShortCreator } from './ShortCreator';
+
 
 import { messageService } from '../../messages/services/messageService';
 
@@ -23,6 +28,8 @@ import { messageService } from '../../messages/services/messageService';
 import { transactionService } from '../../wallet/services/transactionService';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { VoteSlider } from '../../feed/components/VoteSlider';
+import { ShareModal } from '../../../components/ShareModal';
+
 
 
 import { WalletActionsModal } from '../../wallet/components/WalletActionsModal';
@@ -38,11 +45,17 @@ interface ShortsFeedProps {
 }
 
 export const ShortsFeed: React.FC<ShortsFeedProps> = ({ onClose, communityId = 'breakaway' }) => {
+    const navigate = useNavigate();
+
     const [shorts, setShorts] = useState<Short[]>([]);
     const [activeIndex, setActiveIndex] = useState(0);
     const [isMuted, setIsMuted] = useState(true);
     const [isLoading, setIsLoading] = useState(true);
+    const [showShortCreator, setShowShortCreator] = useState(false);
+    const [isReplyingGlobal, setIsReplyingGlobal] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+
+
 
     const loadShorts = useCallback(async () => {
         setIsLoading(true);
@@ -90,19 +103,27 @@ export const ShortsFeed: React.FC<ShortsFeedProps> = ({ onClose, communityId = '
 
     return (
         <div className="fixed inset-0 bg-black z-[110] text-white overflow-hidden flex flex-col items-center">
-            {/* Header / Close */}
-            <div className="absolute top-6 left-6 z-[120] flex items-center gap-4">
+            {/* Context-Aware Global Close Button (Top Right) */}
+            <div className="absolute top-4 right-4 z-[140]">
                 <button
-                    onClick={onClose}
-                    className="p-3 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-all active:scale-90"
+                    onClick={() => {
+                        if (isReplyingGlobal) {
+                            setIsReplyingGlobal(false);
+                        } else {
+                            onClose ? onClose() : navigate(-1);
+                        }
+                    }}
+                    className="p-3 bg-black/40 backdrop-blur-md rounded-2xl text-white hover:bg-black/60 transition-all border border-white/20 shadow-xl active:scale-95"
+                    title={isReplyingGlobal ? "Close Comments" : "Close Shorts"}
                 >
-                    <X size={24} />
+                    <X size={22} />
                 </button>
-                <div className="flex flex-col">
-                    <h2 className="font-black uppercase tracking-tighter text-xl leading-none">Shorts</h2>
-                    <span className="text-[10px] font-bold text-white/60 uppercase tracking-widest mt-1">{communityId} Community</span>
-                </div>
+
             </div>
+
+
+
+
 
 
 
@@ -136,7 +157,11 @@ export const ShortsFeed: React.FC<ShortsFeedProps> = ({ onClose, communityId = '
                             isActive={index === activeIndex}
                             isMuted={isMuted}
                             onToggleMute={() => setIsMuted(!isMuted)}
+                            isReplying={isReplyingGlobal}
+                            setIsReplying={setIsReplyingGlobal}
+                            onCreateShort={() => setShowShortCreator(true)}
                         />
+
                     ))
                 )}
             </div>
@@ -158,6 +183,28 @@ export const ShortsFeed: React.FC<ShortsFeedProps> = ({ onClose, communityId = '
                     <ChevronDown size={32} />
                 </button>
             </div>
+
+            {/* Mobile Create FAB (Bottom Right) */}
+            <button
+                onClick={() => setShowShortCreator(true)}
+                className="md:hidden fixed right-6 bottom-8 z-[120] w-14 h-14 bg-black/40 backdrop-blur-xl border border-white/20 rounded-[22px] flex items-center justify-center shadow-2xl active:scale-90 transition-all group"
+            >
+                <div className="relative">
+                    <Plus size={28} className="text-red-500 group-hover:rotate-90 transition-transform duration-300" strokeWidth={3} />
+                    {/* Subtle glow effect */}
+                    <div className="absolute inset-0 bg-red-500/20 blur-xl rounded-full -z-10 animate-pulse" />
+                </div>
+            </button>
+
+            {showShortCreator && (
+                <ShortCreator
+                    onClose={() => setShowShortCreator(false)}
+                    onSuccess={() => {
+                        setShowShortCreator(false);
+                        loadShorts();
+                    }}
+                />
+            )}
         </div>
     );
 };
@@ -167,9 +214,21 @@ interface ShortItemProps {
     isActive: boolean;
     isMuted: boolean;
     onToggleMute: () => void;
+    isReplying: boolean;
+    setIsReplying: (val: boolean) => void;
+    onCreateShort: () => void;
 }
 
-const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggleMute }) => {
+const ShortItem: React.FC<ShortItemProps> = ({
+    short,
+    isActive,
+    isMuted,
+    onToggleMute,
+    isReplying,
+    setIsReplying,
+    onCreateShort
+}) => {
+
 
 
     const { showNotification } = useNotification();
@@ -180,8 +239,8 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
     const [hasLiked, setHasLiked] = useState(false);
     const [voting, setVoting] = useState(false);
     const [showVoteSlider, setShowVoteSlider] = useState(false);
-    const [isReplying, setIsReplying] = useState(false);
     const [replyContent, setReplyContent] = useState('');
+
     const [sendingReply, setSendingReply] = useState(false);
     const [comments, setComments] = useState<any[]>([]);
     const [loadingComments, setLoadingComments] = useState(false);
@@ -189,6 +248,7 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
     const [showTipModal, setShowTipModal] = useState(false);
     const [showTipMenu, setShowTipMenu] = useState(false);
     const [showWeb3Tip, setShowWeb3Tip] = useState(false);
+    const [showShareModal, setShowShareModal] = useState(false);
     const [hasTipped, setHasTipped] = useState(short.hasTipped || false);
 
     useEffect(() => {
@@ -377,11 +437,18 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
 
     return (
         <div className="w-full h-full snap-start relative flex bg-black overflow-hidden transition-all duration-500 ease-in-out">
+            {/* Backdrop for mobile comments */}
+            {isReplying && (
+                <div
+                    className="fixed inset-0 bg-black/60 z-[125] md:hidden animate-in fade-in duration-300"
+                    onClick={() => setIsReplying(false)}
+                />
+            )}
+
             {/* Video Container */}
-            <div className={`relative flex items-center justify-center transition-all duration-500 ease-in-out ${isReplying ? 'w-[60%] sm:w-[65%]' : 'w-full'}`}>
+            <div className={`relative flex items-center justify-center transition-all duration-500 ease-in-out ${isReplying ? 'w-full md:w-[60%] lg:w-[65%]' : 'w-full'}`}>
+
                 <video
-
-
                     ref={videoRef}
                     src={short.content.videoUrl}
                     className="h-full w-full object-contain cursor-pointer relative z-0"
@@ -393,6 +460,33 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
                     crossOrigin="anonymous"
                 />
 
+                {/* Sliding Header Actions (Create & Mute) */}
+                <div className={`absolute top-4 ${isReplying ? 'right-4' : 'right-20'} z-40 flex items-center gap-3 transition-all duration-500 ease-in-out`}>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onCreateShort();
+                        }}
+                        className="flex items-center gap-2 px-5 py-3 bg-black/60 backdrop-blur-xl rounded-[20px] text-red-500 font-black text-[11px] uppercase tracking-[0.2em] border border-white/20 hover:bg-black/80 hover:border-white/40 transition-all shadow-2xl active:scale-95 group"
+                    >
+                        <Plus size={18} className="group-hover:rotate-90 transition-transform duration-300" strokeWidth={3} />
+                        <span>Create</span>
+                    </button>
+
+
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleMute();
+                        }}
+                        className="p-3 bg-black/60 backdrop-blur-xl rounded-[20px] text-white hover:bg-black/80 hover:border-white/40 transition-all border border-white/20 shadow-2xl active:scale-95"
+                    >
+                        {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                    </button>
+
+                </div>
+
+
                 {/* Pause Overlay */}
                 {isPaused && (
                     <div onClick={togglePlay} className="absolute inset-0 flex items-center justify-center bg-black/20 z-10 cursor-pointer">
@@ -402,16 +496,9 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
                     </div>
                 )}
 
-                {/* Local Mute Toggle (Relative to Video Container) */}
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleMute();
-                    }}
-                    className="absolute top-6 right-6 z-40 p-3 bg-black/20 backdrop-blur-md rounded-full hover:bg-black/40 text-white transition-all active:scale-90 border border-white/5"
-                >
-                    {isMuted ? <VolumeX size={24} /> : <Volume2 size={24} />}
-                </button>
+                {/* Redundant local mute button removed to favor global header toggle */}
+
+
 
 
                 {/* Info Overlay (Bottom) */}
@@ -442,7 +529,8 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
                 </div>
 
                 {/* Interaction Sidebar (Right) */}
-                <div className="absolute right-6 bottom-32 flex flex-col gap-8 z-40">
+                <div className="absolute right-2 bottom-32 flex flex-col gap-6 z-40">
+
                     <div className="flex flex-col items-center gap-1 relative">
                         {showVoteSlider && (
                             <VoteSlider
@@ -535,9 +623,13 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
                     </div>
 
 
-                    <button className="p-4 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-all active:scale-90">
+                    <button
+                        onClick={() => setShowShareModal(true)}
+                        className="p-4 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-all active:scale-90"
+                    >
                         <Share2 size={28} />
                     </button>
+
 
                     <button className="p-4 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-all active:scale-90">
                         <MoreVertical size={28} />
@@ -546,13 +638,25 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
 
             </div>
 
-            {/* Comment Sidebar Panel */}
-            <div className={`h-full bg-[#121212] border-l border-white/10 flex flex-col transition-all duration-500 ease-in-out ${isReplying ? 'w-[40%] sm:w-[35%]' : 'w-0 opacity-0 invisible'}`}>
+            {/* Comment Sidebar Panel (Desktop: Side, Mobile: Bottom Sheet) */}
+            <div className={`fixed md:relative bottom-0 left-0 right-0 md:inset-y-0 z-[130] md:z-auto
+                bg-[#121212] border-t md:border-t-0 md:border-l border-white/10
+                flex flex-col transition-all duration-500 ease-in-out
+                rounded-t-[32px] md:rounded-t-none
+                ${isReplying
+                    ? 'h-[75vh] md:h-full md:w-[40%] lg:w-[35%] translate-y-0 opacity-100 visible'
+                    : 'h-0 md:w-0 translate-y-full md:translate-y-0 opacity-0 invisible'
+                }`}
+            >
+                {/* Mobile Drag Handle */}
+                <div className="flex justify-center py-3 md:hidden">
+                    <div className="w-12 h-1.5 bg-white/10 rounded-full" />
+                </div>
+
                 <div className="p-4 border-b border-white/10 flex items-center justify-between">
-                    <span className="font-black text-sm uppercase tracking-wider text-white/60">Comments {comments.length}</span>
-                    <button onClick={() => setIsReplying(false)} className="p-2 hover:bg-white/10 rounded-full transition-all">
-                        <X size={20} className="text-white/60" />
-                    </button>
+                    <span className="font-black text-sm uppercase tracking-wider text-white/60">Comments {commentCount}</span>
+                    <div className="w-8" /> {/* Spacer for symmetry since global X is above */}
+
                 </div>
 
                 {/* Comments List */}
@@ -570,7 +674,6 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
                         comments.map((comment: any, idx: number) => {
                             return (
                                 <div key={idx} className="flex gap-3 group">
-
                                     <img
                                         src={`https://images.hive.blog/u/${comment.author}/avatar`}
                                         className="w-8 h-8 rounded-full border border-white/10 shadow-lg"
@@ -599,8 +702,9 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
                     )}
                 </div>
 
-                {/* Side Panel Reply Input */}
-                <div className="p-4 bg-[#181818] border-t border-white/5">
+                {/* Reply Input */}
+                <div className="p-4 pb-8 md:pb-4 bg-[#181818] border-t border-white/5">
+
                     <div className="relative">
                         <textarea
                             rows={1}
@@ -668,6 +772,14 @@ const ShortItem: React.FC<ShortItemProps> = ({ short, isActive, isMuted, onToggl
             )}
 
 
+            {/* Share Modal */}
+            <ShareModal
+                isOpen={showShareModal}
+                onClose={() => setShowShareModal(false)}
+                url={`${window.location.origin}/post/${short.username}/${short.permlink}`}
+                title={short.content.caption || `Short by @${short.username}`}
+            />
         </div>
+
     );
 };

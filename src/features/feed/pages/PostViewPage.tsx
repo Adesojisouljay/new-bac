@@ -6,10 +6,12 @@ import { CommentBox } from '../components/CommentBox';
 import { CommentCard } from '../../profiles/components/CommentCard';
 import { VoteSlider } from '../components/VoteSlider';
 import { VoterListModal } from '../components/VoterListModal';
-import { ThumbsUp, Repeat, MessageSquare, Volume2, Clock, BookOpen, X, Search, ChevronLeft, Share, Twitter, Linkedin, MessageCircle, Copy, Check, Bookmark, MoreHorizontal, History, Zap, DollarSign, Shield } from 'lucide-react';
+import { ThumbsUp, Repeat, MessageSquare, Volume2, Clock, BookOpen, X, Search, ChevronLeft, Share, Bookmark, MoreHorizontal, History, Zap, DollarSign, Shield } from 'lucide-react';
 import { transactionService } from '../../wallet/services/transactionService';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
+import { ShareModal } from '../../../components/ShareModal';
+
 
 export default function PostViewPage() {
     const { author, permlink } = useParams();
@@ -25,7 +27,7 @@ export default function PostViewPage() {
     const [showEditHistory, setShowEditHistory] = useState(false);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
     const [isBookmarked, setIsBookmarked] = useState(false);
-    const [copied, setCopied] = useState(false);
+
     const [scrollProgress, setScrollProgress] = useState(0);
     const [showScrollTop, setShowScrollTop] = useState(false);
     const [postVersions, setPostVersions] = useState<any[]>([]);
@@ -300,11 +302,10 @@ export default function PostViewPage() {
     const handleCopyLink = () => {
         const url = window.location.href;
         navigator.clipboard.writeText(url);
-        setCopied(true);
         showNotification("Link copied to clipboard!", 'success');
-        setTimeout(() => setCopied(false), 2000);
         setShowMoreMenu(false);
     };
+
 
     const toggleBookmark = () => {
         if (!post) return;
@@ -415,32 +416,6 @@ export default function PostViewPage() {
     const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
     const shareTitle = post?.title || '';
 
-    const sharePlatforms = [
-        {
-            name: 'Twitter',
-            icon: <Twitter size={20} />,
-            color: 'bg-[#1DA1F2]',
-            url: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl)}`
-        },
-        {
-            name: 'WhatsApp',
-            icon: <MessageCircle size={20} />,
-            color: 'bg-[#25D366]',
-            url: `https://wa.me/?text=${encodeURIComponent(shareTitle + ' ' + shareUrl)}`
-        },
-        {
-            name: 'LinkedIn',
-            icon: <Linkedin size={20} />,
-            color: 'bg-[#0077B5]',
-            url: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`
-        },
-        {
-            name: 'Reddit',
-            icon: <div className="font-bold">r/</div>,
-            color: 'bg-[#FF4500]',
-            url: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(shareTitle)}`
-        },
-    ];
 
     // Check for existing vote when post loads
     useEffect(() => {
@@ -1207,70 +1182,13 @@ export default function PostViewPage() {
             {post && showVoters && <VoterListModal post={post} payout={payout} onClose={() => setShowVoters(false)} />}
 
             {/* Share Modal - Premium Style */}
-            {
-                showShareModal && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-                        <div
-                            className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in"
-                            onClick={() => setShowShareModal(false)}
-                        />
-                        <div className="relative w-full max-w-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 fade-in">
-                            <div className="p-6 border-b border-[var(--border-color)] flex items-center justify-between bg-[var(--bg-canvas)]/50">
-                                <h3 className="text-lg font-bold text-[var(--text-primary)]">Share Post</h3>
-                                <button
-                                    onClick={() => setShowShareModal(false)}
-                                    className="p-2 hover:bg-[var(--bg-canvas)] rounded-full transition-colors text-[var(--text-secondary)]"
-                                >
-                                    <X size={18} />
-                                </button>
-                            </div>
+            <ShareModal
+                isOpen={showShareModal}
+                onClose={() => setShowShareModal(false)}
+                url={shareUrl}
+                title={shareTitle}
+            />
 
-                            <div className="p-6 space-y-6">
-                                {/* Copy Link Section */}
-                                <div className="space-y-2">
-                                    <label className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-bold">Copy Link</label>
-                                    <div className="flex gap-2">
-                                        <div className="flex-1 bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-xs text-[var(--text-secondary)] truncate">
-                                            {shareUrl}
-                                        </div>
-                                        <button
-                                            onClick={handleCopyLink}
-                                            className={`p-2.5 rounded-xl transition-all border ${copied ? 'bg-green-500/10 border-green-500/30 text-green-600' : 'bg-[var(--primary-color)] border-transparent text-white hover:opacity-90 active:scale-95'}`}
-                                        >
-                                            {copied ? <Check size={18} /> : <Copy size={18} />}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Social Grid */}
-                                <div className="space-y-3">
-                                    <label className="text-[10px] uppercase tracking-wider text-[var(--text-secondary)] font-bold">Social Platforms</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {sharePlatforms.map(platform => (
-                                            <a
-                                                key={platform.name}
-                                                href={platform.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="flex items-center gap-3 p-3 rounded-xl bg-[var(--bg-canvas)] hover:shadow-md transition-all group border border-[var(--border-color)] hover:border-[var(--primary-color)]/30"
-                                            >
-                                                <div className={`w-8 h-8 rounded-lg ${platform.color} text-white flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform`}>
-                                                    {platform.icon}
-                                                </div>
-                                                <span className="text-xs font-bold text-[var(--text-primary)]">{platform.name}</span>
-                                            </a>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="text-[10px] text-center text-[var(--text-secondary)] italic opacity-60">
-                                    Tip: You can also copy/paste to Discord or Slack!
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )
-            }
             {
                 showCrossPostModal && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

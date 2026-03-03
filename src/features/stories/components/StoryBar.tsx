@@ -61,22 +61,26 @@ export const StoryBar: React.FC = () => {
     }, [selectedGroup, currentUserGroup, groupedStories]);
 
     return (
-        <>
-            <div className="flex items-center bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm min-h-[90px] overflow-hidden h-full">
+        <div className="w-full min-w-0">
+            <div className="flex items-center bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm min-h-[84px] md:min-h-[90px] overflow-hidden w-full">
+
+
                 {/* My Story Creator (Fixed Left) */}
                 <div
-                    className="flex flex-col items-center justify-center gap-1 w-[80px] py-3 flex-shrink-0 bg-[var(--bg-card)] z-10 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)] dark:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.3)] relative"
+                    className="flex flex-col items-center justify-center gap-1 w-[70px] md:w-[80px] py-3 flex-shrink-0 bg-[var(--bg-card)] z-10 shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)] dark:shadow-[4px_0_12px_-4px_rgba(0,0,0,0.3)] relative"
                 >
+
                     <div className="relative group">
                         {currentUserGroup ? (
                             <>
                                 <div
                                     onClick={() => setSelectedGroup(currentUserGroup)}
-                                    className={`w-14 h-14 rounded-full p-0.5 border-2 cursor-pointer hover:scale-105 transition-all ${currentUserGroup.stories.some(s => s.isOnchain || s.hiveTrxId)
+                                    className={`w-12 h-12 md:w-14 md:h-14 rounded-full p-0.5 border-2 cursor-pointer hover:scale-105 transition-all ${currentUserGroup.stories.some(s => s.isOnchain || s.hiveTrxId)
                                         ? 'border-amber-400'
                                         : 'border-[var(--primary-color)]'
                                         }`}
                                 >
+
                                     <img
                                         src={`https://images.hive.blog/u/${currentUserGroup.username}/avatar`}
                                         alt="Your Story"
@@ -93,11 +97,12 @@ export const StoryBar: React.FC = () => {
                         ) : (
                             <div
                                 onClick={() => setShowCreator(true)}
-                                className="w-14 h-14 rounded-full border-2 border-dashed border-[var(--border-color)] flex items-center justify-center cursor-pointer group-hover:border-[var(--primary-color)] transition-all bg-[var(--bg-canvas)]"
+                                className="w-12 h-12 md:w-14 md:h-14 rounded-full border-2 border-dashed border-[var(--border-color)] flex items-center justify-center cursor-pointer group-hover:border-[var(--primary-color)] transition-all bg-[var(--bg-canvas)]"
                             >
-                                <span className="text-2xl text-[var(--text-secondary)] group-hover:text-[var(--primary-color)]">+</span>
+                                <span className="text-xl md:text-2xl text-[var(--text-secondary)] group-hover:text-[var(--primary-color)]">+</span>
                             </div>
                         )}
+
                     </div>
                     <span className="text-[10px] font-bold text-[var(--text-secondary)]">Your Story</span>
                 </div>
@@ -118,11 +123,12 @@ export const StoryBar: React.FC = () => {
                                 onClick={() => setSelectedGroup(group)}
                                 className="flex flex-col items-center gap-1 w-[64px] flex-shrink-0 cursor-pointer group"
                             >
-                                <div className="relative w-14 h-14">
-                                    <div className={`w-14 h-14 rounded-full p-0.5 border-2 group-hover:scale-105 transition-all ${hasOnchain
+                                <div className="relative w-12 h-12 md:w-14 md:h-14">
+                                    <div className={`w-12 h-12 md:w-14 md:h-14 rounded-full p-0.5 border-2 group-hover:scale-105 transition-all ${hasOnchain
                                         ? 'border-amber-400'
                                         : 'border-[var(--primary-color)]'
                                         }`}>
+
                                         <img
                                             src={`https://images.hive.blog/u/${group.username}/avatar`}
                                             alt={group.username}
@@ -157,11 +163,12 @@ export const StoryBar: React.FC = () => {
                 <button
                     onClick={() => setShowOlder(prev => !prev)}
                     title={showOlder ? 'Showing last 48hrs — click to show only today' : 'Show older stories from yesterday'}
-                    className={`flex flex-col items-center justify-center gap-1 w-[68px] py-3 flex-shrink-0 border-l border-[var(--border-color)] transition-all ${showOlder
+                    className={`flex flex-col items-center justify-center gap-1 w-[60px] md:w-[68px] py-3 flex-shrink-0 border-l border-[var(--border-color)] transition-all ${showOlder
                         ? 'bg-[var(--primary-color)]/10 text-[var(--primary-color)]'
                         : 'text-[var(--text-secondary)] hover:bg-[var(--bg-canvas)]'
                         }`}
                 >
+
                     <History size={18} />
                     <span className="text-[9px] font-bold text-center leading-tight">
                         {showOlder ? 'Today only' : 'View older'}
@@ -185,6 +192,7 @@ export const StoryBar: React.FC = () => {
                     onPrev={handlePrevGroup}
                 />
             )}
-        </>
+        </div>
     );
 };
+

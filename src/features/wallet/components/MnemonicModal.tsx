@@ -4,18 +4,22 @@ import { CopyButton } from './CopyButton';
 
 interface MnemonicModalProps {
     mnemonic: string;
+    username: string;
     onConfirm: () => void;
 }
 
-export function MnemonicModal({ mnemonic, onConfirm }: MnemonicModalProps) {
+export function MnemonicModal({ mnemonic, username, onConfirm }: MnemonicModalProps) {
     const [confirmed, setConfirmed] = useState(false);
     const words = mnemonic.split(/\s+/);
 
+    const cleanUser = username?.replace(/^@/, '') || 'wallet';
+
     const handleDownload = () => {
+        console.log('[MnemonicModal] handleDownload called with username:', username);
         const element = document.createElement('a');
         const file = new Blob([mnemonic], { type: 'text/plain' });
         element.href = URL.createObjectURL(file);
-        element.download = 'breakaway-wallet-backup.txt';
+        element.download = `HIVE-${cleanUser}-breakaway-backup.txt`;
         document.body.appendChild(element);
         element.click();
         document.body.removeChild(element);
@@ -76,7 +80,7 @@ export function MnemonicModal({ mnemonic, onConfirm }: MnemonicModalProps) {
                             className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-canvas)] rounded-xl hover:bg-[var(--bg-card)] border border-[var(--border-color)] transition-colors group"
                         >
                             <Download className="w-4 h-4 text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]" />
-                            <span className="text-xs font-bold text-[var(--text-secondary)]">Download TXT</span>
+                            <span className="text-xs font-bold text-[var(--text-secondary)]">Save {cleanUser}.txt</span>
                         </button>
                     </div>
 
