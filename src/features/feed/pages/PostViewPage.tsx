@@ -299,14 +299,6 @@ export default function PostViewPage() {
         }
     };
 
-    const handleCopyLink = () => {
-        const url = window.location.href;
-        navigator.clipboard.writeText(url);
-        showNotification("Link copied to clipboard!", 'success');
-        setShowMoreMenu(false);
-    };
-
-
     const toggleBookmark = () => {
         if (!post) return;
         const bookmarks = JSON.parse(localStorage.getItem('hive_bookmarks') || '[]');

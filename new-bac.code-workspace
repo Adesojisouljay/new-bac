@@ -8,6 +8,12 @@
 		},
 		{
 			"path": "../boilerplate-points"
+		},
+		{
+			"path": "../bac-wallet-extension"
+		},
+		{
+			"path": "../bac-community-setup"
 		}
 	],
 	"settings": {}

@@ -14,7 +14,7 @@ import { TopicSidebar } from '../components/TopicSidebar';
 import { PostCard } from '../components/PostCard';
 import { ShortsFeed } from '../../shorts/components/ShortsFeed';
 import { ShortCreator } from '../../shorts/components/ShortCreator';
-import { Filter, RefreshCw, ChevronDown, ChevronUp, Globe, Users, Heart, MessageCircle, Play, Plus } from 'lucide-react';
+import { Play, Plus } from 'lucide-react';
 
 
 
