@@ -834,7 +834,7 @@ export default function FeedPage() {
             {showShorts && (
                 <ShortsFeed
                     onClose={() => setShowShorts(false)}
-                    communityId={config.id}
+                    communityId="breakaway"
                 />
             )}
 
