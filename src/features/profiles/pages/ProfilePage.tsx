@@ -21,9 +21,21 @@ export default function ProfilePage() {
     const navigate = useNavigate();
     const [profile, setProfile] = useState<any>(null);
 
+    const isGlobal = config?.id === 'global';
+
     // valid tabs - Prioritize the community tab for platform focus
-    const validTabs = ['community', 'blog', 'posts', 'comments', 'replies', 'wallet'];
-    const activeTab = (section && validTabs.includes(section)) ? section : 'community';
+    const validTabs = useMemo(() => {
+        const tabs = ['community', 'blog', 'posts', 'comments', 'replies', 'wallet'];
+        if (isGlobal) {
+            return tabs.filter(t => t !== 'community');
+        }
+        return tabs;
+    }, [isGlobal]);
+
+    const activeTab = useMemo(() => {
+        if (section && validTabs.includes(section)) return section;
+        return isGlobal ? 'blog' : 'community';
+    }, [section, validTabs, isGlobal]);
 
     const [feed, setFeed] = useState<Post[]>([]);
     const [wallet, setWallet] = useState<any>(null);
@@ -456,18 +468,18 @@ export default function ProfilePage() {
                                 <div className="relative">
                                     <button
                                         onClick={() => setShowMoreTabs(!showMoreTabs)}
-                                        className={`px-3 py-2 flex items-center gap-1 rounded-xl transition-all capitalize whitespace-nowrap text-xs font-medium ${['comments', 'replies', 'wallet', 'community'].includes(activeTab)
+                                        className={`px-3 py-2 flex items-center gap-1 rounded-xl transition-all capitalize whitespace-nowrap text-xs font-medium ${!['blog', 'posts'].includes(activeTab)
                                             ? 'bg-[var(--primary-color)] text-white shadow-md font-bold'
                                             : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)]'
                                             }`}
                                     >
-                                        {['comments', 'replies', 'wallet', 'community'].includes(activeTab) ? (activeTab === 'community' ? config?.name || 'Community' : activeTab) : 'More'}
+                                        {!['blog', 'posts'].includes(activeTab) ? (activeTab === 'community' ? config?.name || 'Community' : activeTab) : 'More'}
                                         <ChevronDown size={14} className={`transition-transform duration-200 ${showMoreTabs ? 'rotate-180' : ''}`} />
                                     </button>
 
                                     {showMoreTabs && (
                                         <div className="absolute left-0 mt-2 w-40 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-xl transition-all z-30 p-1 flex flex-col gap-1">
-                                            {['comments', 'replies', 'wallet', ...(config?.id === 'global' ? [] : ['community'])].map((tab) => (
+                                            {validTabs.filter(t => !['blog', 'posts'].includes(t)).map((tab) => (
                                                 <button
                                                     key={tab}
                                                     onClick={() => handleTabChange(tab)}

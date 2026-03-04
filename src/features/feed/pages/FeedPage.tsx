@@ -442,7 +442,7 @@ export default function FeedPage() {
                                                                 path = `/posts/${s.id}${tagParam && tagParam !== 'friends' && !['payout', 'muted'].includes(tagParam) ? `/${tagParam}` : ''}`;
                                                             }
                                                         } else {
-                                                            path = `/c/${config?.id || ''}/posts/${s.id}`;
+                                                            path = `/posts/${s.id}`;
                                                         }
                                                         navigate(path);
                                                     }}
@@ -504,7 +504,7 @@ export default function FeedPage() {
                                                                     path = `/posts/${opt.id}`;
                                                                 }
                                                             } else {
-                                                                path = `/c/${config.id}/posts/${opt.id}`;
+                                                                path = `/posts/${opt.id}`;
                                                             }
                                                             navigate(path);
                                                             setShowMoreFilters(false);
@@ -622,7 +622,7 @@ export default function FeedPage() {
                                                     <button
                                                         key={opt.id}
                                                         onClick={() => {
-                                                            const path = isGlobal ? `/posts/${opt.id}` : `/c/${config.id}/posts/${opt.id}`;
+                                                            const path = isGlobal ? `/posts/${opt.id}` : `/posts/${opt.id}`;
                                                             navigate(path);
                                                             setShowMoreFilters(false);
                                                         }}

@@ -241,7 +241,7 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                 {/* Community Badge Overlay (Top Right of Image) */}
                 {post.community && config?.id === 'global' && (
                     <Link
-                        to={`/c/${post.community}`}
+                        to={config?.id === post.community ? "/" : `/c/${post.community}`}
                         className="absolute top-3 right-3 px-3 py-1.5 rounded-lg bg-black/40 backdrop-blur-xl text-white text-[9px] font-black uppercase tracking-[0.1em] border border-white/10 hover:bg-[var(--primary-color)] hover:border-[var(--primary-color)] transition-all"
                     >
                         {post.community}
@@ -298,7 +298,7 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                                             <span className="opacity-30">·</span>
                                             <span className="opacity-60">in</span>
                                             <Link
-                                                to={`/c/${post.community}`}
+                                                to={config?.id === post.community ? "/" : `/c/${post.community}`}
                                                 className="text-[var(--primary-color)] font-bold hover:underline normal-case truncate max-w-[120px]"
                                                 onClick={(e) => e.stopPropagation()}
                                             >

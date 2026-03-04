@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useCommunity } from '../../community/context/CommunityContext';
 import { UnifiedDataService, CommunityDetails } from '../../../services/unified';
 import { Users, PlusCircle, ExternalLink, Globe, Search, ArrowRight } from 'lucide-react';
 import { SearchModal } from './SearchModal';
@@ -10,6 +11,7 @@ interface GlobalSidebarProps {
 
 export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
     const navigate = useNavigate();
+    const { config } = useCommunity();
     const currentUsername = localStorage.getItem('hive_user');
     const [stats, setStats] = useState<any>(null);
     const [suggestedUsers, setSuggestedUsers] = useState<{ username: string; reputation: number; avatar_url: string }[]>([]);
@@ -233,7 +235,7 @@ export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
 
                                     return (
                                         <div key={community.id} className="flex items-center justify-between group">
-                                            <Link to={`/c/${community.id}`} className="flex items-center gap-3 min-w-0">
+                                            <Link to={config?.id === community.id ? "/" : `/c/${community.id}`} className="flex items-center gap-3 min-w-0">
                                                 <img
                                                     src={community.avatar_url}
                                                     alt={community.title}
