@@ -279,7 +279,7 @@ export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
             )}
 
             {/* 3. Market Stats */}
-            <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
+            <div className="hidden xl:block bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                     <Link to="/market" className="inline-flex items-center gap-2 group">
                         <Globe size={14} className="text-blue-500 group-hover:scale-110 transition-transform duration-300" />
@@ -342,7 +342,7 @@ export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
             </div>
 
             {/* 4. Ecosystem Navigation */}
-            <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
+            <div className="hidden xl:block bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] mb-6 flex items-center gap-2">
                     <Globe size={14} className="text-purple-500" />
                     Hive Ecosystem

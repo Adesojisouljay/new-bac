@@ -429,7 +429,7 @@ export default function ProfilePage() {
                 {/* Right Column - Navigation Tabs & Main Content Feed */}
                 <div className="lg:col-span-9 space-y-6">
                     {/* Floating Glass Navigation Tabs & Search */}
-                    <div className="sticky top-[84px] z-20 mb-2 flex items-center justify-end gap-2 md:justify-between w-full h-[52px]">
+                    <div className="relative md:sticky md:top-[84px] z-20 mb-2 flex items-center justify-end gap-2 md:justify-between w-full h-[52px]">
                         {/* Mobile & Desktop Tabs Group */}
                         <div className={`flex items-center gap-2 transition-all duration-300 ${isSearchExpanded ? 'w-0 opacity-0 overflow-hidden md:w-auto md:opacity-100' : 'w-full opacity-100 mr-auto'}`}>
                             {/* Desktop Tabs (All visible) */}
