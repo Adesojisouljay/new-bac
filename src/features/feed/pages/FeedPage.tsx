@@ -14,7 +14,7 @@ import { TopicSidebar } from '../components/TopicSidebar';
 import { PostCard } from '../components/PostCard';
 import { ShortsFeed } from '../../shorts/components/ShortsFeed';
 import { ShortCreator } from '../../shorts/components/ShortCreator';
-import { Filter, RefreshCw, ChevronDown, ChevronUp, Globe, Users, Heart, MessageCircle, Play, Plus } from 'lucide-react';
+import { Play, Plus } from 'lucide-react';
 
 
 
@@ -322,7 +322,10 @@ export default function FeedPage() {
             <div className={`grid grid-cols-1 ${!isGlobal ? 'lg:grid-cols-4 xl:grid-cols-12' : 'lg:grid-cols-12'} gap-8`}>
 
                 {/* Left Column - Sidebar (Community or Topics) */}
-                <div className={`${!isGlobal ? 'lg:col-span-1 xl:col-span-3 block' : community || isExplicitCommunityRoute ? 'lg:col-span-3 block' : 'hidden xl:block xl:col-span-2'} order-2 lg:order-1`}>
+                <div className={`${activeTab === 'about'
+                    ? `block ${!isGlobal ? 'lg:col-span-1 xl:col-span-3' : 'lg:col-span-3'}`
+                    : (!isGlobal ? 'hidden xl:block xl:col-span-3' : community || isExplicitCommunityRoute ? 'hidden xl:block xl:col-span-3' : 'hidden xl:block xl:col-span-2')
+                    } order-2 lg:order-1`}>
                     {community ? (
                         <CommunitySidebar community={community} />
                     ) : isExplicitCommunityRoute ? (
@@ -335,7 +338,10 @@ export default function FeedPage() {
                 </div>
 
                 {/* Center Column - Main Feed */}
-                <div className={`${!isGlobal ? 'lg:col-span-3 xl:col-span-6' : community || isExplicitCommunityRoute ? 'lg:col-span-9' : 'lg:col-span-8 xl:col-span-7'} order-1 lg:order-2`}>
+                <div className={`${activeTab === 'about'
+                    ? (!isGlobal ? 'col-span-1 lg:col-span-3 xl:col-span-6' : community || isExplicitCommunityRoute ? 'col-span-1 lg:col-span-9' : 'col-span-1 lg:col-span-8 xl:col-span-7')
+                    : (!isGlobal ? 'col-span-1 lg:col-span-4 xl:col-span-6' : community || isExplicitCommunityRoute ? 'col-span-1 lg:col-span-12 xl:col-span-9' : 'col-span-1 lg:col-span-12 xl:col-span-7')
+                    } order-1 lg:order-2`}>
 
                     {community ? (
                         <div className="mb-6">
@@ -442,7 +448,7 @@ export default function FeedPage() {
                                                                 path = `/posts/${s.id}${tagParam && tagParam !== 'friends' && !['payout', 'muted'].includes(tagParam) ? `/${tagParam}` : ''}`;
                                                             }
                                                         } else {
-                                                            path = `/c/${config?.id || ''}/posts/${s.id}`;
+                                                            path = `/posts/${s.id}`;
                                                         }
                                                         navigate(path);
                                                     }}
@@ -504,7 +510,7 @@ export default function FeedPage() {
                                                                     path = `/posts/${opt.id}`;
                                                                 }
                                                             } else {
-                                                                path = `/c/${config.id}/posts/${opt.id}`;
+                                                                path = `/posts/${opt.id}`;
                                                             }
                                                             navigate(path);
                                                             setShowMoreFilters(false);
@@ -622,7 +628,7 @@ export default function FeedPage() {
                                                     <button
                                                         key={opt.id}
                                                         onClick={() => {
-                                                            const path = isGlobal ? `/posts/${opt.id}` : `/c/${config.id}/posts/${opt.id}`;
+                                                            const path = isGlobal ? `/posts/${opt.id}` : `/posts/${opt.id}`;
                                                             navigate(path);
                                                             setShowMoreFilters(false);
                                                         }}
@@ -817,7 +823,7 @@ export default function FeedPage() {
 
                 {/* Right Column - Global Sidebar Only */}
                 {(!isGlobal || (!community && !isExplicitCommunityRoute)) && (
-                    <div className="hidden lg:block lg:col-span-4 xl:col-span-3 order-3 space-y-6">
+                    <div className="hidden xl:block lg:col-span-4 xl:col-span-3 order-3 space-y-6">
                         <GlobalSidebar isStandalone={!isGlobal} />
                     </div>
                 )}

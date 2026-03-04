@@ -54,11 +54,11 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const [loadingInfo, setLoadingInfo] = useState(false);
     const [qrTarget, setQrTarget] = useState<Web3WalletInfo | null>(null);
     const [generating, setGenerating] = useState(false);
-    const [isLocked, setIsLocked] = useState(false);
     const [sendTarget, setSendTarget] = useState<Web3WalletInfo | null>(null);
     const [swapTarget, setSwapTarget] = useState<Web3WalletInfo | null>(null);
     const [pendingMnemonic, setPendingMnemonic] = useState<string | null>(null);
     const [showImport, setShowImport] = useState(false);
+    const [activeMainTab, setActiveMainTab] = useState<'assets' | 'history'>('assets');
     const [authQR, setAuthQR] = useState<string | null>(null);
     const currentUser = localStorage.getItem('hive_user');
     const normalizedCurrentUser = currentUser?.replace(/^@/, '');
@@ -81,38 +81,80 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
             setRawWallets(derived);
             fetchBalances(derived);
+            return derived;
         } catch (err: any) {
             showNotification(`Failed to derive wallets: ${err.message}`, 'error');
+            throw err;
         } finally {
             setLoading(false);
         }
-    }, [showNotification]);
+    }, [showNotification, username]);
 
-    const fetchBalances = async (wallets: RawWallets) => {
-        setLoadingInfo(true);
+    const fetchBalances = async (wallets: RawWallets, isSilent = false) => {
+        if (!isSilent) setLoadingInfo(true);
         try {
             const info = await web3WalletService.getWalletInfo(wallets);
 
-            // Check for deposits
+            // 1. Check for deposits (keep this accurate!)
             info.forEach(newCard => {
                 const prevBalance = previousBalancesRef.current[newCard.chain];
                 if (prevBalance !== undefined && newCard.balance > prevBalance) {
                     const amount = newCard.balance - prevBalance;
                     const msg = `Deposit Received: +${amount.toFixed(6)} ${newCard.chain}`;
                     showNotification(msg, 'success');
-                    NotificationService.addLocalNotification(username, msg, 'deposit');
+                    NotificationService.addLocalNotification(username, msg, 'deposit', 'wallet', undefined, newCard.chain, newCard.address);
                 }
                 // Update ref
                 previousBalancesRef.current[newCard.chain] = newCard.balance;
             });
 
-            setWalletInfo(info);
+            // 2. Merge new results with existing state to avoid flicker and maintain stale prices
+            setWalletInfo(prev => {
+                if (prev.length === 0) return info;
+                const next = [...prev];
+                info.forEach(latest => {
+                    const idx = next.findIndex(p => p.chain === latest.chain);
+                    if (idx === -1) {
+                        next.push(latest);
+                    } else {
+                        const old = next[idx];
+                        const balance = latest.balance;
+                        // Stale Price Preservation: If balance > 0 but new price is 0/null, keep the old price if we have it
+                        const oldPrice = old.price || 0;
+                        const latestPrice = latest.price || 0;
+                        const price = (balance > 0 && latestPrice <= 0 && oldPrice > 0) ? oldPrice : latestPrice;
+
+                        const usdValue = balance * price;
+                        const change24h = (latest.change24h === 0 && (old.change24h || 0) !== 0) ? old.change24h : latest.change24h;
+
+                        next[idx] = { ...latest, price, usdValue, change24h };
+                    }
+                });
+                return next;
+            });
         } catch (err: any) {
             console.warn('Balance fetch failed (non-critical):', err.message);
         } finally {
-            setLoadingInfo(false);
+            if (!isSilent) setLoadingInfo(false);
         }
     };
+
+    // ── Polling for Background Deposits ─────────────────────────────────────
+    const walletAddresses = walletInfo.map(w => w.address).join(',');
+    useEffect(() => {
+        if (walletInfo.length === 0) return;
+
+        const pollId = setInterval(() => {
+            console.log(`[Web3Wallets] Polling for ${walletInfo.length} chains...`);
+            const currentWallets: any = { mnemonic: '' };
+            walletInfo.forEach(w => {
+                currentWallets[w.chain] = { address: w.address, imageUrl: w.imageUrl };
+            });
+            fetchBalances(currentWallets as RawWallets, true); // Silent refresh
+        }, 30000);
+
+        return () => clearInterval(pollId);
+    }, [walletAddresses, username]); // Only reset if the list of addresses changes
 
     // ── Load state on mount ──────────────────────────────────────────────────
     useEffect(() => {
@@ -124,55 +166,58 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 console.log('[Web3Wallets] Fetching remote metadata...');
                 const tokens = await fetchHiveMetadata(username);
                 console.log('[Web3Wallets] Remote metadata tokens found:', tokens.length);
-                const hasRemoteMetadata = tokens.some(t => t.type === 'CHAIN');
 
                 // 2. Check local Address Cache (most reliable for current user)
                 const cachedAddresses = addressStorage.get(username);
                 console.log('[Web3Wallets] Local address cache check:', !!cachedAddresses);
 
-                // 3. Prepare View-Only Wallets (Prefer Local Cache -> Fallback to Hive)
+                // 3. Prepare View-Only Wallets (Merge Remote Metadata + Local Cache)
+                const combinedWallets: Record<string, { address: string; imageUrl: string }> = {};
+
+                // A. Start with remote metadata (ground truth from Hive)
+                tokens.filter(t => t.type === 'CHAIN').forEach(t => {
+                    if (t.symbol && t.meta.address) {
+                        combinedWallets[t.symbol] = {
+                            address: t.meta.address,
+                            imageUrl: t.meta.imageUrl || ''
+                        };
+                    }
+                });
+
+                // B. Overlay with local cache (public addresses we know)
+                if (cachedAddresses) {
+                    Object.entries(cachedAddresses).forEach(([chain, data]) => {
+                        combinedWallets[chain] = data;
+                    });
+                }
+
+                // C. Build initial info and mock wallets for balance fetching
                 const initialInfo: Web3WalletInfo[] = [];
                 const mockWallets: any = { mnemonic: '' };
 
-                if (cachedAddresses) {
-                    Object.entries(cachedAddresses).forEach(([chain, data]) => {
-                        initialInfo.push({
-                            chain,
-                            symbol: chain,
-                            address: data.address,
-                            imageUrl: data.imageUrl,
-                            balance: 0,
-                            price: 0,
-                            change24h: 0,
-                            usdValue: 0
-                        });
-                        mockWallets[chain] = data;
+                Object.entries(combinedWallets).forEach(([chain, data]) => {
+                    initialInfo.push({
+                        chain,
+                        symbol: chain,
+                        address: data.address,
+                        imageUrl: data.imageUrl,
+                        balance: 0,
+                        price: null,
+                        change24h: null,
+                        usdValue: null
                     });
-                } else if (hasRemoteMetadata) {
-                    tokens.filter(t => t.type === 'CHAIN').forEach(t => {
-                        initialInfo.push({
-                            chain: t.symbol,
-                            symbol: t.symbol,
-                            address: t.meta.address || '',
-                            imageUrl: t.meta.imageUrl || '',
-                            balance: 0,
-                            price: 0,
-                            change24h: 0,
-                            usdValue: 0
-                        });
-                        mockWallets[t.symbol] = { address: t.meta.address || '', imageUrl: t.meta.imageUrl || '' };
-                    });
-                }
+                    mockWallets[chain] = data;
+                });
 
                 if (initialInfo.length > 0) {
                     console.log('[Web3Wallets] Setting initial wallet info (view-only):', initialInfo.length);
                     setWalletInfo(initialInfo);
+                    // Crucial: Use the constructed mockWallets for immediate balance fetching
                     fetchBalances(mockWallets as RawWallets);
                 }
 
                 // 4. Check local storage for encrypted mnemonic
-                const encrypted = mnemonicStorage.getEncrypted(username);
-                setIsLocked(!!encrypted);
+                mnemonicStorage.getEncrypted(username);
             } catch (err: any) {
                 console.error('[Web3Wallets] Initialization CRITICAL error:', err);
             } finally {
@@ -203,9 +248,9 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
             if (signature.success && signature.result) {
                 const mnemonic = await decryptMnemonic(encrypted, salt, signature.result);
-                await deriveAndFetch(mnemonic);
-                setIsLocked(false);
+                const derived = await deriveAndFetch(mnemonic);
                 setAuthQR(null);
+                return derived;
             } else {
                 throw new Error(signature.error || 'Signature failed');
             }
@@ -318,7 +363,6 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
             setRawWallets(derived);
             fetchBalances(derived);
-            setIsLocked(false);
             setPendingMnemonic(null);
             setAuthQR(null);
             showNotification(updateHive ? 'Web3 Wallet initialized and linked!' : 'Local access secured!', 'success');
@@ -349,7 +393,6 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         addressStorage.clear(username);
         setRawWallets(null);
         setWalletInfo([]);
-        setIsLocked(false);
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -472,153 +515,154 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    {isOwner && (
-                        <>
-                            {/* If we have a vault but it is locked, balances are already loading, so "Unlock" is optional here */}
-                            {!rawWallets && isLocked && (
-                                <button
-                                    onClick={handleUnlock}
-                                    className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-[var(--primary-color)] bg-[var(--primary-color)]/10 border border-[var(--primary-color)]/20 rounded-xl hover:bg-[var(--primary-color)]/20 transition-all"
-                                >
-                                    Unlock Full Access
-                                </button>
-                            )}
-
-                            {/* If we have NO vault but we have Hive addresses */}
-                            {!rawWallets && !isLocked && walletInfo.length > 0 && (
-                                <button
-                                    onClick={handleImport}
-                                    className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-white bg-[var(--primary-color)] rounded-xl shadow-lg shadow-[var(--primary-color)]/20"
-                                >
-                                    Complete Setup
-                                </button>
-                            )}
-
-                            <button
-                                onClick={handleReset}
-                                className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
-                            >
-                                Remove
-                            </button>
-                        </>
-                    )}
-                </div>
+                {isOwner && (
+                    <button
+                        onClick={handleReset}
+                        className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
+                    >
+                        Remove
+                    </button>
+                )}
             </div>
 
-            {/* Wallet Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                {mergedCards.map(card => {
-                    const accent = CHAIN_ACCENT[card.chain] || 'var(--primary-color)';
-                    return (
-                        <div
-                            key={card.chain}
-                            className="group bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-6 flex flex-col gap-4 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden"
-                        >
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-white/[0.03] -mr-8 -mt-8 rounded-full" />
+            {/* Tab Navigation */}
+            <div className="flex gap-4 border-b border-[var(--border-color)]">
+                <button
+                    onClick={() => setActiveMainTab('assets')}
+                    className={`pb-4 px-2 text-sm font-bold transition-all relative ${activeMainTab === 'assets' ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                >
+                    Assets
+                    {activeMainTab === 'assets' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--primary-color)] rounded-full" />}
+                </button>
+                <button
+                    onClick={() => setActiveMainTab('history')}
+                    className={`pb-4 px-2 text-sm font-bold transition-all relative ${activeMainTab === 'history' ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                >
+                    History
+                    {activeMainTab === 'history' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--primary-color)] rounded-full" />}
+                </button>
+            </div>
 
-                            {/* Top: Icon + Chain */}
-                            <div className="flex items-center justify-between z-10">
-                                <div className="flex items-center gap-3">
-                                    <div
-                                        className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner relative"
-                                        style={{ backgroundColor: `${accent}15` }}
-                                    >
-                                        <div className="absolute inset-0 rounded-xl border border-white/5" />
-                                        {card.imageUrl ? (
-                                            <img src={card.imageUrl} alt={card.chain} className="w-6 h-6 object-contain" />
-                                        ) : (
-                                            <span className="font-bold text-xs" style={{ color: accent }}>{card.chain[0]}</span>
-                                        )}
-                                    </div>
-                                    <div>
-                                        <h4 className="font-bold text-[var(--text-primary)] leading-tight">{card.chain}</h4>
-                                        <p className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tighter opacity-70">Mainnet</p>
-                                    </div>
-                                </div>
-                                {card.change24h !== null && (
-                                    <div className={`text-[10px] font-black px-2 py-1 rounded-lg ${card.change24h >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
-                                        {card.change24h >= 0 ? '↑' : '↓'} {Math.abs(card.change24h).toFixed(2)}%
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Balance Info */}
-                            <div className="py-2 z-10">
-                                <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
-                                    {loadingInfo ? (
-                                        <div className="h-8 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" />
-                                    ) : card.balance !== null ? (
-                                        `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
-                                    ) : (
-                                        <span className="opacity-20">—</span>
-                                    )}
-                                    <span className="text-xs font-bold text-[var(--text-secondary)] ml-2 opacity-50">{card.chain}</span>
-                                </div>
-                                {!loadingInfo && card.usdValue !== null && (
-                                    <p className="text-xs font-bold text-[var(--text-secondary)] mt-1 opacity-70">
-                                        ≈ ${card.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </p>
-                                )}
-                            </div>
-
-                            {/* Address Display */}
+            {activeMainTab === 'assets' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    {mergedCards.map((card) => {
+                        const accent = CHAIN_ACCENT[card.chain] || 'var(--primary-color)';
+                        return (
                             <div
-                                onClick={() => {
-                                    navigator.clipboard.writeText(card.address);
-                                    showNotification(`${card.chain} address copied!`, 'success');
-                                }}
-                                className="bg-[var(--bg-canvas)]/50 border border-[var(--border-color)] rounded-2xl p-3 flex items-center gap-2 group/addr z-10 cursor-pointer hover:bg-[var(--bg-card)] transition-all"
+                                key={card.chain}
+                                className="group relative bg-[var(--bg-card)] border border-[var(--border-color)] rounded-[32px] p-6 hover:shadow-2xl hover:shadow-[var(--primary-color)]/5 transition-all duration-500 hover:-translate-y-1 overflow-hidden flex flex-col gap-4"
                             >
-                                <code className="text-[10px] font-mono font-bold text-[var(--text-secondary)] flex-1 truncate opacity-80 group-hover/addr:opacity-100 transition-opacity">
-                                    {card.address}
-                                </code>
-                                <div className="flex gap-1">
-                                    <CopyButton text={card.address} size="sm" />
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-white/[0.03] -mr-8 -mt-8 rounded-full" />
+
+                                {/* Top: Icon + Chain */}
+                                <div className="flex items-center justify-between z-10">
+                                    <div className="flex items-center gap-3">
+                                        <div
+                                            className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner relative"
+                                            style={{ backgroundColor: `${accent}15` }}
+                                        >
+                                            <div className="absolute inset-0 rounded-xl border border-white/5" />
+                                            {card.imageUrl ? (
+                                                <img src={card.imageUrl} alt={card.chain} className="w-6 h-6 object-contain" />
+                                            ) : (
+                                                <span className="font-bold text-xs" style={{ color: accent }}>{card.chain[0]}</span>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-[var(--text-primary)] leading-tight">{card.chain}</h4>
+                                            <p className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tighter opacity-70">Mainnet</p>
+                                        </div>
+                                    </div>
+                                    {card.change24h !== null && (
+                                        <div className={`text-[10px] font-black px-2 py-1 rounded-lg ${card.change24h >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
+                                            {card.change24h >= 0 ? '↑' : '↓'} {Math.abs(card.change24h).toFixed(2)}%
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Balance Info */}
+                                <div className="py-2 z-10">
+                                    <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
+                                        {loadingInfo ? (
+                                            <div className="h-8 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" />
+                                        ) : card.balance !== null ? (
+                                            `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
+                                        ) : (
+                                            <span className="opacity-20">—</span>
+                                        )}
+                                        <span className="text-xs font-bold text-[var(--text-secondary)] ml-2 opacity-50">{card.chain}</span>
+                                    </div>
+                                    {!loadingInfo && card.usdValue !== null && (
+                                        <p className="text-xs font-bold text-[var(--text-secondary)] mt-1 opacity-70">
+                                            ≈ ${card.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Address Display */}
+                                <div
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(card.address);
+                                        showNotification(`${card.chain} address copied!`, 'success');
+                                    }}
+                                    className="bg-[var(--bg-canvas)]/50 border border-[var(--border-color)] rounded-2xl p-3 flex items-center gap-2 group/addr z-10 cursor-pointer hover:bg-[var(--bg-card)] transition-all"
+                                >
+                                    <code className="text-[10px] font-mono font-bold text-[var(--text-secondary)] flex-1 truncate opacity-80 group-hover/addr:opacity-100 transition-opacity">
+                                        {card.address}
+                                    </code>
+                                    <div className="flex gap-1">
+                                        <CopyButton text={card.address} size="sm" />
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setQrTarget(card as any);
+                                            }}
+                                            className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-all active:scale-90"
+                                        >
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex flex-wrap gap-2 z-10 mt-auto">
+                                    {isOwner && (
+                                        <>
+                                            <button
+                                                onClick={() => setSendTarget(card as any)}
+                                                className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-all group/btn"
+                                            >
+                                                Send
+                                            </button>
+                                            {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20'].includes(card.chain) && (
+                                                <button
+                                                    disabled
+                                                    className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed flex items-center justify-center gap-1.5"
+                                                >
+                                                    Swap
+                                                    <span className="px-1.5 py-0.5 rounded-md bg-[var(--primary-color)]/10 text-[var(--primary-color)] text-[8px]">Soon</span>
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
                                     <button
                                         onClick={() => setQrTarget(card as any)}
-                                        className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-all active:scale-90"
+                                        className={`${isOwner ? 'w-full' : 'w-full'} py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--primary-color)] hover:text-white transition-all`}
                                     >
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                                        </svg>
+                                        Receive
                                     </button>
                                 </div>
                             </div>
-
-                            {/* Action Buttons */}
-                            <div className="flex flex-wrap gap-2 z-10 mt-auto">
-                                {isOwner && (
-                                    <>
-                                        <button
-                                            onClick={() => setSendTarget(card as any)}
-                                            disabled={!isLocked && !rawWallets}
-                                            className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)] transition-all disabled:opacity-30 disabled:cursor-not-allowed group/btn"
-                                        >
-                                            Send
-                                        </button>
-                                        {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20'].includes(card.chain) && (
-                                            <button
-                                                disabled
-                                                className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed flex items-center justify-center gap-1.5"
-                                            >
-                                                Swap
-                                                <span className="px-1.5 py-0.5 rounded-md bg-[var(--primary-color)]/10 text-[var(--primary-color)] text-[8px]">Soon</span>
-                                            </button>
-                                        )}
-                                    </>
-                                )}
-                                <button
-                                    onClick={() => setQrTarget(card as any)}
-                                    className={`${isOwner ? 'w-full' : 'w-full'} py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--primary-color)] hover:text-white transition-all`}
-                                >
-                                    Receive
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })}
-            </div>
+                        );
+                    })}
+                </div>
+            ) : (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <Web3ActivityFeed username={username} />
+                </div>
+            )}
 
             {/* QR Modal */}
             {qrTarget && (
@@ -646,6 +690,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
             {/* Send Modal */}
             {sendTarget && (
                 <SendModal
+                    username={username}
                     chain={sendTarget.chain}
                     address={sendTarget.address}
                     imageUrl={sendTarget.imageUrl}
@@ -659,23 +704,14 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                         NotificationService.addLocalNotification(
                             username,
                             `Sent: -${Number(amt).toFixed(6)} ${sendTarget.chain} (Hash: ${shortHash})`,
-                            'send'
+                            'send',
+                            'wallet',
+                            hash,
+                            sendTarget.chain
                         );
                     }}
                 />
             )}
-            {/* Import Modal */}
-            {showImport && (
-                <ImportModal
-                    onClose={() => setShowImport(false)}
-                    onImport={onImportPhrase}
-                />
-            )}
-
-            {/* Recent Activity Feed */}
-            <div className="pt-8 border-t border-[var(--border-color)] mt-12">
-                <Web3ActivityFeed username={username} />
-            </div>
 
             {/* HiveAuth QR Overlay */}
             {authQR && (

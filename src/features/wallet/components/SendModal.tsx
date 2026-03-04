@@ -1,23 +1,25 @@
 import { useState, useEffect } from 'react';
 import { X, Send, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { web3WalletService } from '../../../services/web3WalletService';
+import { NotificationService } from '../../../services/notifications';
 import { signingService } from '../../../services/signingService';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { fetchHiveMetadata } from '../../../services/hiveMetadataService';
 import { User, Wallet as WalletIcon, Loader2, CheckCircle2 as ConfirmedIcon } from 'lucide-react';
 
 interface SendModalProps {
+    username: string;
     chain: string;
     address: string;
     imageUrl?: string;
     privateKey?: string;
     balance: number;
-    onUnlock: () => Promise<void>;
+    onUnlock: () => Promise<any>;
     onClose: () => void;
     onSuccess: (amount: string, hash: string) => void;
 }
 
-export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnlock, onClose, onSuccess }: SendModalProps) {
+export function SendModal({ username, chain, address, imageUrl, privateKey, balance, onUnlock, onClose, onSuccess }: SendModalProps) {
     const [to, setTo] = useState('');
     const [sendMode, setSendMode] = useState<'username' | 'address'>('username');
     const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
@@ -91,17 +93,29 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
     }, [to, resolvedAddress, sendMode, amount, chain, address]);
 
     const handleSend = async () => {
-        if (!privateKey) {
+        let currentPrivateKey = privateKey;
+
+        // If not unlocked, trigger seamless unlock first
+        if (!currentPrivateKey) {
             setLoading(true);
             try {
-                await onUnlock();
+                const derived = await onUnlock();
+                if (derived && derived[chain]) {
+                    currentPrivateKey = (derived[chain] as any).privateKey;
+                }
+
+                if (!currentPrivateKey) {
+                    showNotification('Authorization succeeded but keys were not found', 'error');
+                    setLoading(false);
+                    return;
+                }
                 showNotification('Wallet authorized successfully!', 'success');
+                // Continue with transaction...
             } catch (err: any) {
                 showNotification(err.message || 'Authorization failed', 'error');
-            } finally {
                 setLoading(false);
+                return;
             }
-            return;
         }
 
         const destination = sendMode === 'username' ? resolvedAddress : to;
@@ -127,7 +141,7 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
 
             // 2. Sign locally based on the chain
             if (chain === 'ETH' || chain === 'BNB') {
-                signedTx = await signingService.signEthTransaction(privateKey, {
+                signedTx = await signingService.signEthTransaction(currentPrivateKey, {
                     to: destination,
                     value: (Number(amount) * 1e18).toString(), // simplified wei conversion
                     nonce: params.nonce,
@@ -136,14 +150,14 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                     chainId: params.chainId
                 });
             } else if (chain === 'SOL') {
-                signedTx = await signingService.signSolTransaction(privateKey, {
+                signedTx = await signingService.signSolTransaction(currentPrivateKey, {
                     from: address,
                     to: destination,
                     amount: Number(amount),
                     recentBlockhash: params.recentBlockhash
                 });
             } else if (chain === 'BTC') {
-                signedTx = await signingService.signBtcTransaction(privateKey, {
+                signedTx = await signingService.signBtcTransaction(currentPrivateKey, {
                     from: address,
                     to: destination,
                     amount: Number(amount),
@@ -152,13 +166,13 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                 });
             } else if (chain === 'TRON') {
                 // TRON backend gives us the transaction object
-                signedTx = await signingService.signTronTransaction(privateKey, {
+                signedTx = await signingService.signTronTransaction(currentPrivateKey, {
                     to: destination,
                     amount: Number(amount),
                     transaction: params.transaction
                 });
             } else if (chain === 'APTOS') {
-                signedTx = await signingService.signAptosTransaction(privateKey, {
+                signedTx = await signingService.signAptosTransaction(currentPrivateKey, {
                     to: destination,
                     amount: Number(amount),
                     sequenceNumber: params.sequenceNumber,
@@ -173,10 +187,18 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
 
             setTxHash(hash);
             showNotification(`Successfully sent ${amount} ${chain}`, 'success');
-            setTimeout(() => {
-                onSuccess(amount, hash);
-                onClose();
-            }, 3000);
+
+            // 4. Record to Hive for permanent cross-device history (Non-blocking)
+            web3WalletService.logTransactionToHive(username, {
+                chain,
+                to: destination,
+                amount: Number(amount),
+                hash,
+                type: 'send'
+            });
+
+            // Call onSuccess immediately to update parent state, but DON'T auto-close
+            onSuccess(amount, hash);
         } catch (err: any) {
             setError(err.message || 'Transaction failed');
             showNotification(err.message || 'Failed to send transaction', 'error');
@@ -188,7 +210,13 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
     if (txHash) {
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl">
+                <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl relative">
+                    <button
+                        onClick={onClose}
+                        className="absolute top-4 right-4 p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)] rounded-full transition-colors"
+                    >
+                        <X size={18} />
+                    </button>
                     <div className="w-16 h-16 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
                         <CheckCircle2 size={32} />
                     </div>
@@ -196,12 +224,22 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                     <p className="text-sm text-[var(--text-secondary)] mb-6 break-all font-mono opacity-70">
                         {txHash}
                     </p>
-                    <button
-                        onClick={onClose}
-                        className="w-full py-3 bg-[var(--primary-color)] text-white font-bold rounded-xl hover:brightness-110 active:scale-95 transition-all"
-                    >
-                        Close
-                    </button>
+                    <div className="flex flex-col gap-3">
+                        <a
+                            href={NotificationService.getExplorerUrl(chain, txHash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-3 bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold rounded-xl hover:bg-[var(--bg-card)] transition-all flex items-center justify-center gap-2"
+                        >
+                            View on Explorer ↗
+                        </a>
+                        <button
+                            onClick={onClose}
+                            className="w-full py-3 bg-[var(--primary-color)] text-white font-bold rounded-xl hover:brightness-110 active:scale-95 transition-all"
+                        >
+                            Done
+                        </button>
+                    </div>
                 </div>
             </div>
         );
@@ -363,7 +401,7 @@ export function SendModal({ chain, address, imageUrl, privateKey, balance, onUnl
                         className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none ${!privateKey ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : 'bg-green-600 shadow-green-600/25'}`}
                     >
                         {loading ? 'Processing...' : (
-                            !privateKey ? 'Authorize to Sign' : `Confirm Send ${amount} ${chain}`
+                            !privateKey ? 'Confirm (Sign with Keychain)' : `Send ${amount} ${chain}`
                         )}
                         {!loading && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
                     </button>

@@ -346,7 +346,6 @@ export const authService = {
                 });
             });
         } else {
-            console.log("[AuthService] signMessage using HiveAuth");
             return new Promise((resolve) => {
                 const auth = {
                     username,
@@ -355,7 +354,6 @@ export const authService = {
                     key: HAS_STATIC_KEY
                 };
 
-                // Load existing session for HAS
                 const storedSession = localStorage.getItem('hive_auth_session');
                 if (storedSession) {
                     try {
@@ -389,8 +387,71 @@ export const authService = {
                             console.error("HAS Challenge error:", err);
                             resolve({ success: false, error: typeof err === 'string' ? err : (err?.message || "HiveAuth failed") });
                         });
-                }).catch(() => {
-                    resolve({ success: false, error: "Failed to load HiveAuth" });
+                });
+            });
+        }
+    },
+
+    /**
+     * Broadcast a custom_json to the Hive blockchain
+     */
+    broadcastJson: async (
+        username: string,
+        id: string,
+        json: any,
+        keyType: 'Posting' | 'Active' = 'Posting'
+    ): Promise<{ success: boolean; result?: any; error?: string }> => {
+        const method = localStorage.getItem('hive_auth_method') || 'keychain';
+
+        if (method === 'keychain') {
+            const keychain = (window as any).hive_keychain;
+            if (!keychain) return { success: false, error: 'Hive Keychain not installed' };
+
+            return new Promise((resolve) => {
+                keychain.requestCustomJson(username, id, keyType, JSON.stringify(json), `Log ${id}`, (response: any) => {
+                    if (response.success) resolve({ success: true, result: response.result });
+                    else resolve({ success: false, error: response.message });
+                });
+            });
+        } else {
+            return new Promise((resolve) => {
+                const op = ['custom_json', {
+                    required_auths: keyType === 'Active' ? [username] : [],
+                    required_posting_auths: keyType === 'Posting' ? [username] : [],
+                    id,
+                    json: JSON.stringify(json)
+                }];
+
+                const auth = {
+                    username,
+                    token: undefined,
+                    expire: undefined,
+                    key: HAS_STATIC_KEY
+                };
+
+                const storedSession = localStorage.getItem('hive_auth_session');
+                if (storedSession) {
+                    try {
+                        const session = JSON.parse(storedSession);
+                        if (session.username === username) {
+                            auth.token = session.token;
+                            auth.expire = session.expire;
+                            auth.key = session.key;
+                        }
+                    } catch (e) { }
+                }
+
+                import("hive-auth-wrapper").then(({ default: HAS }) => {
+                    HAS.broadcast(auth, keyType.toLowerCase() as any, [op], () => {
+                        // Handle QR challenge if needed
+                    })
+                        .then((res: any) => {
+                            resolve({ success: true, result: res.data });
+                        })
+                        .catch((err: any) => {
+                            console.error("HAS Broadcast error:", err);
+                            resolve({ success: false, error: typeof err === 'string' ? err : (err?.message || "HiveAuth failed") });
+                        });
                 });
             });
         }

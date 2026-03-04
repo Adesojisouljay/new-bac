@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useCommunity } from '../../community/context/CommunityContext';
 import { UnifiedDataService, CommunityDetails } from '../../../services/unified';
 import { Users, PlusCircle, ExternalLink, Globe, Search, ArrowRight } from 'lucide-react';
 import { SearchModal } from './SearchModal';
@@ -10,6 +11,7 @@ interface GlobalSidebarProps {
 
 export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
     const navigate = useNavigate();
+    const { config } = useCommunity();
     const currentUsername = localStorage.getItem('hive_user');
     const [stats, setStats] = useState<any>(null);
     const [suggestedUsers, setSuggestedUsers] = useState<{ username: string; reputation: number; avatar_url: string }[]>([]);
@@ -233,7 +235,7 @@ export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
 
                                     return (
                                         <div key={community.id} className="flex items-center justify-between group">
-                                            <Link to={`/c/${community.id}`} className="flex items-center gap-3 min-w-0">
+                                            <Link to={config?.id === community.id ? "/" : `/c/${community.id}`} className="flex items-center gap-3 min-w-0">
                                                 <img
                                                     src={community.avatar_url}
                                                     alt={community.title}
@@ -277,7 +279,7 @@ export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
             )}
 
             {/* 3. Market Stats */}
-            <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
+            <div className="hidden xl:block bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
                 <div className="flex items-center justify-between mb-6">
                     <Link to="/market" className="inline-flex items-center gap-2 group">
                         <Globe size={14} className="text-blue-500 group-hover:scale-110 transition-transform duration-300" />
@@ -340,7 +342,7 @@ export function GlobalSidebar({ isStandalone = false }: GlobalSidebarProps) {
             </div>
 
             {/* 4. Ecosystem Navigation */}
-            <div className="bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
+            <div className="hidden xl:block bg-[var(--bg-card)] rounded-2xl p-6 border border-[var(--border-color)] shadow-sm">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] mb-6 flex items-center gap-2">
                     <Globe size={14} className="text-purple-500" />
                     Hive Ecosystem

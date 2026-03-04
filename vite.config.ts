@@ -19,6 +19,10 @@ export default defineConfig({
       protocolImports: true,
     }),
   ],
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
   build: {
     target: 'esnext',
     sourcemap: false,

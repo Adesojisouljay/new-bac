@@ -11,11 +11,13 @@ import { transactionService } from '../../wallet/services/transactionService';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { ShareModal } from '../../../components/ShareModal';
+import { useCommunity } from '../../community/context/CommunityContext';
 
 
 export default function PostViewPage() {
     const { author, permlink } = useParams();
     const { showNotification, showConfirm } = useNotification();
+    const { config } = useCommunity();
     const [post, setPost] = useState<Post | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -298,14 +300,6 @@ export default function PostViewPage() {
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     };
-
-    const handleCopyLink = () => {
-        const url = window.location.href;
-        navigator.clipboard.writeText(url);
-        showNotification("Link copied to clipboard!", 'success');
-        setShowMoreMenu(false);
-    };
-
 
     const toggleBookmark = () => {
         if (!post) return;
@@ -703,7 +697,7 @@ export default function PostViewPage() {
                         <header className="mb-16 text-center max-w-3xl mx-auto px-4">
                             {post?.community_title && (
                                 <Link
-                                    to={`/c/${post?.community}`}
+                                    to={config?.id === post?.community ? "/" : `/c/${post?.community}`}
                                     className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[var(--primary-color)]/5 border border-[var(--primary-color)]/10 text-[var(--primary-color)] text-[10px] font-bold uppercase tracking-widest mb-8 hover:bg-[var(--primary-color)]/10 transition-all shadow-sm"
                                 >
                                     <Repeat size={12} />
