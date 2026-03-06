@@ -238,8 +238,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                     fetchBalances(mockWallets as RawWallets);
                 }
 
-                // 4. Check local storage for encrypted mnemonic
-                const hasEncrypted = !!mnemonicStorage.getEncrypted(username);
+
 
             } catch (err: any) {
                 console.error('[Web3Wallets] Initialization CRITICAL error:', err);
