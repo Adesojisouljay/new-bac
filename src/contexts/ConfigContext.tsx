@@ -102,7 +102,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             const hostname = window.location.hostname;
             const isGlobalDomain =
                 hostname === '127.0.0.1' ||
-                hostname === 'app.breakaway.community' ||
+                hostname === 'beta.sovraniche.com' ||
                 import.meta.env.VITE_GLOBAL_MODE === 'true';
 
             if (isGlobalDomain) {
