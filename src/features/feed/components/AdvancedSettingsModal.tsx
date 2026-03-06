@@ -19,6 +19,12 @@ export interface AdvancedOptions {
     reward: 'default' | 'power_up' | 'decline';
     beneficiaries: Beneficiary[];
     description: string;
+    reward_advance?: {
+        enabled: boolean;
+        percentage: number; // 0-100
+        currency: string;
+        address: string;
+    };
 }
 
 interface AdvancedSettingsModalProps {
@@ -142,6 +148,94 @@ export default function AdvancedSettingsModal({
                                     className="w-full px-4 py-3 rounded-2xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] font-medium outline-none focus:ring-1 focus:ring-[var(--primary-color)] min-h-[100px] text-sm leading-relaxed"
                                     placeholder="Enter a short summary for search engines..."
                                 />
+                            </div>
+
+                            {/* Reward Advance Section */}
+                            <div className="space-y-4 p-5 bg-[var(--primary-color)]/5 rounded-3xl border border-[var(--primary-color)]/20 shadow-inner">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-sm font-black uppercase tracking-widest text-[var(--primary-color)] flex items-center gap-2">
+                                        <div className="p-1.5 bg-[var(--primary-color)] rounded-lg text-white">
+                                            <Settings size={14} />
+                                        </div>
+                                        Reward Advance
+                                    </h3>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only peer"
+                                            checked={localOptions.reward_advance?.enabled || false}
+                                            onChange={(e) => {
+                                                const enabled = e.target.checked;
+                                                setLocalOptions({
+                                                    ...localOptions,
+                                                    reward_advance: {
+                                                        ...(localOptions.reward_advance || { percentage: 30, currency: 'TRON', address: '' }),
+                                                        enabled
+                                                    }
+                                                });
+                                            }}
+                                        />
+                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-[var(--primary-color)]"></div>
+                                    </label>
+                                </div>
+
+                                {localOptions.reward_advance?.enabled && (
+                                    <div className="space-y-4 animate-in slide-in-from-top-2 duration-300">
+                                        <p className="text-[10px] text-[var(--text-secondary)] leading-relaxed italic opacity-80 bg-white/50 dark:bg-black/20 p-2 rounded-xl border border-dashed border-[var(--primary-color)]/20">
+                                            Receive a portion of your post rewards immediately in another crypto. A 30% beneficiary will be added to this post to recoup the advance.
+                                        </p>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black uppercase text-[var(--text-secondary)] ml-1">Percentage</label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="100"
+                                                        value={localOptions.reward_advance.percentage}
+                                                        onChange={(e) => setLocalOptions({
+                                                            ...localOptions,
+                                                            reward_advance: { ...localOptions.reward_advance!, percentage: Math.min(100, Math.max(0, parseInt(e.target.value) || 0)) }
+                                                        })}
+                                                        className="w-full px-4 py-2 bg-[var(--bg-canvas)] rounded-xl border border-[var(--border-color)] text-sm font-bold text-[var(--text-primary)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none"
+                                                    />
+                                                    <span className="absolute right-3 top-2 text-xs font-bold text-[var(--text-secondary)]">%</span>
+                                                </div>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="text-[10px] font-black uppercase text-[var(--text-secondary)] ml-1">Currency</label>
+                                                <select
+                                                    value={localOptions.reward_advance.currency}
+                                                    onChange={(e) => setLocalOptions({
+                                                        ...localOptions,
+                                                        reward_advance: { ...localOptions.reward_advance!, currency: e.target.value }
+                                                    })}
+                                                    className="w-full px-4 py-2 bg-[var(--bg-canvas)] rounded-xl border border-[var(--border-color)] text-sm font-bold text-[var(--text-primary)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none"
+                                                >
+                                                    <option value="TRON">TRON (TRX)</option>
+                                                    <option value="USDT_TRC20">USDT (TRC20)</option>
+                                                    <option value="SOL">Solana (SOL)</option>
+                                                    <option value="BTC">Bitcoin (BTC)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-1.5">
+                                            <label className="text-[10px] font-black uppercase text-[var(--text-secondary)] ml-1">Payout Address</label>
+                                            <input
+                                                type="text"
+                                                placeholder="Enter your wallet address"
+                                                value={localOptions.reward_advance.address}
+                                                onChange={(e) => setLocalOptions({
+                                                    ...localOptions,
+                                                    reward_advance: { ...localOptions.reward_advance!, address: e.target.value }
+                                                })}
+                                                className="w-full px-4 py-2 bg-[var(--bg-canvas)] rounded-xl border border-[var(--border-color)] text-sm font-bold text-[var(--text-primary)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
 

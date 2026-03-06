@@ -9,6 +9,7 @@ import {
     encryptMnemonic,
     decryptMnemonic,
     UNLOCK_MESSAGE,
+    WEB3_CHAIN_METADATA,
 } from '../../../services/web3WalletService';
 import {
     fetchHiveMetadata,
@@ -26,21 +27,17 @@ import { Web3ActivityFeed } from '../components/Web3ActivityFeed';
 import { SwapModal } from '../components/SwapModal';
 import { QRCodeSVG } from 'qrcode.react';
 import { authService } from '../../auth/services/authService';
+import { LightningSettings } from '../components/LightningSettings';
+import { lightningService } from '../../../services/lightningService';
 
-// ─── Chain colour accents ────────────────────────────────────────────────────
-const CHAIN_ACCENT: Record<string, string> = {
-    BTC: '#f7931a',
-    ETH: '#627eea',
-    SOL: '#9945ff',
-    TRON: '#ef0027',
-    BNB: '#f0b90b',
-    APTOS: '#00bcd4',
-    BASE: '#0052ff',
-    POLYGON: '#8247e5',
-    ARBITRUM: '#28a0f0',
-    USDT_TRC20: '#26a17b',
-    USDT_BEP20: '#26a17b',
-};
+const SatsIcon = ({ className, color }: { className?: string, color?: string }) => (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+        <circle cx="12" cy="12" r="10" fill={color || "#F7931A"} />
+        <path d="M12 7V8.5M12 15.5V17M9 9H13.5C14.8807 9 16 10.1193 16 11.5C16 12.8807 14.8807 14 13.5 14H10.5M10.5 14H14.5C15.6046 14 16.5 14.8954 16.5 16C16.5 17.1046 15.6046 18 14.5 18H9" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+);
+
+// (CHAIN_ACCENT removed in favor of WEB3_CHAIN_METADATA)
 
 interface Web3WalletsProps {
     username: string;
@@ -238,7 +235,28 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                     fetchBalances(mockWallets as RawWallets);
                 }
 
-
+                // 4. Fetch SATS balance independently and append to info
+                try {
+                    const satsBalance = await lightningService.getBalance(username);
+                    if (satsBalance !== null) {
+                        setWalletInfo(prev => [
+                            ...prev.filter(w => w.chain !== 'SATS'), // avoid duplicates
+                            {
+                                chain: 'SATS',
+                                symbol: 'SATS',
+                                address: `${username}@sovraniche.com`, // Conceptual lightning address
+                                imageUrl: '', // Handled by accent fallback 
+                                balance: satsBalance,
+                                price: null, // Could fetch BTC price and divide by 100M, but null is fine
+                                change24h: null,
+                                usdValue: null
+                            }
+                        ]);
+                    }
+                } catch (satsErr) {
+                    // Ignore SATS fetch errors silently if the wallet just isn't active
+                    console.debug('SATS wallet not active or failed to load:', satsErr);
+                }
 
             } catch (err: any) {
                 console.error('[Web3Wallets] Initialization CRITICAL error:', err);
@@ -499,7 +517,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // ─────────────────────────────────────────────────────────────────────────
     // Merge remote Hive metadata + fetched info
     // ─────────────────────────────────────────────────────────────────────────
-    const CHAIN_ORDER = ['BTC', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
+    const CHAIN_ORDER = ['SATS', 'BTC', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
 
     const mergedCards = CHAIN_ORDER.map(chain => {
         const raw = rawWallets ? (rawWallets[chain] as any) : null;
@@ -567,11 +585,19 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 </button>
             </div>
 
+            {activeMainTab === 'assets' && isOwner && (
+                <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
+                    <LightningSettings username={username} />
+                </div>
+            )}
+
             {activeMainTab === 'assets' ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     {mergedCards.map((card: any) => {
-                        const accent = CHAIN_ACCENT[card.chain] || 'var(--primary-color)';
+                        const meta = WEB3_CHAIN_METADATA[card.chain];
+                        const accent = meta?.color || 'var(--primary-color)';
                         const isUnlocked = !!(rawWallets || unlockedChains[card.chain]);
+                        const imageUrl = card.imageUrl || meta?.icon;
                         return (
                             <div
                                 key={card.chain}
@@ -587,8 +613,12 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                                             style={{ backgroundColor: `${accent}15` }}
                                         >
                                             <div className="absolute inset-0 rounded-xl border border-white/5" />
-                                            {card.imageUrl ? (
-                                                <img src={card.imageUrl} alt={card.chain} className="w-6 h-6 object-contain" />
+                                            {card.chain === 'SATS' ? (
+                                                <div className="w-6 h-6 rounded-lg overflow-hidden shadow-sm">
+                                                    <SatsIcon color={accent} />
+                                                </div>
+                                            ) : imageUrl ? (
+                                                <img src={imageUrl} alt={card.chain} className="w-6 h-6 object-contain" />
                                             ) : (
                                                 <span className="font-bold text-xs" style={{ color: accent }}>{card.chain[0]}</span>
                                             )}

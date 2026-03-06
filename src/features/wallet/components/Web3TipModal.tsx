@@ -12,6 +12,7 @@ import { fetchHiveMetadata } from '../../../services/hiveMetadataService';
 import { authService } from '../../auth/services/authService';
 import { signingService } from '../../../services/signingService';
 import { useNotification } from '../../../contexts/NotificationContext';
+import { lightningService } from '../../../services/lightningService';
 
 interface Web3TipModalProps {
     /** The Hive username of the person being tipped */
@@ -25,12 +26,12 @@ const CHAIN_ACCENT: Record<string, string> = {
     BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', TRON: '#ef0027',
     BNB: '#f0b90b', APTOS: '#00bcd4', BASE: '#0052ff', POLYGON: '#8247e5',
     ARBITRUM: '#28a0f0', USDT_TRC20: '#26a17b', USDT_BEP20: '#26a17b', USDT_ERC20: '#26a17b',
-    TON: '#0088cc',
+    TON: '#0088cc', SATS: '#EAB308',
 };
 
 const INTEGRATED_CHAINS = [
     'BTC', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM',
-    'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'
+    'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20', 'SATS'
 ];
 
 const SYMBOL_MAP: Record<string, string> = {
@@ -39,6 +40,13 @@ const SYMBOL_MAP: Record<string, string> = {
 };
 
 type Step = 'select_chain' | 'enter_amount' | 'unlocking' | 'sending' | 'done' | 'error';
+
+const SatsIcon = ({ className, color }: { className?: string, color?: string }) => (
+    <svg className={className} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+        <circle cx="12" cy="12" r="10" fill={color || "#F7931A"} />
+        <path d="M12 7V8.5M12 15.5V17M9 9H13.5C14.8807 9 16 10.1193 16 11.5C16 12.8807 14.8807 14 13.5 14H10.5M10.5 14H14.5C15.6046 14 16.5 14.8954 16.5 16C16.5 17.1046 15.6046 18 14.5 18H9" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+);
 
 export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipModalProps) {
 
@@ -108,12 +116,14 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                 const hasEncrypted = !!mnemonicStorage.getEncrypted(senderUsername);
                 setIsLocked(hasEncrypted);
 
+                let info: Web3WalletInfo[] = [];
+
                 if (cached) {
                     // Build mock wallets for balance fetch
                     const mockWallets: any = { mnemonic: '' };
                     Object.entries(cached).forEach(([chain, data]) => { mockWallets[chain] = data; });
                     try {
-                        const info = await web3WalletService.getWalletInfo(mockWallets);
+                        info = await web3WalletService.getWalletInfo(mockWallets);
                         setSenderInfo(info);
                     } catch { /* balances optional */ }
                 } else {
@@ -121,7 +131,7 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                     const tokens = await fetchHiveMetadata(senderUsername);
                     const chainTokens = tokens.filter(t => t.type === 'CHAIN');
                     const mockWallets: any = { mnemonic: '' };
-                    const info: Web3WalletInfo[] = chainTokens.map(t => {
+                    info = chainTokens.map(t => {
                         const normalized = SYMBOL_MAP[t.symbol] || t.symbol;
                         return {
                             chain: normalized, symbol: t.symbol,
@@ -136,11 +146,35 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                     if (info.length > 0) {
                         setSenderInfo(info);
                         try {
-                            const fullInfo = await web3WalletService.getWalletInfo(mockWallets);
-                            setSenderInfo(fullInfo);
+                            info = await web3WalletService.getWalletInfo(mockWallets);
+                            setSenderInfo(info);
                         } catch { /* balances optional */ }
                     }
                 }
+
+                // Append SATS info
+                try {
+                    const satsBalance = await lightningService.getBalance(senderUsername);
+                    if (satsBalance !== null) {
+                        const satsInfo: Web3WalletInfo = {
+                            chain: 'SATS',
+                            symbol: 'SATS',
+                            address: `${senderUsername}@sovraniche.com`,
+                            imageUrl: '',
+                            balance: satsBalance,
+                            price: 0,
+                            change24h: 0,
+                            usdValue: 0
+                        };
+                        setSenderInfo(prev => {
+                            const filtered = prev.filter(w => w.chain !== 'SATS');
+                            return [...filtered, satsInfo];
+                        });
+                    }
+                } catch (err) {
+                    console.error('Failed to load SATS balance:', err);
+                }
+
             } finally {
                 setLoadingSender(false);
             }
@@ -167,31 +201,86 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
 
     // ── Unlock wallet via Keychain signature ──────────────────────────────────
     const handleUnlock = async () => {
-        const encrypted = mnemonicStorage.getEncrypted(senderUsername);
-        const salt = mnemonicStorage.getSalt(senderUsername);
-        if (!encrypted || !salt) { showNotification('No wallet found to unlock', 'error'); return; }
-
         setStep('unlocking');
         try {
-            const sig = await authService.signMessage(senderUsername, UNLOCK_MESSAGE, 'Posting', () => { });
-            if (!sig.success || !sig.result) throw new Error(sig.error || 'Signature failed');
-            const mnemonic = await decryptMnemonic(encrypted, salt, sig.result);
-            const derived = await web3WalletService.deriveAddresses(mnemonic);
-            const info = await web3WalletService.getWalletInfo(derived as any);
-            const walletMap: typeof senderWallets = {};
-            info.forEach(w => {
-                const raw = (derived as any)[w.chain];
-                if (raw?.privateKey) {
-                    walletMap[w.chain] = { balance: w.balance, privateKey: raw.privateKey, address: w.address, imageUrl: w.imageUrl };
+            if (selectedChain === 'SATS') {
+                const walletData = await lightningService.getOrCreateWallet(senderUsername);
+                let rawInkey = '';
+
+                if ((walletData as any).isNew) {
+                    rawInkey = (walletData as any).inkey;
+                    // For new wallets, we also need to SAVE it (encrypting it via Keychain)
+                    await lightningService.saveWallet(senderUsername, walletData.walletId, rawInkey);
+                } else if (walletData.encryptedInkey) {
+                    // Decrypt existing wallet
+                    const sig = await authService.signMessage(senderUsername, UNLOCK_MESSAGE, 'Posting');
+                    if (!sig.success || !sig.result) throw new Error('Signature failed');
+                    rawInkey = await lightningService.decryptInkey(walletData.encryptedInkey, walletData.salt!, sig.result);
                 }
-            });
-            setSenderWallets(walletMap);
-            setSenderInfo(info);
+
+                if (rawInkey) {
+                    try {
+                        const freshBalance = await lightningService.getBalance(senderUsername, rawInkey);
+                        const walletObj = {
+                            balance: freshBalance,
+                            privateKey: rawInkey,
+                            address: `${senderUsername}@sovraniche.com`,
+                            imageUrl: ''
+                        };
+
+                        setSenderWallets(prev => ({ ...prev, SATS: walletObj }));
+
+                        // Also update senderInfo so balances match
+                        setSenderInfo(prev => {
+                            const filtered = prev.filter(w => w.chain !== 'SATS');
+                            return [...filtered, {
+                                chain: 'SATS', symbol: 'SATS', address: walletObj.address,
+                                balance: freshBalance, imageUrl: '', price: 0, change24h: 0, usdValue: 0
+                            }];
+                        });
+                    } catch (balErr) {
+                        console.error('Failed to get fresh balance after unlock:', balErr);
+                        // Still unlock even if balance fetch fails
+                        setSenderWallets(prev => ({
+                            ...prev,
+                            SATS: { balance: 0, privateKey: rawInkey, address: `${senderUsername}@sovraniche.com`, imageUrl: '' }
+                        }));
+                    }
+                }
+            } else {
+                const encrypted = mnemonicStorage.getEncrypted(senderUsername);
+                const salt = mnemonicStorage.getSalt(senderUsername);
+                if (!encrypted || !salt) throw new Error('No wallet found');
+
+                const sig = await authService.signMessage(senderUsername, UNLOCK_MESSAGE, 'Posting');
+                if (!sig.success || !sig.result) throw new Error('Signature failed');
+                const mnemonic = await decryptMnemonic(encrypted, salt, sig.result);
+                const derived = await web3WalletService.deriveAddresses(mnemonic);
+                const info = await web3WalletService.getWalletInfo(derived as any);
+                const walletMap: typeof senderWallets = {};
+                info.forEach(w => {
+                    const raw = (derived as any)[w.chain];
+                    if (raw?.privateKey) {
+                        walletMap[w.chain] = { balance: w.balance, privateKey: raw.privateKey, address: w.address, imageUrl: w.imageUrl };
+                    }
+                });
+                setSenderWallets(prev => ({ ...prev, ...walletMap }));
+                setSenderInfo(prev => {
+                    const next = [...prev];
+                    info.forEach(latest => {
+                        const idx = next.findIndex(p => p.chain === latest.chain);
+                        if (idx === -1) next.push(latest);
+                        else next[idx] = latest;
+                    });
+                    return next;
+                });
+            }
+
             setIsLocked(false);
             setStep('enter_amount');
             showNotification('Wallet unlocked!', 'success');
         } catch (err: any) {
-            setStep('select_chain');
+            setStep('enter_amount');
             showNotification(err.message || 'Unlock failed', 'error');
         }
     };
@@ -199,8 +288,31 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
     // ── Send the tip ──────────────────────────────────────────────────────────
     const handleSendTip = async () => {
         if (!selectedChain || !amount) return;
-        const recipientAddr = recipientAddresses[selectedChain];
         const wallet = senderWallets[selectedChain];
+
+        // Special Handling for SATS (Lightning)
+        if (selectedChain === 'SATS') {
+            if (!wallet?.privateKey) return;
+            setStep('sending');
+            try {
+                // 1. Generate Invoice for Recipient
+                const bolt11 = await lightningService.createInvoice(recipientUsername, Number(amount), `Tip from @${senderUsername}`);
+
+                // 2. Pay it with Sender's Inkey
+                const hash = await lightningService.pay(bolt11, wallet.privateKey);
+
+                setTxHash(hash);
+                setStep('done');
+                if (onSuccess) onSuccess();
+                showNotification(`Tipped ${amount} SATS to @${recipientUsername}! ⚡`, 'success');
+            } catch (err: any) {
+                setErrorMsg(err.message || 'Payment failed');
+                setStep('error');
+            }
+            return;
+        }
+
+        const recipientAddr = recipientAddresses[selectedChain];
         if (!recipientAddr || !wallet?.privateKey) return;
 
         setStep('sending');
@@ -249,10 +361,16 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
         }
     };
 
-    // ── Chains available for tipping (recipient has address) ──
     const availableChains = Object.keys(recipientAddresses).filter(chain =>
         recipientAddresses[chain]
     );
+
+    // SATS doesn't require the recipient to have an address pre-configured.
+    // LNBits will generate an invoice on the fly tied to their Hive username.
+    if (!availableChains.includes('SATS')) {
+        availableChains.push('SATS');
+    }
+
     const senderBalance = (chain: string) =>
         senderWallets[chain]?.balance ?? senderInfo.find(i => i.chain === chain)?.balance ?? 0;
 
@@ -402,7 +520,11 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                                                         : 'border-[var(--border-color)] hover:border-[var(--text-secondary)] bg-[var(--bg-canvas)]'
                                                         }`}
                                                 >
-                                                    {info?.imageUrl ? (
+                                                    {chain === 'SATS' ? (
+                                                        <div className="w-6 h-6 rounded-lg overflow-hidden shadow-sm">
+                                                            <SatsIcon color={accent} />
+                                                        </div>
+                                                    ) : info?.imageUrl ? (
                                                         <img src={info.imageUrl} alt={chain} className="w-6 h-6 object-contain" />
                                                     ) : (
                                                         <div className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: `${accent}20`, color: accent }}>{chain[0]}</div>
@@ -424,9 +546,10 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                             {/* ── Amount + send (once chain selected) ── */}
                             {step === 'enter_amount' && selectedChain && (
                                 <>
-                                    {/* Wallet status: if locked, prompt unlock */}
-                                    {isLocked && !senderWallets[selectedChain] && (
-                                        <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 flex items-center gap-3">
+                                    {/* Sender Wallet Unlock Prompt */}
+                                    {/* Sender Wallet Unlock Prompt */}
+                                    {((selectedChain === 'SATS' && !senderWallets.SATS) || (selectedChain !== 'SATS' && isLocked && !senderWallets[selectedChain])) && (
+                                        <div className="animate-in fade-in slide-in-from-top-2 duration-300 bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 flex items-center gap-3">
                                             <span className="text-lg shrink-0">🔒</span>
                                             <div className="flex-1">
                                                 <p className="text-[10px] font-bold text-amber-500">Wallet Locked</p>

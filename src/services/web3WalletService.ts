@@ -42,6 +42,23 @@ const ENCRYPTED_MNEMONIC_KEY = 'web3_mnemonic_enc';
 const SALT_KEY = 'web3_salt';
 export const UNLOCK_MESSAGE = 'Sign this message to securely encrypt/decrypt your multi-chain Web3 recovery phrase. This signature acts as your local vault key and never leaves your device.';
 
+const ICON_BASE = 'https://assets.coingecko.com/coins/images';
+export const WEB3_CHAIN_METADATA: Record<string, { icon: string, color: string, label: string }> = {
+    BTC: { icon: `${ICON_BASE}/1/large/bitcoin.png`, color: '#f7931a', label: 'Bitcoin' },
+    ETH: { icon: `${ICON_BASE}/279/large/ethereum.png`, color: '#627eea', label: 'Ethereum' },
+    SOL: { icon: `${ICON_BASE}/4128/standard/solana.png?1718769756`, color: '#9945ff', label: 'Solana' },
+    TRON: { icon: `${ICON_BASE}/1094/large/tron-logo.png`, color: '#ef0027', label: 'TRON' },
+    BNB: { icon: `${ICON_BASE}/825/standard/bnb-icon2_2x.png?1696501970`, color: '#f0b90b', label: 'BNB Smart Chain' },
+    APTOS: { icon: `${ICON_BASE}/26455/standard/Aptos-Network-Symbol-Black-RGB-1x.png?1761789140`, color: '#00bcd4', label: 'Aptos' },
+    BASE: { icon: `${ICON_BASE}/279/large/ethereum.png`, color: '#0052ff', label: 'Base' },
+    POLYGON: { icon: `${ICON_BASE}/4713/large/matic-token-icon.png`, color: '#8247e5', label: 'Polygon' },
+    ARBITRUM: { icon: `${ICON_BASE}/16547/large/arbitrum-shield.png`, color: '#28a0f0', label: 'Arbitrum One' },
+    USDT_TRC20: { icon: `${ICON_BASE}/325/large/tether.png`, color: '#26a17b', label: 'Tether (TRC20)' },
+    USDT_BEP20: { icon: `${ICON_BASE}/325/large/tether.png`, color: '#26a17b', label: 'Tether (BEP20)' },
+    USDT_ERC20: { icon: `${ICON_BASE}/325/large/tether.png`, color: '#26a17b', label: 'Tether (ERC20)' },
+    SATS: { icon: 'https://raw.githubusercontent.com/spknetwork/lightning-icons/main/sats.png', color: '#f7931a', label: 'Lightning Bitcoin' }
+};
+
 const normalize = (name: string) => name.replace(/^@/, '');
 
 export const mnemonicStorage = {
@@ -184,29 +201,13 @@ export const web3WalletService = {
      */
     deriveAddresses: async (mnemonic: string): Promise<RawWallets> => {
         const derived = await deriveAllWallets(mnemonic);
-        const ICON_BASE = 'https://assets.coingecko.com/coins/images';
-        const ICONS: Record<string, string> = {
-            BTC: `${ICON_BASE}/1/large/bitcoin.png`,
-            ETH: `${ICON_BASE}/279/large/ethereum.png`,
-            SOL: `${ICON_BASE}/4128/standard/solana.png?1718769756`,
-            TRON: `${ICON_BASE}/1094/large/tron-logo.png`,
-            BNB: `${ICON_BASE}/825/standard/bnb-icon2_2x.png?1696501970`,
-            APTOS: `${ICON_BASE}/26455/standard/Aptos-Network-Symbol-Black-RGB-1x.png?1761789140`,
-            BASE: `${ICON_BASE}/279/large/ethereum.png`,
-            POLYGON: `${ICON_BASE}/4713/large/matic-token-icon.png`,
-            ARBITRUM: `${ICON_BASE}/16547/large/arbitrum-shield.png`,
-            USDT_TRC20: `${ICON_BASE}/325/large/tether.png`,
-            USDT_BEP20: `${ICON_BASE}/325/large/tether.png`,
-            USDT_ERC20: `${ICON_BASE}/325/large/tether.png`,
-        };
-
         const rawWallets: any = { mnemonic };
         for (const [chain, data] of Object.entries(derived)) {
             rawWallets[chain] = {
                 address: data.address,
                 publicKey: data.publicKey,
                 privateKey: data.privateKey,
-                imageUrl: ICONS[chain] || ''
+                imageUrl: WEB3_CHAIN_METADATA[chain]?.icon || ''
             };
         }
         return rawWallets as RawWallets;
@@ -217,27 +218,12 @@ export const web3WalletService = {
      */
     deriveSingleAddress: async (mnemonic: string, chain: string): Promise<RawWallet> => {
         const derived = await import('./derivationService').then(m => m.deriveWallet(mnemonic, chain as any));
-        const ICON_BASE = 'https://assets.coingecko.com/coins/images';
-        const ICONS: Record<string, string> = {
-            BTC: `${ICON_BASE}/1/large/bitcoin.png`,
-            ETH: `${ICON_BASE}/279/large/ethereum.png`,
-            SOL: `${ICON_BASE}/4128/standard/solana.png?1718769756`,
-            TRON: `${ICON_BASE}/1094/large/tron-logo.png`,
-            BNB: `${ICON_BASE}/825/standard/bnb-icon2_2x.png?1696501970`,
-            APTOS: `${ICON_BASE}/26455/standard/Aptos-Network-Symbol-Black-RGB-1x.png?1761789140`,
-            BASE: `${ICON_BASE}/279/large/ethereum.png`,
-            POLYGON: `${ICON_BASE}/4713/large/matic-token-icon.png`,
-            ARBITRUM: `${ICON_BASE}/16547/large/arbitrum-shield.png`,
-            USDT_TRC20: `${ICON_BASE}/325/large/tether.png`,
-            USDT_BEP20: `${ICON_BASE}/325/large/tether.png`,
-            USDT_ERC20: `${ICON_BASE}/325/large/tether.png`,
-        };
 
         return {
             address: derived.address,
             publicKey: derived.publicKey,
             privateKey: derived.privateKey,
-            imageUrl: ICONS[chain] || ''
+            imageUrl: WEB3_CHAIN_METADATA[chain]?.icon || ''
         };
     },
 
@@ -377,5 +363,37 @@ export const web3WalletService = {
         } catch (err) {
             console.warn('[Web3Wallet] Failed to log transaction to Hive (non-critical):', err);
         }
+    },
+
+    /**
+     * Fetch multi-chain wallet info (addresses + balances) for any Hive user.
+     */
+    getWalletInfoForUser: async (username: string): Promise<Web3WalletInfo[]> => {
+        const { fetchHiveMetadata } = await import('./hiveMetadataService');
+        const tokens = await fetchHiveMetadata(username);
+        const cached = addressStorage.get(username);
+        const mockWallets: any = { mnemonic: '' };
+
+        // 1. Start with local cache (reliable for current user)
+        if (cached) {
+            Object.entries(cached).forEach(([chain, data]) => {
+                mockWallets[chain] = data;
+            });
+        }
+
+        // 2. Overlay with Hive metadata (ground truth for any user)
+        tokens.filter(t => t.type === 'CHAIN').forEach(t => {
+            if (t.symbol && t.meta.address) {
+                mockWallets[t.symbol] = {
+                    address: t.meta.address,
+                    imageUrl: t.meta.imageUrl || ''
+                };
+            }
+        });
+
+        // If no chains found, return empty
+        if (Object.keys(mockWallets).length <= 1) return [];
+
+        return web3WalletService.getWalletInfo(mockWallets);
     }
 };

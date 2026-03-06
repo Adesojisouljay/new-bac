@@ -232,6 +232,15 @@ export default function CreatePostPage() {
                 format: 'markdown'
             };
 
+            // Reward Advance Metadata
+            if (advancedOptions.reward_advance?.enabled) {
+                metadataObj.reward_advance = {
+                    percentage: advancedOptions.reward_advance.percentage,
+                    currency: advancedOptions.reward_advance.currency,
+                    address: advancedOptions.reward_advance.address
+                };
+            }
+
             if (advancedOptions.description) {
                 metadataObj.description = advancedOptions.description;
             }
@@ -239,13 +248,33 @@ export default function CreatePostPage() {
             const jsonMetadata = JSON.stringify(metadataObj);
 
             let commentOptions;
-            if (advancedOptions.reward !== 'default' || advancedOptions.beneficiaries.length > 0) {
+            const finalBeneficiaries = [...advancedOptions.beneficiaries];
+
+            // Add Reward Advance Beneficiary (30% to platform account)
+            if (advancedOptions.reward_advance?.enabled) {
+                const platformAccount = config?.id || 'breakaway';
+                // Check if already exists to avoid duplicates
+                if (!finalBeneficiaries.some(b => b.account === platformAccount)) {
+                    finalBeneficiaries.push({
+                        account: platformAccount,
+                        weight: 3000 // 30%
+                    });
+                } else {
+                    // Update existing to at least 30% if needed, or just let it be
+                    const idx = finalBeneficiaries.findIndex(b => b.account === platformAccount);
+                    if (finalBeneficiaries[idx].weight < 3000) {
+                        finalBeneficiaries[idx].weight = 3000;
+                    }
+                }
+            }
+
+            if (advancedOptions.reward !== 'default' || finalBeneficiaries.length > 0) {
                 commentOptions = {
                     max_accepted_payout: advancedOptions.reward === 'decline' ? '0.000 HBD' : '1000000.000 HBD',
                     percent_hbd: advancedOptions.reward === 'power_up' ? 0 : 10000,
                     allow_votes: true,
                     allow_curation_rewards: true,
-                    beneficiaries: advancedOptions.beneficiaries
+                    beneficiaries: finalBeneficiaries
                 };
             }
 
