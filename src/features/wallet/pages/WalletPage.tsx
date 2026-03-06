@@ -31,7 +31,7 @@ export default function WalletPage() {
 
     const walletUsername = (urlUsername || localStorage.getItem('hive_user') || '').replace(/^@/, '');
 
-    console.log('[WalletPage] Render. tab:', activeTab, 'user:', walletUsername);
+
 
     const setTab = (tab: TabId) => {
         setSearchParams({ tab });

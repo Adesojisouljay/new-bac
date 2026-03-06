@@ -6,7 +6,7 @@ import { computeAddress } from '@ethersproject/transactions';
 import { Keypair } from '@solana/web3.js';
 import { derivePath } from 'ed25519-hd-key';
 import * as bitcoin from 'bitcoinjs-lib';
-import TronWeb from 'tronweb';
+import { TronWeb } from 'tronweb';
 import { Account } from '@aptos-labs/ts-sdk';
 
 const bip32 = BIP32Factory(ecc);
@@ -18,18 +18,23 @@ export interface DerivedWallet {
 }
 
 export const CHAIN_PATHS = {
-    BTC: "m/44'/0'/0'/0/0",
+    BTC: "m/84'/0'/0'/0/0",
     ETH: "m/44'/60'/0'/0/0",
     BNB: "m/44'/60'/0'/0/0",
     BASE: "m/44'/60'/0'/0/0",
     POLYGON: "m/44'/60'/0'/0/0",
     ARBITRUM: "m/44'/60'/0'/0/0",
     SOL: "m/44'/501'/0'/0'",
-    TRON: "m/44'/195'/0'/0'",
+    TRON: "m/44'/195'/0'/0/0",
     APTOS: "m/44'/637'/0'/0'/0'",
-    USDT_TRC20: "m/44'/195'/0'/0'",
+    USDT_TRC20: "m/44'/195'/0'/0/0",
     USDT_BEP20: "m/44'/60'/0'/0/0",
     USDT_ERC20: "m/44'/60'/0'/0/0",
+};
+
+export const LEGACY_PATHS = {
+    BTC: "m/44'/0'/0'/0/0",
+    TRON: "m/44'/195'/0'/0/0"
 };
 
 type DerivationStrategy = (mnemonic: string) => Promise<DerivedWallet>;
@@ -99,17 +104,19 @@ const strategies: Record<string, DerivationStrategy> = {
      */
     TRON: async (mnemonic) => {
         const seed = await bip39.mnemonicToSeed(mnemonic);
-        const derived = derivePath(CHAIN_PATHS.TRON, seed.toString('hex')).key;
-        const privateKeyHex = derived.toString('hex');
+        const root = (bip32 as any).fromSeed(seed);
+        const child = root.derivePath(CHAIN_PATHS.TRON);
+        const privateKeyHex = Buffer.from(child.privateKey).toString('hex');
 
+        // TronWeb 6.x fix: Use robust derivation
         // @ts-ignore
-        const address = TronWeb.utils?.address?.fromPrivateKey(privateKeyHex);
+        const address = TronWeb.address.fromPrivateKey(privateKeyHex);
         if (!address) throw new Error('Failed to derive TRON address');
 
         return {
             address,
             privateKey: privateKeyHex,
-            publicKey: '' // TronWeb doesn't easily expose raw pubkey in a simple call, but address is sufficient
+            publicKey: ''
         };
     },
 
@@ -132,18 +139,19 @@ const strategies: Record<string, DerivationStrategy> = {
 };
 
 export async function deriveWallet(mnemonic: string, chain: keyof typeof CHAIN_PATHS): Promise<DerivedWallet> {
-    console.log(`[Derivation] Starting for ${chain}...`);
+
     const strategy = strategies[chain];
     if (!strategy) {
         throw new Error(`Derivation strategy for ${chain} not found`);
     }
+
     const result = await strategy(mnemonic);
-    console.log(`[Derivation] Success for ${chain}. Address: ${result.address}`);
+
     return result;
 }
 
 export async function deriveAllWallets(mnemonic: string): Promise<Record<string, DerivedWallet>> {
-    console.log('[Derivation] Validating mnemonic length:', mnemonic.split(/\s+/).length);
+
     if (!bip39.validateMnemonic(mnemonic)) {
         console.error('[Derivation] Invalid Mnemonic Phrase!');
         throw new Error('Invalid Mnemonic Phrase. Please check your words.');
