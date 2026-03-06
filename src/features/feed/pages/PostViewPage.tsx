@@ -12,6 +12,8 @@ import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { ShareModal } from '../../../components/ShareModal';
 import { useCommunity } from '../../community/context/CommunityContext';
+import { WalletActionsModal } from '../../wallet/components/WalletActionsModal';
+import { Web3TipModal } from '../../wallet/components/Web3TipModal';
 
 
 export default function PostViewPage() {
@@ -29,6 +31,10 @@ export default function PostViewPage() {
     const [showEditHistory, setShowEditHistory] = useState(false);
     const [showMoreMenu, setShowMoreMenu] = useState(false);
     const [isBookmarked, setIsBookmarked] = useState(false);
+    const [showTipModal, setShowTipModal] = useState(false);
+    const [showTipMenu, setShowTipMenu] = useState(false);
+    const [showWeb3Tip, setShowWeb3Tip] = useState(false);
+    const [hasTipped, setHasTipped] = useState(false);
 
     const [scrollProgress, setScrollProgress] = useState(0);
     const [showScrollTop, setShowScrollTop] = useState(false);
@@ -1047,6 +1053,49 @@ export default function PostViewPage() {
                                 <Share size={20} />
                             </button>
 
+                            {/* Tip Button & Menu */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowTipMenu(!showTipMenu)}
+                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${hasTipped ? 'bg-amber-500/10 text-amber-500 shadow-sm' : 'hover:bg-amber-500/10 text-[var(--text-secondary)] hover:text-amber-500'}`}
+                                    title="Send a Tip"
+                                >
+                                    <DollarSign size={20} className={hasTipped ? 'text-amber-500' : ''} />
+                                </button>
+
+                                {showTipMenu && (
+                                    <div className="absolute bottom-full right-0 mb-4 z-[60] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl shadow-2xl overflow-hidden min-w-[220px] backdrop-blur-xl">
+                                            <div className="px-5 py-4 border-b border-[var(--border-color)] flex items-center justify-between">
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)]">Support Author</span>
+                                            </div>
+                                            <div className="p-2 flex flex-col gap-1">
+                                                <button
+                                                    onClick={() => { setShowTipMenu(false); setShowTipModal(true); }}
+                                                    className="flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-[var(--bg-canvas)] transition-all text-left w-full group/hive"
+                                                >
+                                                    <span className="text-2xl">🐝</span>
+                                                    <div>
+                                                        <p className="text-sm font-bold text-[var(--text-primary)] group-hover/hive:text-[var(--primary-color)] transition-colors">HIVE / HBD</p>
+                                                        <p className="text-[10px] text-[var(--text-secondary)]">Hive Wallet Transfer</p>
+                                                    </div>
+                                                </button>
+                                                <button
+                                                    onClick={() => { setShowTipMenu(false); setShowWeb3Tip(true); }}
+                                                    className="flex items-center gap-3 px-4 py-3 rounded-2xl hover:bg-[var(--bg-canvas)] transition-all text-left w-full group/web3"
+                                                >
+                                                    <span className="text-2xl">🌐</span>
+                                                    <div>
+                                                        <p className="text-sm font-bold text-[var(--text-primary)] group-hover/web3:text-[var(--primary-color)] transition-colors">Web3 Crypto</p>
+                                                        <p className="text-[10px] text-[var(--text-secondary)]">BTC · ETH · SOL · etc</p>
+                                                    </div>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
                             {/* Scroll to Top - Dynamic */}
                             {showScrollTop && (
                                 <button
@@ -1319,6 +1368,41 @@ export default function PostViewPage() {
                     </div>
                 )
             }
+
+            {/* Tipping Modal — HIVE */}
+            {(() => {
+                const username = localStorage.getItem('hive_user');
+                return username ? (
+                    <WalletActionsModal
+                        isOpen={showTipModal}
+                        onClose={() => setShowTipModal(false)}
+                        type="transfer"
+                        username={username}
+                        initialData={{
+                            to: post.author,
+                            memo: `Tip for post: ${post.title.substring(0, 50)}...`
+                        }}
+                        onSuccess={() => {
+                            showNotification(`Tip sent to @${post.author}!`, 'success');
+                            setShowTipModal(false);
+                            setHasTipped(true);
+                        }}
+                    />
+                ) : null;
+            })()}
+
+            {/* Tipping Modal — Web3 */}
+            {showWeb3Tip && (
+                <Web3TipModal
+                    recipientUsername={post.author}
+                    onClose={() => setShowWeb3Tip(false)}
+                    onSuccess={() => {
+                        showNotification(`Web3 tip sent to @${post.author}!`, 'success');
+                        setHasTipped(true);
+                        setShowWeb3Tip(false);
+                    }}
+                />
+            )}
         </div >
     );
 }
