@@ -101,11 +101,11 @@ export const pointsService = {
             };
 
             if (preSigned && preSigned.sig) {
-                console.log(`[Points] Using pre-signed signature for ${username}, skipping prompt.`);
+
                 const ts = preSigned.ts || Date.now().toString();
                 let sig = extractSig(preSigned.sig);
 
-                console.log(`[Points] Final signature: ${typeof sig === 'string' ? sig.substring(0, 10) + '...' : 'INVALID'}`);
+
 
                 if (!sig) {
                     console.error("[Points] Failed to extract signature from pre-signed data.");
@@ -122,7 +122,7 @@ export const pointsService = {
                     const data = await res.json();
                     const token = data?.response?.token;
                     if (token) {
-                        console.log('[Points] Successfully authenticated with pre-signed proof.');
+
                         setPointsToken(token);
                         localStorage.removeItem('pending_points_auth');
                         return true;
@@ -135,7 +135,7 @@ export const pointsService = {
                 }
             }
 
-            console.log(`[Points] Attempting login for ${username} via ${method}...`);
+
             const ts = Date.now().toString();
             const message = `${username}${ts}`;
             let signature: string;
@@ -205,7 +205,7 @@ export const pointsService = {
 
                 const result = await new Promise<any>((resolve) => {
                     HAS.authenticate(auth, APP_META, challenge_data, (evt: any) => {
-                        console.log("[Points] HiveAuth challenge event:", evt);
+
                         if (onChallenge) {
                             const qr_data = { ...evt };
                             delete qr_data.cmd;
@@ -251,7 +251,7 @@ export const pointsService = {
                 }
             }
 
-            console.log(`[Points] Proof obtained, authenticating with backend...`);
+
             const res = await fetch(
                 `${POINTS_API_URL}/auth/login?username=${encodeURIComponent(username)}&ts=${ts}&sig=${encodeURIComponent(signature)}&community=${encodeURIComponent(community)}&message=${encodeURIComponent(message)}`
             );
@@ -266,7 +266,7 @@ export const pointsService = {
             const data = await res.json();
             const token = data?.response?.token;
             if (token) {
-                console.log('[Points] Successfully authenticated with backend.');
+
                 setPointsToken(token);
                 localStorage.removeItem('pending_points_auth');
                 return true;
@@ -290,7 +290,7 @@ export const pointsService = {
 
         try {
             const { username, community, method } = JSON.parse(pending);
-            console.log(`[Points] Resuming pending auth for @${username}...`);
+
 
             // Only HiveAuth needs "resumption" because Keychain is usually synchronous or handled by extension
             if (method !== 'hiveauth') {

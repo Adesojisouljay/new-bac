@@ -53,7 +53,7 @@ export const mnemonicStorage = {
 
         // Migration: If we found it with the prefixed key but not the normalized one, save it to the normalized one
         if (val && !localStorage.getItem(`${ENCRYPTED_MNEMONIC_KEY}_${norm}`)) {
-            console.log(`[Storage] Migrating encrypted mnemonic for ${norm}`);
+
             localStorage.setItem(`${ENCRYPTED_MNEMONIC_KEY}_${norm}`, val);
             const salt = localStorage.getItem(`${SALT_KEY}_${pref}`);
             if (salt) localStorage.setItem(`${SALT_KEY}_${norm}`, salt);
@@ -67,7 +67,7 @@ export const mnemonicStorage = {
     },
     set: (username: string, encryptedMnemonic: string, salt: string) => {
         const norm = normalize(username);
-        console.log(`[Storage] Saving keys for ${norm}`);
+
         localStorage.setItem(`${ENCRYPTED_MNEMONIC_KEY}_${norm}`, encryptedMnemonic);
         localStorage.setItem(`${SALT_KEY}_${norm}`, salt);
     },
@@ -146,7 +146,7 @@ export async function encryptMnemonic(mnemonic: string, signature: string): Prom
 }
 
 export async function decryptMnemonic(encryptedB64: string, saltB64: string, signature: string): Promise<string> {
-    console.log('[Web3Service] Attempting decryption...');
+
     const combined = new Uint8Array(atob(encryptedB64).split('').map(c => c.charCodeAt(0)));
     const salt = new Uint8Array(atob(saltB64).split('').map(c => c.charCodeAt(0)));
     const iv = combined.slice(0, 12);
@@ -160,7 +160,7 @@ export async function decryptMnemonic(encryptedB64: string, saltB64: string, sig
     );
 
     const result = new TextDecoder().decode(decrypted);
-    console.log('[Web3Service] Decryption successful');
+
     return result;
 }
 
@@ -210,6 +210,59 @@ export const web3WalletService = {
             };
         }
         return rawWallets as RawWallets;
+    },
+
+    /**
+     * Derive a single wallet address for a specific chain from a mnemonic LOCALLY.
+     */
+    deriveSingleAddress: async (mnemonic: string, chain: string): Promise<RawWallet> => {
+        const derived = await import('./derivationService').then(m => m.deriveWallet(mnemonic, chain as any));
+        const ICON_BASE = 'https://assets.coingecko.com/coins/images';
+        const ICONS: Record<string, string> = {
+            BTC: `${ICON_BASE}/1/large/bitcoin.png`,
+            ETH: `${ICON_BASE}/279/large/ethereum.png`,
+            SOL: `${ICON_BASE}/4128/standard/solana.png?1718769756`,
+            TRON: `${ICON_BASE}/1094/large/tron-logo.png`,
+            BNB: `${ICON_BASE}/825/standard/bnb-icon2_2x.png?1696501970`,
+            APTOS: `${ICON_BASE}/26455/standard/Aptos-Network-Symbol-Black-RGB-1x.png?1761789140`,
+            BASE: `${ICON_BASE}/279/large/ethereum.png`,
+            POLYGON: `${ICON_BASE}/4713/large/matic-token-icon.png`,
+            ARBITRUM: `${ICON_BASE}/16547/large/arbitrum-shield.png`,
+            USDT_TRC20: `${ICON_BASE}/325/large/tether.png`,
+            USDT_BEP20: `${ICON_BASE}/325/large/tether.png`,
+            USDT_ERC20: `${ICON_BASE}/325/large/tether.png`,
+        };
+
+        return {
+            address: derived.address,
+            publicKey: derived.publicKey,
+            privateKey: derived.privateKey,
+            imageUrl: ICONS[chain] || ''
+        };
+    },
+
+    /**
+     * Scan legacy paths for funds and return any that have sub-wallets with balances.
+     */
+    checkLegacyAddresses: async (mnemonic: string): Promise<Record<string, RawWallet>> => {
+        const { LEGACY_PATHS, deriveWallet } = await import('./derivationService');
+        const legacyWallets: Record<string, RawWallet> = {};
+
+        // Only BTC and TRON had standard path changes that matter for legacy
+        for (const [chain] of Object.entries(LEGACY_PATHS)) {
+            try {
+                const derived = await deriveWallet(mnemonic, chain as any);
+                legacyWallets[chain] = {
+                    address: derived.address,
+                    publicKey: derived.publicKey,
+                    privateKey: derived.privateKey,
+                    imageUrl: '' // We can fill this if needed
+                };
+            } catch (e) {
+                console.warn(`[LegacyScan] Failed for ${chain}:`, e);
+            }
+        }
+        return legacyWallets;
     },
 
     /**
@@ -280,9 +333,15 @@ export const web3WalletService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ chain, signedTx }),
         });
-        if (!res.ok) throw new Error(`Broadcast failed (${res.status})`);
-        const data = await res.json();
-        if (!data.success) throw new Error(data.message || 'Broadcast failed');
+
+        let data;
+        try { data = await res.json(); } catch (e) { }
+
+        if (!res.ok) {
+            throw new Error(data?.message || `Broadcast failed (${res.status})`);
+        }
+
+        if (!data?.success) throw new Error(data?.message || 'Broadcast failed');
         return data.hash;
     },
 
@@ -314,7 +373,7 @@ export const web3WalletService = {
 
         try {
             await authService.broadcastJson(username, logId, payload, 'Posting');
-            console.log(`[Web3Wallet] Logged ${data.type} to Hive:`, data.hash);
+
         } catch (err) {
             console.warn('[Web3Wallet] Failed to log transaction to Hive (non-critical):', err);
         }

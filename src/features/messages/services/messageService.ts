@@ -96,7 +96,7 @@ class MessageService {
             throw new Error('Chat server is currently offline. Please try again in a moment.');
         }
 
-        console.log(`📡 [MessageService] Emitting send_message to @${receiver}`);
+
 
         // Emit directly via Socket for total confidentiality (Off-Chain)
         socketService.emit('send_message', {
@@ -142,12 +142,12 @@ class MessageService {
         // 1. Fetch only from the private backend API (Off-Chain)
         if (this.BACKEND_URL) {
             try {
-                console.log(`📡 [MessageService] Fetching history from: ${this.BACKEND_URL}/api/messages?account=${username}`);
+
                 const response = await fetch(`${this.BACKEND_URL}/api/messages?account=${username}&limit=${limit}`);
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log(`✅ [MessageService] Fetched ${data.messages?.length || 0} messages`);
+
                     history = data.messages.map((m: any) => ({
                         from: m.from,
                         to: m.to,

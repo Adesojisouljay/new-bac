@@ -212,27 +212,27 @@ export const transactionService = {
         const method = activeAccount?.method || localStorage.getItem('hive_auth_method') || 'keychain';
         const username = op.username;
 
-        console.log(`[Transaction] Broadcasting ${op.type} for @${username} using ${method}`);
+
 
         // Check if this is a Posting-level operation that can be relayed
         const postingOps = ['vote', 'comment', 'reblog', 'unreblog', 'profile_update', 'delegate_rc', 'messaging', 'follow', 'subscribe', 'cross_post'];
 
         if (postingOps.includes(op.type)) {
             const { authService } = await import('../../auth/services/authService');
-            console.log(`[Transaction] Checking delegation for ${username}...`);
+
             const isDelegated = await authService.checkDelegation(username);
-            console.log(`[Transaction] isDelegated: ${isDelegated}`);
+
 
             if (isDelegated) {
-                console.log(`🚀 [Relay] Attempting broadcast for ${op.type} via platform relay...`);
+
                 const relayResult = await transactionService.broadcastRelay(op);
                 if (relayResult.success) {
-                    console.log(`✅ [Relay] Broadcast successful!`);
+
                     return relayResult;
                 }
                 console.error(`❌ [Relay] Relay failed, falling back to standard signature:`, relayResult.error);
             } else {
-                console.log(`[Transaction] No delegation found for ${username}, skipping relay.`);
+
             }
         }
 
@@ -252,7 +252,7 @@ export const transactionService = {
     broadcastRelay: async (op: WalletOperation): Promise<{ success: boolean; result?: any; error?: string }> => {
         try {
             const token = localStorage.getItem('points_auth_token');
-            console.log(`[Relay] Using token: ${token ? (token.substring(0, 10) + '...') : 'NULL'}`);
+
             if (!token) {
                 return { success: false, error: "Authentication token missing. Please try logging in again." };
             }

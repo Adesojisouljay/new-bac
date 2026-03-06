@@ -1,9 +1,6 @@
 {
 	"folders": [
 		{
-			"path": "../../Ba-external-wallet"
-		},
-		{
 			"path": "."
 		},
 		{
@@ -14,6 +11,9 @@
 		},
 		{
 			"path": "../bac-community-setup"
+		},
+		{
+			"path": "../Ba-external-wallet"
 		}
 	],
 	"settings": {}

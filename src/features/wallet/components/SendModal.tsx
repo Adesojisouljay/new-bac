@@ -100,8 +100,15 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
             setLoading(true);
             try {
                 const derived = await onUnlock();
-                if (derived && derived[chain]) {
-                    currentPrivateKey = (derived[chain] as any).privateKey;
+                // deriveSingleAddress returns exactly { address, publicKey, privateKey, imageUrl }
+                // deriveAddresses returns { BTC: {...}, ETH: {...} }
+                // `onUnlock` calls deriveSingleAddress which returns the flat object for the single chain.
+                if (derived) {
+                    if (derived.privateKey) {
+                        currentPrivateKey = derived.privateKey;
+                    } else if (derived[chain] && (derived[chain] as any).privateKey) {
+                        currentPrivateKey = (derived[chain] as any).privateKey;
+                    }
                 }
 
                 if (!currentPrivateKey) {
@@ -188,17 +195,19 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
             setTxHash(hash);
             showNotification(`Successfully sent ${amount} ${chain}`, 'success');
 
-            // 4. Record to Hive for permanent cross-device history (Non-blocking)
+            // Call onSuccess immediately to update parent state, but DON'T auto-close
+            onSuccess(amount, hash);
+
+            // 4. Record to Hive for permanent cross-device history (Fire and forget)
+            // We do this AFTER onSuccess and we do not await it so the UI doesn't hang on the Keychain prompt
             web3WalletService.logTransactionToHive(username, {
                 chain,
                 to: destination,
                 amount: Number(amount),
                 hash,
                 type: 'send'
-            });
+            }).catch(e => console.warn('Failed to log tx to Hive:', e));
 
-            // Call onSuccess immediately to update parent state, but DON'T auto-close
-            onSuccess(amount, hash);
         } catch (err: any) {
             setError(err.message || 'Transaction failed');
             showNotification(err.message || 'Failed to send transaction', 'error');

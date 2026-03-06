@@ -69,7 +69,7 @@ export function SwapModal({ onClose, initialFromAsset, rawWallets, onSuccess }: 
             else if (initialFromAsset.chain === 'POLYGON') rpcUrl = "https://polygon.llamarpc.com";
             else if (initialFromAsset.chain === 'ARBITRUM') rpcUrl = "https://arbitrum.llamarpc.com";
 
-            console.log(`Connecting to RPC for ${initialFromAsset.chain}: ${rpcUrl}`);
+
             const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });
             const signer = new ethers.Wallet(privateKey, provider);
 
