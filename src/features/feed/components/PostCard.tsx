@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Post } from '../../../services/unified';
 import { transactionService } from '../../wallet/services/transactionService';
-import { ThumbsUp, ThumbsDown, MessageSquare, Repeat, Shield, Pin } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, MessageSquare, Repeat, Shield, Pin, DollarSign } from 'lucide-react';
 import { VoteSlider } from './VoteSlider';
 import { VoterListModal } from './VoterListModal';
 import { ModerationActionsModal } from '../../community/components/ModerationActionsModal';
+import { WalletActionsModal } from '../../wallet/components/WalletActionsModal';
+import { Web3TipModal } from '../../wallet/components/Web3TipModal';
 import { formatRelativeTime } from '../../../lib/dateUtils';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { useCommunity } from '../../community/context/CommunityContext';
@@ -28,11 +30,14 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
     const [downvoted, setDownvoted] = useState(false);
     const [reblogging, setReblogging] = useState(false);
     const [reblogged, setReblogged] = useState(false);
-    const [isHoveringReblog, setIsHoveringReblog] = useState(false);
     const [showVoteSlider, setShowVoteSlider] = useState(false);
     const [showPayoutDetails, setShowPayoutDetails] = useState(false);
     const [showVoters, setShowVoters] = useState(false);
     const [showModerationModal, setShowModerationModal] = useState(false);
+    const [showTipModal, setShowTipModal] = useState(false);
+    const [showTipMenu, setShowTipMenu] = useState(false);
+    const [showWeb3Tip, setShowWeb3Tip] = useState(false);
+    const [hasTipped, setHasTipped] = useState(false);
     const [pinnedOverride, setPinnedOverride] = useState<boolean | undefined>(undefined);
 
     // Derived: use local override if set (after pin/unpin action), else use API value
@@ -338,7 +343,7 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                             <button
                                 onClick={(e) => { e.preventDefault(); setShowVoteSlider(!showVoteSlider); }}
                                 disabled={voting || voted || downvoting || downvoted}
-                                className={`p-1 md:p-1.5 rounded-full transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'hover:bg-red-500/10 hover:text-red-500 text-[var(--text-secondary)]'}`}
+                                className={`p-1 md:p-1 rounded-full transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'hover:bg-red-500/10 hover:text-red-500 text-[var(--text-secondary)]'}`}
                                 title="Upvote"
                             >
                                 {voting ? (
@@ -349,14 +354,14 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                             </button>
                             <button
                                 onClick={(e) => { e.preventDefault(); setShowVoters(true); }}
-                                className="px-1.5 md:px-3 text-[10px] md:text-xs font-bold text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors"
+                                className="px-1 md:px-2 text-[10px] md:text-xs font-bold text-[var(--text-primary)] hover:text-[var(--primary-color)] transition-colors"
                             >
                                 {post.active_votes?.length || 0}
                             </button>
                             <button
                                 onClick={(e) => { e.preventDefault(); handleVote(-10000); }}
                                 disabled={voting || voted || downvoting || downvoted}
-                                className={`p-1 md:p-1.5 rounded-full transition-all ${downvoted ? 'bg-gray-700 text-white' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-[var(--text-secondary)]'}`}
+                                className={`p-1 md:p-1 rounded-full transition-all ${downvoted ? 'bg-gray-700 text-white' : 'hover:bg-gray-200 dark:hover:bg-gray-700 text-[var(--text-secondary)]'}`}
                                 title="Downvote"
                             >
                                 {downvoting ? <div className="animate-spin h-3.5 w-3.5 border-2 border-current rounded-full border-t-transparent" /> : <ThumbsDown size={12} className="md:size-[14px]" />}
@@ -367,28 +372,66 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                         {/* Reblog/Reply Pills */}
                         <button
                             onClick={(e) => { e.preventDefault(); handleReblog(); }}
-                            onMouseEnter={() => setIsHoveringReblog(true)}
-                            onMouseLeave={() => setIsHoveringReblog(false)}
                             disabled={reblogging}
-                            className={`flex items-center gap-1.5 h-8 md:h-9 px-2.5 md:px-4 rounded-full border transition-all ${reblogged ? 'bg-red-500/10 border-red-500/30 text-red-500 shadow-sm' : 'border-[var(--border-color)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-red-500/50 hover:text-red-500'}`}
+                            className={`flex items-center gap-1.5 h-8 md:h-9 px-2 md:px-3 rounded-full border transition-all ${reblogged ? 'bg-red-500/10 border-red-500/30 text-red-500 shadow-sm' : 'border-[var(--border-color)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-red-500/50 hover:text-red-500'}`}
                         >
                             {reblogging ? (
                                 <div className="animate-spin h-3 w-3 border-2 border-current rounded-full border-t-transparent" />
                             ) : (
                                 <Repeat size={14} className={reblogged ? 'text-red-500' : ''} />
                             )}
-                            <span className="hidden sm:inline font-bold text-xs whitespace-nowrap">
-                                {reblogged ? (isHoveringReblog ? 'Undo Reblog?' : 'Reblogged') : 'Reblog'}
-                            </span>
                         </button>
 
                         <Link
                             to={`/post/${post.author}/${post.permlink}#comments`}
-                            className="flex items-center gap-1.5 h-8 md:h-9 px-2.5 md:px-4 rounded-full border border-[var(--border-color)] bg-[var(--bg-canvas)] text-[10px] md:text-xs font-bold text-[var(--text-secondary)] hover:border-[var(--primary-color)] transition-all"
+                            className="flex items-center gap-1.5 h-8 md:h-9 px-2 md:px-3 rounded-full border border-[var(--border-color)] bg-[var(--bg-canvas)] text-[10px] md:text-xs font-bold text-[var(--text-secondary)] hover:border-[var(--primary-color)] transition-all"
                         >
                             <MessageSquare size={14} />
                             <span>{post.children}</span>
                         </Link>
+
+                        {/* Tip Button & Menu */}
+                        <div className="relative">
+                            <button
+                                onClick={(e) => { e.preventDefault(); setShowTipMenu(!showTipMenu); }}
+                                className={`flex items-center gap-1.5 h-8 md:h-9 px-2 md:px-3 rounded-full border transition-all ${hasTipped ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 shadow-sm' : 'border-[var(--border-color)] bg-[var(--bg-canvas)] text-[var(--text-secondary)] hover:border-amber-500/50 hover:text-amber-500'}`}
+                            >
+                                <DollarSign size={14} className={hasTipped ? 'text-amber-500' : ''} />
+                            </button>
+
+                            {showTipMenu && (
+                                <div className="absolute bottom-full left-0 mb-2 z-[60] animate-in fade-in slide-in-from-bottom-2 duration-200">
+                                    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl overflow-hidden min-w-[220px]">
+                                        <div className="px-3 py-2 border-b border-[var(--border-color)] flex items-center justify-between">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Send a Tip</span>
+                                            <button onClick={(e) => { e.preventDefault(); setShowTipMenu(false); }} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-lg leading-none">✕</button>
+                                        </div>
+                                        <div className="p-1 flex flex-col gap-0.5">
+                                            <button
+                                                onClick={(e) => { e.preventDefault(); setShowTipMenu(false); setShowTipModal(true); }}
+                                                className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[var(--bg-canvas)] transition-all text-left w-full group/hive"
+                                            >
+                                                <span className="text-2xl">🐝</span>
+                                                <div>
+                                                    <p className="text-sm font-bold text-[var(--text-primary)] group-hover/hive:text-[var(--primary-color)] transition-colors">HIVE / HBD</p>
+                                                    <p className="text-[10px] text-[var(--text-secondary)]">Send from your Hive wallet</p>
+                                                </div>
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.preventDefault(); setShowTipMenu(false); setShowWeb3Tip(true); }}
+                                                className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-[var(--bg-canvas)] transition-all text-left w-full group/web3"
+                                            >
+                                                <span className="text-2xl">🌐</span>
+                                                <div>
+                                                    <p className="text-sm font-bold text-[var(--text-primary)] group-hover/web3:text-[var(--primary-color)] transition-colors">Web3 Crypto</p>
+                                                    <p className="text-[10px] text-[var(--text-secondary)]">BTC · ETH · SOL · and more</p>
+                                                </div>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
 
 
                         {/* Mod Actions button — only for mods/admins/owners of this community */}
@@ -402,13 +445,12 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                                     className="flex items-center gap-2 h-9 px-3 rounded-full border border-purple-500/20 bg-purple-500/5 text-xs font-bold text-purple-500 hover:bg-purple-500/20 transition-all"
                                 >
                                     <Shield size={13} />
-                                    <span className="hidden sm:inline">Mod</span>
                                 </button>
                             ) : null;
                         })()}
                     </div>
 
-                    <div className="text-right relative">
+                    <div className="text-right flex-shrink-0 relative">
                         <div
                             className="cursor-help relative group flex flex-col items-end"
                             onMouseEnter={() => setShowPayoutDetails(true)}
@@ -479,6 +521,41 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                     postPermlink={post.permlink}
                     isPinned={isPinned}
                     onPinChange={setPinnedOverride}
+                />
+            )}
+
+            {/* Tipping Modal — HIVE */}
+            {(() => {
+                const username = localStorage.getItem('hive_user');
+                return username ? (
+                    <WalletActionsModal
+                        isOpen={showTipModal}
+                        onClose={() => setShowTipModal(false)}
+                        type="transfer"
+                        username={username}
+                        initialData={{
+                            to: post.author,
+                            memo: `Tip for post: ${post.title.substring(0, 50)}...`
+                        }}
+                        onSuccess={() => {
+                            showNotification(`Tip sent to @${post.author}!`, 'success');
+                            setShowTipModal(false);
+                            setHasTipped(true);
+                        }}
+                    />
+                ) : null;
+            })()}
+
+            {/* Tipping Modal — Web3 */}
+            {showWeb3Tip && (
+                <Web3TipModal
+                    recipientUsername={post.author}
+                    onClose={() => setShowWeb3Tip(false)}
+                    onSuccess={() => {
+                        showNotification(`Web3 tip sent to @${post.author}!`, 'success');
+                        setHasTipped(true);
+                        setShowWeb3Tip(false);
+                    }}
                 />
             )}
         </article>

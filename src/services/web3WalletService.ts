@@ -42,7 +42,7 @@ const ENCRYPTED_MNEMONIC_KEY = 'web3_mnemonic_enc';
 const SALT_KEY = 'web3_salt';
 export const UNLOCK_MESSAGE = 'Sign this message to securely encrypt/decrypt your multi-chain Web3 recovery phrase. This signature acts as your local vault key and never leaves your device.';
 
-const normalize = (name: string) => name.replace(/^@/, '');
+const normalize = (name: string) => name.replace(/^@/, '').toLowerCase();
 
 export const mnemonicStorage = {
     getEncrypted: (username: string): string | null => {

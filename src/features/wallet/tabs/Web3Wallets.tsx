@@ -253,7 +253,9 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const handleUnlock = async (targetChain?: string) => {
         const encrypted = mnemonicStorage.getEncrypted(username);
         const salt = mnemonicStorage.getSalt(username);
-        if (!encrypted || !salt) throw new Error('No encrypted wallet found');
+        if (!encrypted || !salt) {
+            throw new Error('Recovery phrase not found on this device. Please use "Import Recovery Phrase" to restore access.');
+        }
 
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
@@ -539,6 +541,14 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
                 {isOwner && (
                     <div className="flex gap-2">
+                        {!mnemonicStorage.getEncrypted(username) && walletInfo.length > 0 && (
+                            <button
+                                onClick={() => setShowImport(true)}
+                                className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20"
+                            >
+                                Import Recovery Phrase
+                            </button>
+                        )}
                         <button
                             onClick={handleReset}
                             className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
@@ -772,6 +782,12 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                         </button>
                     </div>
                 </div>
+            )}
+            {showImport && (
+                <ImportModal
+                    onClose={() => setShowImport(false)}
+                    onImport={onImportPhrase}
+                />
             )}
         </div>
     );
