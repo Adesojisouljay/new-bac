@@ -1530,7 +1530,7 @@ export function MessagesPage() {
                                             </div>
                                             <h3 className="font-bold text-lg mb-2">Secure Channel Established</h3>
                                             <p className="text-sm text-[var(--text-secondary)] max-w-xs mx-auto leading-relaxed">
-                                                Your messages are end-to-end encrypted. No one else, not even Breakaway, can read them.
+                                                Your messages are end-to-end encrypted. No one else, not even Sovraniche, can read them.
                                             </p>
                                         </div>
                                     ) : (

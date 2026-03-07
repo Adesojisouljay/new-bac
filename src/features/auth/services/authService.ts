@@ -101,7 +101,7 @@ export const authService = {
                 username,
                 message,
                 method: 'Posting',
-                title: 'Login to Breakaway'
+                title: 'Login to Sovraniche'
             } as any);
 
             if (response.success) {
