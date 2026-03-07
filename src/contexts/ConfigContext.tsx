@@ -50,7 +50,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
             // Update Meta Tags
             const description = config.communityDescription || "A decentralized community powered by Breakaway.";
-            const logo = config.logoUrl || `${window.location.origin}/vite.svg`;
+            const logo = config.logoUrl || `${window.location.origin}/sovraniche-logo.png`;
 
             updateMetaTag('description', description);
 
@@ -111,7 +111,7 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                     domain: hostname,
                     communityName: 'Breakaway',
                     hiveCommunityId: 'global',
-                    logoUrl: '/vite.svg',
+                    logoUrl: '/sovraniche-logo.png',
                     primaryColor: '#e11d48',
                     onboardingSats: 100,
                     communityDescription: 'Decentralized Hive Global Feed',
