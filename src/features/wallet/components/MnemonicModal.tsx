@@ -19,7 +19,7 @@ export function MnemonicModal({ mnemonic, username, onConfirm }: MnemonicModalPr
         const element = document.createElement('a');
         const file = new Blob([mnemonic], { type: 'text/plain' });
         element.href = URL.createObjectURL(file);
-        element.download = `HIVE-${cleanUser}-breakaway-backup.txt`;
+        element.download = `HIVE-${cleanUser}-sovraniche-backup.txt`;
         document.body.appendChild(element);
         element.click();
         document.body.removeChild(element);
@@ -47,7 +47,7 @@ export function MnemonicModal({ mnemonic, username, onConfirm }: MnemonicModalPr
                         <div className="text-sm">
                             <p className="font-bold text-red-500 mb-1">Never share this phrase with anyone!</p>
                             <p className="text-[var(--text-secondary)] leading-relaxed">
-                                Breakaway cannot recover your phrase if you lose it. Anyone who has this phrase can steal your funds.
+                                Sovraniche cannot recover your phrase if you lose it. Anyone who has this phrase can steal your funds.
                             </p>
                         </div>
                     </div>

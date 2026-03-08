@@ -169,7 +169,10 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
     const handleUnlock = async () => {
         const encrypted = mnemonicStorage.getEncrypted(senderUsername);
         const salt = mnemonicStorage.getSalt(senderUsername);
-        if (!encrypted || !salt) { showNotification('No wallet found to unlock', 'error'); return; }
+        if (!encrypted || !salt) {
+            showNotification('No local wallet found. Please import your recovery phrase in Settings first.', 'warning');
+            return;
+        }
 
         setStep('unlocking');
         try {
@@ -425,7 +428,7 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                             {step === 'enter_amount' && selectedChain && (
                                 <>
                                     {/* Wallet status: if locked, prompt unlock */}
-                                    {isLocked && !senderWallets[selectedChain] && (
+                                    {isLocked && !senderWallets[selectedChain] ? (
                                         <div className="bg-amber-500/5 border border-amber-500/10 rounded-xl p-3 flex items-center gap-3">
                                             <span className="text-lg shrink-0">🔒</span>
                                             <div className="flex-1">
@@ -440,6 +443,22 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                                                 style={{ backgroundColor: accentColor }}
                                             >
                                                 Unlock
+                                            </button>
+                                        </div>
+                                    ) : (!isLocked && !senderWallets[selectedChain]) && (
+                                        <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-3 flex items-center gap-3">
+                                            <span className="text-lg shrink-0">🔑</span>
+                                            <div className="flex-1">
+                                                <p className="text-[10px] font-bold text-blue-500">Wallet Not Set Up</p>
+                                                <p className="text-[9px] text-[var(--text-secondary)] opacity-70 leading-relaxed">
+                                                    You need to import your multi-chain recovery phrase on this domain to send tips.
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => window.location.href = `/${senderUsername}/wallet`}
+                                                className="shrink-0 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white rounded-lg hover:brightness-110 active:scale-95 transition-all bg-blue-500"
+                                            >
+                                                Setup
                                             </button>
                                         </div>
                                     )}
@@ -569,14 +588,14 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
 
                                                 {/* CTA */}
                                                 <button
-                                                    onClick={handleSendTip}
-                                                    disabled={!amount || isNaN(Number(amount)) || Number(amount) <= 0 || !senderWallets[selectedChain]}
+                                                    onClick={senderWallets[selectedChain] ? handleSendTip : handleUnlock}
+                                                    disabled={senderWallets[selectedChain] && (!amount || isNaN(Number(amount)) || Number(amount) <= 0)}
                                                     className="w-full py-3.5 text-white font-black rounded-2xl text-sm flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-40 disabled:cursor-not-allowed"
                                                     style={{ backgroundColor: accentColor, boxShadow: `0 8px 24px ${accentColor}33` }}
                                                 >
                                                     {senderWallets[selectedChain]
                                                         ? `Send ${amount || '0'} ${selectedChain} Tip 💸`
-                                                        : 'Unlock wallet to send'}
+                                                        : isLocked ? 'Unlock wallet to send' : 'Setup local wallet to send'}
                                                 </button>
                                             </div>
                                         </>

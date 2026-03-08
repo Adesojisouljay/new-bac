@@ -11,7 +11,7 @@ import { authService, accountManager, StoredAccount } from '../features/auth/ser
 import { pointsService } from '../services/pointsService';
 import { OnboardingFlow } from '../features/auth/components/OnboardingFlow';
 import { useChat } from '../contexts/ChatContext';
-import { Search, Hexagon } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { SearchModal } from '../features/feed/components/SearchModal';
 import { useConfig } from '../contexts/ConfigContext';
 
@@ -98,10 +98,12 @@ export function Navbar() {
                     <Link to="/" className="flex items-center gap-2 flex-shrink-0">
                         {dynamicConfig?.hiveCommunityId === 'global' ? (
                             <div className="flex items-center gap-2">
-                                <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-[var(--primary-color)] to-purple-600 flex items-center justify-center shadow-lg shadow-[var(--primary-color)]/20">
-                                    <Hexagon size={20} className="text-white fill-white/20" />
-                                </div>
-                                <span className="font-bold text-xl text-[var(--text-primary)] hidden sm:block">Breakaway</span>
+                                <img
+                                    src="/sovraniche-logo.png"
+                                    alt="Sovraniche Logo"
+                                    className="h-8 w-8 object-contain drop-shadow-[0_0_10px_rgba(255,68,0,0.3)] transition-transform hover:scale-105"
+                                />
+                                <span className="font-bold text-xl text-[var(--text-primary)] hidden sm:block">Sovraniche</span>
                             </div>
                         ) : (
                             <div className="flex items-center gap-2">

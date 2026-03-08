@@ -37,7 +37,7 @@ export function SetupPage() {
             <div className="w-full max-w-lg bg-[var(--bg-card)] border border-[var(--border-color)] rounded-[2.5rem] shadow-2xl p-10 space-y-8 animate-in fade-in zoom-in-95 duration-500">
                 <div className="text-center space-y-2">
                     <h1 className="text-4xl font-black text-[var(--text-primary)] tracking-tight">
-                        Welcome to <span className="text-[var(--primary-color)]">Breakaway</span>
+                        Welcome to <span className="text-[var(--primary-color)]">Sovraniche</span>
                     </h1>
                     <p className="text-[var(--text-secondary)] text-lg">
                         Let's configure your community in seconds. No code required.
@@ -152,7 +152,7 @@ export function SetupPage() {
                 </form>
 
                 <p className="text-center text-[10px] font-bold uppercase tracking-widest text-[var(--text-secondary)] opacity-50">
-                    Powered by Breakaway Infrastructure
+                    Powered by Sovraniche Infrastructure
                 </p>
             </div>
         </div>
