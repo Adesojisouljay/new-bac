@@ -83,17 +83,19 @@ const AppContent = () => {
         <Route path="c/:communityId/subscribers" element={<Feed />} />
         <Route path="c/:communityId/activities" element={<Feed />} />
 
-        <Route path=":username" element={<Profile />} />
-        <Route path=":username/:section" element={<Profile />} />
-        <Route path=":username/settings" element={<Settings />} />
-        <Route path="submit" element={<CreatePost />} />
-        <Route path="post/:author/:permlink" element={<PostView />} />
+        <Route path="analytics" element={<Analytics />} />
+        <Route path="analytics/:username" element={<Analytics />} />
+        <Route path="shorts" element={<ShortsFeed />} />
         <Route path="market" element={<Market />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="governance/:tab?" element={<Governance />} />
         <Route path="messages" element={<Messages />} />
-        <Route path="analytics" element={<Analytics />} />
-        <Route path="shorts" element={<ShortsFeed />} />
+        <Route path="submit" element={<CreatePost />} />
+        <Route path="post/:author/:permlink" element={<PostView />} />
+
+        <Route path=":username" element={<Profile />} />
+        <Route path=":username/:section" element={<Profile />} />
+        <Route path=":username/settings" element={<Settings />} />
         <Route path=":username/wallet" element={<Wallet />} />
 
         <Route path="*" element={<div>404 Not Found</div>} />
