@@ -16,9 +16,10 @@ export function BottomNav() {
     const isNotificationsActive = location.pathname.startsWith('/notifications');
     const isShortsActive = location.pathname.startsWith('/shorts');
     const isSinglePost = location.pathname.startsWith('/post/');
+    const isSubmitActive = location.pathname.startsWith('/submit');
 
-    // Hide on shorts/story/post view to avoid overlaying interaction buttons/content
-    if (isShortsActive || isSinglePost) return null;
+    // Hide on shorts/story/post view/submit to avoid overlaying interaction buttons/content
+    if (isShortsActive || isSinglePost || isSubmitActive) return null;
 
     const navItemClass = "flex flex-col items-center justify-center w-full h-full text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-all relative tap-highlight-transparent";
     const activeIconClass = "text-[var(--primary-color)]";
