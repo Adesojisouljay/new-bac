@@ -20,6 +20,7 @@ import {
     Plus
 } from 'lucide-react';
 import { ShortCreator } from './ShortCreator';
+import { MentionSuggestions } from '../../../components/MentionSuggestions';
 
 
 import { messageService } from '../../messages/services/messageService';
@@ -94,7 +95,7 @@ export const ShortsFeed: React.FC<ShortsFeedProps> = ({ onClose, communityId = '
 
     if (isLoading && shorts.length === 0) {
         return (
-            <div className="fixed inset-0 bg-black z-[110] flex flex-col items-center justify-center gap-6">
+            <div className="fixed inset-0 bg-black z-[205] flex flex-col items-center justify-center gap-6">
                 <div className="w-16 h-16 border-4 border-[var(--primary-color)] border-t-transparent rounded-full animate-spin" />
                 <p className="text-[var(--primary-color)] font-black uppercase tracking-[0.2em] text-[10px] animate-pulse">Loading Shorts...</p>
             </div>
@@ -102,7 +103,7 @@ export const ShortsFeed: React.FC<ShortsFeedProps> = ({ onClose, communityId = '
     }
 
     return (
-        <div className="fixed inset-0 bg-black z-[110] text-white overflow-hidden flex flex-col items-center">
+        <div className="fixed inset-0 bg-black z-[200] text-white overflow-hidden flex flex-col items-center">
             {/* Context-Aware Global Close Button (Top Right) */}
             <div className="absolute top-4 right-4 z-[140]">
                 <button
@@ -251,6 +252,12 @@ const ShortItem: React.FC<ShortItemProps> = ({
     const [showShareModal, setShowShareModal] = useState(false);
     const [hasTipped, setHasTipped] = useState(short.hasTipped || false);
 
+    // Mention State for Reply
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
+    const [showMentions, setShowMentions] = useState(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
     useEffect(() => {
         setHasTipped(short.hasTipped || false);
     }, [short.hasTipped]);
@@ -367,6 +374,45 @@ const ShortItem: React.FC<ShortItemProps> = ({
         } else {
             showNotification("Vote failed: " + result.error, 'error');
         }
+    };
+
+    const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value;
+        setReplyContent(value);
+
+        const cursor = e.target.selectionStart;
+        const textBefore = value.substring(0, cursor);
+        const mentionMatch = textBefore.match(/@([a-z0-9.-]*)$/i);
+
+        if (mentionMatch) {
+            const query = mentionMatch[1];
+            const rect = e.target.getBoundingClientRect();
+            setMentionQuery(query);
+            // Position above or near the textarea for better visibility in the bottom panel
+            setMentionPosition({
+                top: rect.top - 350, // Higher elevation to avoid covering input
+                left: rect.left
+            });
+            setShowMentions(true);
+        } else {
+            setShowMentions(false);
+        }
+    };
+
+    const handleMentionSelect = (username: string) => {
+        if (!textareaRef.current) return;
+        const cursor = textareaRef.current.selectionStart;
+        const textBefore = replyContent.substring(0, cursor);
+        const textAfter = replyContent.substring(cursor);
+        const startOfWord = textBefore.lastIndexOf('@');
+
+        if (startOfWord !== -1) {
+            const newText = textBefore.substring(0, startOfWord) + `@${username} ` + textAfter;
+            setReplyContent(newText);
+        }
+        setShowMentions(false);
+        setMentionQuery('');
+        textareaRef.current.focus();
     };
 
     const handleSendReply = async () => {
@@ -707,9 +753,10 @@ const ShortItem: React.FC<ShortItemProps> = ({
 
                     <div className="relative">
                         <textarea
+                            ref={textareaRef}
                             rows={1}
                             value={replyContent}
-                            onChange={(e) => setReplyContent(e.target.value)}
+                            onChange={handleTextareaChange}
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
                                     e.preventDefault();
@@ -735,41 +782,53 @@ const ShortItem: React.FC<ShortItemProps> = ({
 
             </div>
 
-            {/* Tipping Modal — HIVE */}
-            {localStorage.getItem('hive_user') && (
-                <WalletActionsModal
-                    isOpen={showTipModal}
-                    onClose={() => setShowTipModal(false)}
-                    type="transfer"
-                    username={localStorage.getItem('hive_user') || ''}
-                    initialData={{
-                        to: short.username,
-                        memo: `Tip for short: ${short.content.caption || 'video'}`
-                    }}
-                    onSuccess={() => {
-                        const rawUser = localStorage.getItem('hive_user');
-                        const currentUser = rawUser ? rawUser.replace(/^@/, '') : null;
-                        if (currentUser) shortService.recordTip(short._id, currentUser);
-                        showNotification(`Tip sent to @${short.username}!`, 'success');
-                        setShowTipModal(false);
-                        setHasTipped(true);
-                    }}
+            {showMentions && (
+                <MentionSuggestions
+                    query={mentionQuery}
+                    position={mentionPosition}
+                    onSelect={handleMentionSelect}
                 />
             )}
 
+            {/* Tipping Modal — HIVE */}
+            {
+                localStorage.getItem('hive_user') && (
+                    <WalletActionsModal
+                        isOpen={showTipModal}
+                        onClose={() => setShowTipModal(false)}
+                        type="transfer"
+                        username={localStorage.getItem('hive_user') || ''}
+                        initialData={{
+                            to: short.username,
+                            memo: `Tip for short: ${short.content.caption || 'video'}`
+                        }}
+                        onSuccess={() => {
+                            const rawUser = localStorage.getItem('hive_user');
+                            const currentUser = rawUser ? rawUser.replace(/^@/, '') : null;
+                            if (currentUser) shortService.recordTip(short._id, currentUser);
+                            showNotification(`Tip sent to @${short.username}!`, 'success');
+                            setShowTipModal(false);
+                            setHasTipped(true);
+                        }}
+                    />
+                )
+            }
+
             {/* Tipping Modal — Web3 */}
-            {showWeb3Tip && (
-                <Web3TipModal
-                    recipientUsername={short.username}
-                    onClose={() => setShowWeb3Tip(false)}
-                    onSuccess={() => {
-                        const rawUser = localStorage.getItem('hive_user');
-                        const currentUser = rawUser ? rawUser.replace(/^@/, '') : null;
-                        if (currentUser) shortService.recordTip(short._id, currentUser);
-                        setHasTipped(true);
-                    }}
-                />
-            )}
+            {
+                showWeb3Tip && (
+                    <Web3TipModal
+                        recipientUsername={short.username}
+                        onClose={() => setShowWeb3Tip(false)}
+                        onSuccess={() => {
+                            const rawUser = localStorage.getItem('hive_user');
+                            const currentUser = rawUser ? rawUser.replace(/^@/, '') : null;
+                            if (currentUser) shortService.recordTip(short._id, currentUser);
+                            setHasTipped(true);
+                        }}
+                    />
+                )
+            }
 
 
             {/* Share Modal */}
@@ -780,6 +839,5 @@ const ShortItem: React.FC<ShortItemProps> = ({
                 title={short.content.caption || `Short by @${short.username}`}
             />
         </div>
-
     );
 };

@@ -5,9 +5,10 @@ import { useCommunity } from '../../community/context/CommunityContext';
 import { pointsService } from '../../../services/pointsService';
 import { cloudinaryService } from '../../../services/cloudinaryService';
 import SimpleMDE from 'react-simplemde-editor';
-import EasyMDE from 'easymde';
 import "easymde/dist/easymde.min.css";
 import HiveMarkdown from '../../../components/HiveMarkdown';
+import { MentionSuggestions } from '../../../components/MentionSuggestions';
+import { useEffect } from 'react';
 
 interface CommentBoxProps {
     parentAuthor: string;
@@ -26,11 +27,16 @@ export function CommentBox({ parentAuthor, parentPermlink, onSuccess }: CommentB
     const [showUrlInput, setShowUrlInput] = useState(false);
     const [linkUrl, setLinkUrl] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const mdeInstanceRef = useRef<EasyMDE | null>(null);
+    const [mdeInstance, setMdeInstance] = useState<EasyMDE | null>(null);
+
+    // Mention State
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
+    const [showMentions, setShowMentions] = useState(false);
 
     const handleImageUpload = async (file: File) => {
-        if (!mdeInstanceRef.current) return;
-        const cm = mdeInstanceRef.current.codemirror;
+        if (!mdeInstance) return;
+        const cm = mdeInstance.codemirror;
         const startPos = cm.getCursor();
         const placeholder = `![Uploading ${file.name} (0%)...]()`;
 
@@ -72,8 +78,8 @@ export function CommentBox({ parentAuthor, parentPermlink, onSuccess }: CommentB
     };
 
     const handleInsertUrl = () => {
-        if (!mdeInstanceRef.current || !linkUrl.trim()) return;
-        const cm = mdeInstanceRef.current.codemirror;
+        if (!mdeInstance || !linkUrl.trim()) return;
+        const cm = mdeInstance.codemirror;
         cm.replaceSelection(`![image](${linkUrl.trim()})`);
         setLinkUrl('');
         setShowUrlInput(false);
@@ -108,6 +114,52 @@ export function CommentBox({ parentAuthor, parentPermlink, onSuccess }: CommentB
         ] as any
     }), []);
 
+    const handleMentionSelect = (username: string) => {
+        if (!mdeInstance) return;
+        const cm = mdeInstance.codemirror;
+        const cursor = cm.getCursor();
+        const line = cm.getLine(cursor.line);
+        const startOfWord = line.lastIndexOf('@', cursor.ch - 1);
+
+        if (startOfWord !== -1) {
+            cm.replaceRange(
+                `@${username} `,
+                { line: cursor.line, ch: startOfWord },
+                { line: cursor.line, ch: cursor.ch }
+            );
+        }
+        setShowMentions(false);
+        setMentionQuery('');
+        cm.focus();
+    };
+
+    // CodeMirror listener for mentions
+    useEffect(() => {
+        const cm = mdeInstance?.codemirror;
+        if (!cm) return;
+
+        const handleChange = (instance: any) => {
+            const cursor = instance.getCursor();
+            const line = instance.getLine(cursor.line);
+
+            const textBefore = line.substring(0, cursor.ch);
+            const mentionMatch = textBefore.match(/@([a-z0-9.-]*)$/i);
+
+            if (mentionMatch) {
+                const query = mentionMatch[1];
+                const coords = instance.cursorCoords(true, 'window');
+                setMentionQuery(query);
+                setMentionPosition({ top: coords.top + 30, left: coords.left });
+                setShowMentions(true);
+            } else {
+                setShowMentions(false);
+            }
+        };
+
+        cm.on('keyup', handleChange);
+        return () => cm.off('keyup', handleChange);
+    }, [mdeInstance]);
+
     const handleSubmit = async () => {
         const username = localStorage.getItem('hive_user');
         if (!username) {
@@ -130,7 +182,7 @@ export function CommentBox({ parentAuthor, parentPermlink, onSuccess }: CommentB
                 permlink,
                 title: '',
                 body: comment,
-                json_metadata: JSON.stringify({ tags: ['breakaway'], app: 'breakaway-communities/0.1' })
+                json_metadata: JSON.stringify({ tags: ['sovraniche'], app: 'sovraniche/0.1' })
             }, (_data) => {
                 showNotification("Action required: Sign with HiveAuth mobile app.", 'info');
             });
@@ -168,7 +220,7 @@ export function CommentBox({ parentAuthor, parentPermlink, onSuccess }: CommentB
                         value={comment}
                         onChange={setComment}
                         options={options}
-                        getMdeInstance={(instance) => mdeInstanceRef.current = instance as any}
+                        getMdeInstance={(instance) => setMdeInstance(instance as any)}
                         className="flex flex-col w-full [&_.EasyMDEContainer]:flex [&_.EasyMDEContainer]:flex-col [&_.CodeMirror]:flex-1 [&_.CodeMirror]:!min-h-[100px] [&_.CodeMirror]:!max-h-[150px] [&_.CodeMirror]:overflow-y-auto [&_.CodeMirror-scroll]:!min-h-[100px] cursor-text"
                     />
                 </div>
@@ -256,6 +308,14 @@ export function CommentBox({ parentAuthor, parentPermlink, onSuccess }: CommentB
                     {loading ? 'Posting...' : 'Reply'}
                 </button>
             </div>
+
+            {showMentions && (
+                <MentionSuggestions
+                    query={mentionQuery}
+                    position={mentionPosition}
+                    onSelect={handleMentionSelect}
+                />
+            )}
         </div>
     );
 }

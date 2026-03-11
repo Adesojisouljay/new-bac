@@ -25,11 +25,38 @@ export const CHAIN_PATHS = {
     POLYGON: "m/44'/60'/0'/0/0",
     ARBITRUM: "m/44'/60'/0'/0/0",
     SOL: "m/44'/501'/0'/0'",
+    SOL_USDT: "m/44'/501'/0'/0'",
     TRON: "m/44'/195'/0'/0/0",
     APTOS: "m/44'/637'/0'/0'/0'",
+    DOGE: "m/44'/3'/0'/0/0",
+    LTC: "m/84'/2'/0'/0/0",
     USDT_TRC20: "m/44'/195'/0'/0/0",
     USDT_BEP20: "m/44'/60'/0'/0/0",
     USDT_ERC20: "m/44'/60'/0'/0/0",
+};
+
+const DOGE_NETWORK = {
+    messagePrefix: '\x19Dogecoin Signed Message:\n',
+    bech32: 'doge',
+    bip32: {
+        public: 0x02facafd,
+        private: 0x02fac398
+    },
+    pubKeyHash: 0x1e,
+    scriptHash: 0x16,
+    wif: 0x9e
+};
+
+const LTC_NETWORK = {
+    messagePrefix: '\x19Litecoin Signed Message:\n',
+    bech32: 'ltc',
+    bip32: {
+        public: 0x019da462,
+        private: 0x019d9cfe
+    },
+    pubKeyHash: 0x30,
+    scriptHash: 0x32,
+    wif: 0xb0
 };
 
 export const LEGACY_PATHS = {
@@ -76,6 +103,7 @@ const strategies: Record<string, DerivationStrategy> = {
             publicKey: keypair.publicKey.toBase58(),
         };
     },
+    SOL_USDT: async (mnemonic) => strategies.SOL(mnemonic),
 
     /**
      * BITCOIN (SegWit)
@@ -135,7 +163,43 @@ const strategies: Record<string, DerivationStrategy> = {
             privateKey: account.privateKey.toString(),
             publicKey: account.publicKey.toString()
         };
-    }
+    },
+    DOGE: async (mnemonic) => {
+        const seed = await bip39.mnemonicToSeed(mnemonic);
+        const root = (bip32 as any).fromSeed(seed);
+        const child = root.derivePath(CHAIN_PATHS.DOGE);
+
+        const { address } = bitcoin.payments.p2pkh({
+            pubkey: child.publicKey,
+            network: DOGE_NETWORK
+        });
+
+        if (!address) throw new Error('Failed to derive DOGE address');
+
+        return {
+            address,
+            privateKey: child.toWIF(),
+            publicKey: child.publicKey.toString('hex')
+        };
+    },
+    LTC: async (mnemonic) => {
+        const seed = await bip39.mnemonicToSeed(mnemonic);
+        const root = (bip32 as any).fromSeed(seed);
+        const child = root.derivePath(CHAIN_PATHS.LTC);
+
+        const { address } = bitcoin.payments.p2wpkh({
+            pubkey: child.publicKey,
+            network: LTC_NETWORK
+        });
+
+        if (!address) throw new Error('Failed to derive LTC address');
+
+        return {
+            address,
+            privateKey: child.toWIF(),
+            publicKey: child.publicKey.toString('hex')
+        };
+    },
 };
 
 export async function deriveWallet(mnemonic: string, chain: keyof typeof CHAIN_PATHS): Promise<DerivedWallet> {

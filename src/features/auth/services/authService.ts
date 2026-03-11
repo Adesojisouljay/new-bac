@@ -22,7 +22,7 @@ export const HAS_STATIC_KEY = "11edc52b-2918-4d71-9058-f7285e29d894";
 export const APP_META = {
     name: "BAC",
     description: "BAC",
-    icon: "https://breakaway-communities.netlify.app/logo192.png"
+    icon: "https://sovraniche.netlify.app/logo192.png"
 };
 
 export const accountManager = {
@@ -51,14 +51,19 @@ export const accountManager = {
         const remaining = this.getAll().filter(a => a.username !== username);
         localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(remaining));
 
-        // If the removed user was the active one, clear the active status
-        // DO NOT automatically switch to another user
+        // Clear Web3 persistent signature for this user
+        localStorage.removeItem(`web3_signature_${username.replace(/^@/, '').toLowerCase()}`);
+
         if (this.getActive() === username) {
             this.logout();
         }
     },
 
     logout() {
+        const active = this.getActive();
+        if (active) {
+            localStorage.removeItem(`web3_signature_${active.replace(/^@/, '').toLowerCase()}`);
+        }
         localStorage.removeItem(ACTIVE_USER_KEY);
     },
 
@@ -135,7 +140,7 @@ export const authService = {
             const APP_META = {
                 name: "BAC",
                 description: "BAC",
-                icon: "https://breakaway-communities.netlify.app/logo192.png"
+                icon: "https://sovraniche.netlify.app/logo192.png"
             };
 
             const auth = {

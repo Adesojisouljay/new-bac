@@ -4,6 +4,7 @@ import { useNotification } from '../../../contexts/NotificationContext';
 import { cloudinaryService } from '../../../services/cloudinaryService';
 import { Video, X, Upload, Smartphone, CheckCircle2 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { MentionSuggestions } from '../../../components/MentionSuggestions';
 
 interface ShortCreatorProps {
     onClose: () => void;
@@ -18,6 +19,12 @@ export const ShortCreator: React.FC<ShortCreatorProps> = ({ onClose, onSuccess }
     const [isPosting, setIsPosting] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
     const [hasQr, setHasQr] = useState<string | null>(null);
+
+    // Mention State
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
+    const [showMentions, setShowMentions] = useState(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const username = localStorage.getItem('hive_user')?.replace(/^@/, '');
@@ -34,6 +41,42 @@ export const ShortCreator: React.FC<ShortCreatorProps> = ({ onClose, onSuccess }
             setPreviewUrl(URL.createObjectURL(file));
             setStep(2); // Auto-advance to captioning
         }
+    };
+
+    const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value;
+        setCaption(value);
+
+        const cursor = e.target.selectionStart;
+        const textBefore = value.substring(0, cursor);
+        const mentionMatch = textBefore.match(/@([a-z0-9.-]*)$/i);
+
+        if (mentionMatch) {
+            const query = mentionMatch[1];
+            // Approximate position for standard textarea (below the editor)
+            const rect = e.target.getBoundingClientRect();
+            setMentionQuery(query);
+            setMentionPosition({ top: rect.top + 50, left: rect.left + 20 });
+            setShowMentions(true);
+        } else {
+            setShowMentions(false);
+        }
+    };
+
+    const handleMentionSelect = (username: string) => {
+        if (!textareaRef.current) return;
+        const cursor = textareaRef.current.selectionStart;
+        const textBefore = caption.substring(0, cursor);
+        const textAfter = caption.substring(cursor);
+        const startOfWord = textBefore.lastIndexOf('@');
+
+        if (startOfWord !== -1) {
+            const newText = textBefore.substring(0, startOfWord) + `@${username} ` + textAfter;
+            setCaption(newText);
+        }
+        setShowMentions(false);
+        setMentionQuery('');
+        textareaRef.current.focus();
     };
 
     const handlePost = async () => {
@@ -157,8 +200,9 @@ export const ShortCreator: React.FC<ShortCreatorProps> = ({ onClose, onSuccess }
                             <div className="space-y-2">
                                 <label className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-[0.2em] ml-1">Caption</label>
                                 <textarea
+                                    ref={textareaRef}
                                     value={caption}
-                                    onChange={(e) => setCaption(e.target.value)}
+                                    onChange={handleTextareaChange}
                                     placeholder="What's happening?..."
                                     className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-4 min-h-[120px] focus:outline-none focus:border-[var(--primary-color)] transition-colors resize-none text-sm font-medium leading-relaxed"
                                     disabled={isPosting}
@@ -237,6 +281,14 @@ export const ShortCreator: React.FC<ShortCreatorProps> = ({ onClose, onSuccess }
                     className="hidden"
                 />
             </div>
+
+            {showMentions && (
+                <MentionSuggestions
+                    query={mentionQuery}
+                    position={mentionPosition}
+                    onSelect={handleMentionSelect}
+                />
+            )}
         </div>
     );
 };

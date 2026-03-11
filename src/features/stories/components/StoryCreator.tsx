@@ -4,6 +4,7 @@ import { useNotification } from '../../../contexts/NotificationContext';
 import { cloudinaryService } from '../../../services/cloudinaryService';
 import { Image, X, Upload, Smartphone } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { MentionSuggestions } from '../../../components/MentionSuggestions';
 
 interface StoryCreatorProps {
     onClose: () => void;
@@ -34,6 +35,12 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
     const [postingStatus, setPostingStatus] = useState('');
     const [hasQr, setHasQr] = useState<string | null>(null);
 
+    // Mention State
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
+    const [showMentions, setShowMentions] = useState(false);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const username = localStorage.getItem('hive_user');
     const { showNotification } = useNotification();
@@ -52,6 +59,42 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
             };
             reader.readAsDataURL(file);
         }
+    };
+
+    const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value;
+        setContent(value);
+
+        const cursor = e.target.selectionStart;
+        const textBefore = value.substring(0, cursor);
+        const mentionMatch = textBefore.match(/@([a-z0-9.-]*)$/i);
+
+        if (mentionMatch) {
+            const query = mentionMatch[1];
+            // Approximate position for standard textarea (below the editor)
+            const rect = e.target.getBoundingClientRect();
+            setMentionQuery(query);
+            setMentionPosition({ top: rect.top - 350, left: rect.left + 20 });
+            setShowMentions(true);
+        } else {
+            setShowMentions(false);
+        }
+    };
+
+    const handleMentionSelect = (username: string) => {
+        if (!textareaRef.current) return;
+        const cursor = textareaRef.current.selectionStart;
+        const textBefore = content.substring(0, cursor);
+        const textAfter = content.substring(cursor);
+        const startOfWord = textBefore.lastIndexOf('@');
+
+        if (startOfWord !== -1) {
+            const newText = textBefore.substring(0, startOfWord) + `@${username} ` + textAfter;
+            setContent(newText);
+        }
+        setShowMentions(false);
+        setMentionQuery('');
+        textareaRef.current.focus();
     };
 
     const handlePost = async () => {
@@ -193,8 +236,9 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
                     )}
 
                     <textarea
+                        ref={textareaRef}
                         value={content}
-                        onChange={(e) => setContent(e.target.value)}
+                        onChange={handleTextareaChange}
                         placeholder={imageFile ? 'Add a caption...' : "What's happening? (Stories last 24 hours)"}
                         className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-4 min-h-[120px] text-lg focus:outline-none focus:border-[var(--primary-color)] resize-none"
                     />
@@ -227,6 +271,14 @@ export const StoryCreator: React.FC<StoryCreatorProps> = ({ onClose, onSuccess }
                     </div>
                 </div>
             </div>
+
+            {showMentions && (
+                <MentionSuggestions
+                    query={mentionQuery}
+                    position={mentionPosition}
+                    onSelect={handleMentionSelect}
+                />
+            )}
         </div>
     );
 };

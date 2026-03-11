@@ -946,7 +946,7 @@ export default function PostViewPage() {
 
                 {/* FLOATING ACTION BAR */}
                 <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[50] w-[90%] max-w-xl animate-in slide-in-from-bottom-8 duration-500 lg:group-hover/main:opacity-100 lg:transition-opacity">
-                    <div className="bg-[var(--bg-card)]/80 backdrop-blur-2xl border border-white/20 dark:border-white/10 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.2)] p-2 flex items-center justify-between gap-2 overflow-visible">
+                    <div className="bg-[var(--bg-card)]/80 backdrop-blur-2xl border border-white/20 dark:border-white/10 rounded-full shadow-[0_20px_50px_rgba(0,0,0,0.2)] p-1.5 md:p-2 flex items-center justify-between gap-1 md:gap-2 overflow-visible">
 
                         {/* Left Group: Interactions */}
                         <div className="flex items-center gap-1 pl-2">
@@ -962,15 +962,15 @@ export default function PostViewPage() {
                                 <button
                                     onClick={() => setShowVoteSlider(!showVoteSlider)}
                                     disabled={voting || voted}
-                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'hover:bg-[var(--primary-color)]/10 text-[var(--text-primary)]'}`}
+                                    className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all ${voted ? 'bg-red-500 text-white shadow-lg shadow-red-500/30' : 'hover:bg-[var(--primary-color)]/10 text-[var(--text-primary)]'}`}
                                 >
-                                    {voting ? <div className="animate-spin h-5 w-5 border-2 border-current rounded-full border-t-transparent" /> : <ThumbsUp size={20} fill={voted ? "currentColor" : "none"} />}
+                                    {voting ? <div className="animate-spin h-5 w-5 border-2 border-current rounded-full border-t-transparent" /> : <ThumbsUp size={18} className="md:w-5 md:h-5" fill={voted ? "currentColor" : "none"} />}
                                 </button>
                             </div>
 
                             {/* Payout Display */}
                             <div
-                                className="relative group/payout px-4 py-2 rounded-full hover:bg-[var(--bg-canvas)]/50 transition-colors cursor-help"
+                                className="relative group/payout px-2 md:px-4 py-2 rounded-full hover:bg-[var(--bg-canvas)]/50 transition-colors cursor-help"
                                 onMouseEnter={() => setShowPayoutDetails(true)}
                                 onMouseLeave={() => setShowPayoutDetails(false)}
                             >
@@ -1023,7 +1023,7 @@ export default function PostViewPage() {
                             {/* Voter Count Action */}
                             <button
                                 onClick={() => setShowVoters(true)}
-                                className="group relative px-4 py-2 rounded-full hover:bg-[var(--bg-canvas)]/50 transition-colors flex flex-col items-center"
+                                className="group relative px-2 md:px-4 py-2 rounded-full hover:bg-[var(--bg-canvas)]/50 transition-colors flex flex-col items-center"
                             >
                                 <div className="text-sm font-black text-[var(--text-primary)]">{post.active_votes?.length || 0}</div>
                                 <div className="text-[9px] uppercase tracking-tighter opacity-40 font-bold -mt-0.5">Voters</div>
@@ -1038,29 +1038,29 @@ export default function PostViewPage() {
                             {/* Listen Button */}
                             <button
                                 onClick={handleListen}
-                                className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isSpeaking ? 'bg-[var(--primary-color)] text-white' : 'hover:bg-[var(--primary-color)]/10 text-[var(--text-secondary)]'}`}
+                                className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all ${isSpeaking ? 'bg-[var(--primary-color)] text-white' : 'hover:bg-[var(--primary-color)]/10 text-[var(--text-secondary)]'}`}
                                 title="Listen to post"
                             >
-                                {isSpeaking ? <div className="flex gap-0.5 items-end h-4 pb-0.5"><div className="w-1 bg-white animate-pulse" style={{ height: '60%' }}></div><div className="w-1 bg-white animate-pulse" style={{ height: '100%' }}></div><div className="w-1 bg-white animate-pulse" style={{ height: '40%' }}></div></div> : <Volume2 size={20} />}
+                                {isSpeaking ? <div className="flex gap-0.5 items-end h-4 pb-0.5"><div className="w-1 bg-white animate-pulse" style={{ height: '60%' }}></div><div className="w-1 bg-white animate-pulse" style={{ height: '100%' }}></div><div className="w-1 bg-white animate-pulse" style={{ height: '40%' }}></div></div> : <Volume2 size={18} className="md:w-5 md:h-5" />}
                             </button>
 
                             {/* Share */}
                             <button
                                 onClick={() => setShowShareModal(true)}
-                                className="w-12 h-12 rounded-full flex items-center justify-center hover:bg-[var(--primary-color)]/10 text-[var(--text-secondary)] transition-all"
+                                className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center hover:bg-[var(--primary-color)]/10 text-[var(--text-secondary)] transition-all"
                                 title="Share"
                             >
-                                <Share size={20} />
+                                <Share size={18} className="md:w-5 md:h-5" />
                             </button>
 
                             {/* Tip Button & Menu */}
                             <div className="relative">
                                 <button
                                     onClick={() => setShowTipMenu(!showTipMenu)}
-                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${hasTipped ? 'bg-amber-500/10 text-amber-500 shadow-sm' : 'hover:bg-amber-500/10 text-[var(--text-secondary)] hover:text-amber-500'}`}
+                                    className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all ${hasTipped ? 'bg-amber-500/10 text-amber-500 shadow-sm' : 'hover:bg-amber-500/10 text-[var(--text-secondary)] hover:text-amber-500'}`}
                                     title="Send a Tip"
                                 >
-                                    <DollarSign size={20} className={hasTipped ? 'text-amber-500' : ''} />
+                                    <DollarSign size={18} className={`md:w-5 md:h-5 ${hasTipped ? 'text-amber-500' : ''}`} />
                                 </button>
 
                                 {showTipMenu && (
@@ -1100,10 +1100,10 @@ export default function PostViewPage() {
                             {showScrollTop && (
                                 <button
                                     onClick={scrollToTop}
-                                    className="w-12 h-12 rounded-full flex items-center justify-center hover:bg-[var(--primary-color)]/10 text-[var(--primary-color)] transition-all animate-in zoom-in spin-in-90 duration-300"
+                                    className="w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center hover:bg-[var(--primary-color)]/10 text-[var(--primary-color)] transition-all animate-in zoom-in spin-in-90 duration-300"
                                     title="Scroll to Top"
                                 >
-                                    <ChevronLeft size={20} className="rotate-90" />
+                                    <ChevronLeft size={18} className="rotate-90 md:w-5 md:h-5" />
                                 </button>
                             )}
 
@@ -1111,9 +1111,9 @@ export default function PostViewPage() {
                             <div className="relative more-menu-container">
                                 <button
                                     onClick={() => setShowMoreMenu(!showMoreMenu)}
-                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${showMoreMenu ? 'bg-[var(--text-primary)] text-[var(--bg-card)]' : 'hover:bg-[var(--primary-color)]/10 text-[var(--text-secondary)]'}`}
+                                    className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all ${showMoreMenu ? 'bg-[var(--text-primary)] text-[var(--bg-card)]' : 'hover:bg-[var(--primary-color)]/10 text-[var(--text-secondary)]'}`}
                                 >
-                                    <MoreHorizontal size={20} />
+                                    <MoreHorizontal size={18} className="md:w-5 md:h-5" />
                                 </button>
 
                                 {showMoreMenu && (

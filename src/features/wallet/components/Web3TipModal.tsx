@@ -65,6 +65,9 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
     const [txHash, setTxHash] = useState<string | null>(null);
     const [errorMsg, setErrorMsg] = useState('');
 
+    // Solana rent-exemption buffer (~0.0021 SOL)
+    const RENT_BUFFER = selectedChain === 'SOL' ? 0.0021 : 0;
+
     // ── Load recipient addresses from Hive metadata ──────────────────────────
     useEffect(() => {
         (async () => {
@@ -103,13 +106,12 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
         (async () => {
             setLoadingSender(true);
             try {
-                // Check local cache first — fastest
-                const cached = addressStorage.get(senderUsername);
                 const hasEncrypted = !!mnemonicStorage.getEncrypted(senderUsername);
                 setIsLocked(hasEncrypted);
 
+                // 1. Initial view-only load (from cache or Hive metadata)
+                const cached = addressStorage.get(senderUsername);
                 if (cached) {
-                    // Build mock wallets for balance fetch
                     const mockWallets: any = { mnemonic: '' };
                     Object.entries(cached).forEach(([chain, data]) => { mockWallets[chain] = data; });
                     try {
@@ -117,7 +119,6 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                         setSenderInfo(info);
                     } catch { /* balances optional */ }
                 } else {
-                    // Try Hive metadata
                     const tokens = await fetchHiveMetadata(senderUsername);
                     const chainTokens = tokens.filter(t => t.type === 'CHAIN');
                     const mockWallets: any = { mnemonic: '' };
@@ -139,6 +140,32 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                             const fullInfo = await web3WalletService.getWalletInfo(mockWallets);
                             setSenderInfo(fullInfo);
                         } catch { /* balances optional */ }
+                    }
+                }
+
+                // 2. Auto-Unlock if signature exists
+                const savedSig = web3WalletService.signatureStorage.get(senderUsername);
+                const encrypted = mnemonicStorage.getEncrypted(senderUsername);
+                const salt = mnemonicStorage.getSalt(senderUsername);
+
+                if (savedSig && encrypted && salt) {
+                    try {
+                        const mnemonic = await decryptMnemonic(encrypted, salt, savedSig);
+                        const derived = await web3WalletService.deriveAddresses(mnemonic);
+                        const info = await web3WalletService.getWalletInfo(derived as any);
+                        const walletMap: Record<string, { balance: number; privateKey: string; address: string; imageUrl: string }> = {};
+                        info.forEach(w => {
+                            const raw = (derived as any)[w.chain];
+                            if (raw?.privateKey) {
+                                walletMap[w.chain] = { balance: w.balance, privateKey: raw.privateKey, address: w.address, imageUrl: w.imageUrl };
+                            }
+                        });
+                        setSenderWallets(walletMap);
+                        setSenderInfo(info);
+                        setIsLocked(false);
+                        console.log('[Web3TipModal] Auto-unlocked using saved signature');
+                    } catch (e) {
+                        console.warn('[Web3TipModal] Auto-unlock failed:', e);
                     }
                 }
             } finally {
@@ -192,6 +219,8 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
             setSenderInfo(info);
             setIsLocked(false);
             setStep('enter_amount');
+            // Save signature for future auto-unlock
+            web3WalletService.signatureStorage.set(senderUsername, sig.result);
             showNotification('Wallet unlocked!', 'success');
         } catch (err: any) {
             setStep('select_chain');
@@ -205,6 +234,16 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
         const recipientAddr = recipientAddresses[selectedChain];
         const wallet = senderWallets[selectedChain];
         if (!recipientAddr || !wallet?.privateKey) return;
+
+        const spendable = Math.max(0, wallet.balance - RENT_BUFFER);
+        if (Number(amount) > spendable) {
+            setErrorMsg(selectedChain === 'SOL'
+                ? `Insufficient spendable balance. Solana requires keeping ~0.0021 SOL for rent.`
+                : 'Insufficient balance'
+            );
+            setStep('error');
+            return;
+        }
 
         setStep('sending');
         try {
@@ -240,11 +279,11 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                 throw new Error(`Signing not supported for ${selectedChain}`);
             }
 
-            const hash = await web3WalletService.broadcastTransaction(selectedChain, signedTx);
+            const hash = await web3WalletService.broadcastTransaction(selectedChain!, signedTx);
             setTxHash(hash);
             setStep('done');
             if (onSuccess) onSuccess();
-            showNotification(`Tipped ${amount} ${selectedChain} to @${recipientUsername}! 🎉`, 'success');
+            showNotification(`Tipped ${amount} ${selectedChain!} to @${recipientUsername}! 🎉`, 'success');
         } catch (err: any) {
 
             setErrorMsg(err.message || 'Transaction failed');
@@ -522,19 +561,33 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                                         <>
                                             {/* Prominent Balance + Fee Info Card */}
                                             <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-4 flex flex-col gap-2.5 shadow-sm">
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Your Balance</span>
-                                                    <span className="text-sm font-black text-[var(--text-primary)]" style={{ color: accentColor }}>
+                                                <div className="flex justify-between items-end mb-1">
+                                                    <div>
+                                                        <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-0.5 opacity-60">Spendable Balance</p>
+                                                        <p className="text-xl font-black text-[var(--text-primary)] leading-none">
+                                                            {(senderBalance(selectedChain) - RENT_BUFFER).toFixed(6)} <span className="text-[10px] opacity-40">{selectedChain}</span>
+                                                        </p>
+                                                    </div>
+                                                    {selectedChain === 'SOL' && (
+                                                        <div className="text-right">
+                                                            <p className="text-[9px] font-bold text-amber-500 uppercase tracking-tighter">Rent Protected</p>
+                                                            <p className="text-[9px] font-mono text-[var(--text-secondary)] opacity-50">0.0021 SOL</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="h-px bg-[var(--border-color)] opacity-30 mx-1" />
+                                                <div className="flex justify-between items-center text-[10px]">
+                                                    <span className="font-bold text-[var(--text-secondary)] opacity-60">TOTAL BALANCE</span>
+                                                    <span className="font-mono text-[var(--text-secondary)]">
                                                         {senderBalance(selectedChain).toFixed(6)} {selectedChain}
                                                     </span>
                                                 </div>
-                                                <div className="h-px bg-[var(--border-color)] opacity-50" />
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Network Fee</span>
+                                                <div className="flex justify-between items-center text-[10px]">
+                                                    <span className="font-bold text-[var(--text-secondary)] opacity-60">ESTIMATED FEE</span>
                                                     {fetchingFee ? (
-                                                        <Loader2 className="animate-spin text-[var(--text-secondary)]" size={12} />
+                                                        <Loader2 className="animate-spin text-[var(--text-secondary)]" size={10} />
                                                     ) : (
-                                                        <span className="text-[11px] font-bold text-[var(--text-primary)]">
+                                                        <span className="font-mono text-[var(--text-secondary)]">
                                                             {fee !== null ? `≈ ${fee.toFixed(6)}` : '—'} {selectedChain}
                                                         </span>
                                                     )}
@@ -556,7 +609,12 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                                                             className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-2.5 pr-20 text-sm text-[var(--text-primary)] focus:border-[var(--primary-color)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all placeholder:opacity-30"
                                                         />
                                                         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                                                            <button onClick={() => setAmount(senderBalance(selectedChain).toString())} className="text-[9px] font-black text-[var(--primary-color)] hover:brightness-110">MAX</button>
+                                                            <button
+                                                                onClick={() => setAmount(Math.max(0, senderBalance(selectedChain) - RENT_BUFFER).toString())}
+                                                                className="text-[9px] font-black text-[var(--primary-color)] hover:brightness-110 px-1.5 py-0.5 bg-[var(--primary-color)]/10 rounded-md transition-all"
+                                                            >
+                                                                MAX
+                                                            </button>
                                                             <span className="text-[10px] font-bold text-[var(--text-secondary)]">{selectedChain}</span>
                                                         </div>
                                                     </div>

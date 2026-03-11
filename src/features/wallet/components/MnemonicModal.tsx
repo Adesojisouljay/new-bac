@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Download } from 'lucide-react';
+import { X, Download } from 'lucide-react';
 import { CopyButton } from './CopyButton';
 
 interface MnemonicModalProps {
     mnemonic: string;
     username: string;
     onConfirm: () => void;
+    onClose: () => void;
 }
 
-export function MnemonicModal({ mnemonic, username, onConfirm }: MnemonicModalProps) {
+export function MnemonicModal({ mnemonic, username, onConfirm, onClose }: MnemonicModalProps) {
     const [confirmed, setConfirmed] = useState(false);
     const words = mnemonic.split(/\s+/);
 
@@ -27,9 +28,15 @@ export function MnemonicModal({ mnemonic, username, onConfirm }: MnemonicModalPr
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                 {/* Header */}
-                <div className="p-6 border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/50">
+                <div className="p-6 border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/50 relative">
+                    <button
+                        onClick={onClose}
+                        className="absolute top-4 right-4 p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] rounded-full transition-all active:scale-90 z-10"
+                    >
+                        <X size={20} />
+                    </button>
                     <div className="flex items-center gap-3 mb-2">
                         <span className="text-2xl">🔐</span>
                         <h2 className="text-xl font-bold text-[var(--text-primary)]">Secure Your Recovery Phrase</h2>
@@ -40,7 +47,7 @@ export function MnemonicModal({ mnemonic, username, onConfirm }: MnemonicModalPr
                 </div>
 
                 {/* Content */}
-                <div className="p-8 space-y-6">
+                <div className="p-8 space-y-6 overflow-y-auto flex-1 CustomScrollbar">
                     {/* Warning Box */}
                     <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4 flex gap-4 items-start">
                         <span className="text-xl">⚠️</span>

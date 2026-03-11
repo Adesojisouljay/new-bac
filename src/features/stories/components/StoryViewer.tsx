@@ -12,6 +12,8 @@ import { messageService } from '../../messages/services/messageService';
 import { Send, ChevronLeft, ChevronRight, Heart } from 'lucide-react';
 import { transactionService } from '../../wallet/services/transactionService';
 import { VoteSlider } from '../../feed/components/VoteSlider';
+import { MentionSuggestions } from '../../../components/MentionSuggestions';
+import { useRef } from 'react';
 
 
 
@@ -42,6 +44,12 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
     const [progress, setProgress] = useState(0);
     const [showVoteSlider, setShowVoteSlider] = useState(false);
     const [hasTipped, setHasTipped] = useState(false);
+
+    // Mention State for Story Reply
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
+    const [showMentions, setShowMentions] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
 
 
 
@@ -191,6 +199,45 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
 
 
 
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setReplyContent(value);
+
+        const cursor = e.target.selectionStart || 0;
+        const textBefore = value.substring(0, cursor);
+        const mentionMatch = textBefore.match(/@([a-z0-9.-]*)$/i);
+
+        if (mentionMatch) {
+            const query = mentionMatch[1];
+            const rect = e.target.getBoundingClientRect();
+            setMentionQuery(query);
+            // Position above the input field
+            setMentionPosition({
+                top: rect.top - 350,
+                left: rect.left
+            });
+            setShowMentions(true);
+        } else {
+            setShowMentions(false);
+        }
+    };
+
+    const handleMentionSelect = (username: string) => {
+        if (!inputRef.current) return;
+        const cursor = inputRef.current.selectionStart || 0;
+        const textBefore = replyContent.substring(0, cursor);
+        const textAfter = replyContent.substring(cursor);
+        const startOfWord = textBefore.lastIndexOf('@');
+
+        if (startOfWord !== -1) {
+            const newText = textBefore.substring(0, startOfWord) + `@${username} ` + textAfter;
+            setReplyContent(newText);
+        }
+        setShowMentions(false);
+        setMentionQuery('');
+        inputRef.current.focus();
+    };
+
     const handleSendReply = async () => {
         if (!username) {
             showNotification('Please login to reply', 'warning');
@@ -228,7 +275,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
     };
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/95">
             {/* Close button */}
             <button
                 onClick={onClose}
@@ -408,10 +455,11 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                     <div className="w-full max-w-md px-6 pb-6">
                         <div className="relative">
                             <input
+                                ref={inputRef}
                                 type="text"
                                 autoFocus
                                 value={replyContent}
-                                onChange={(e) => setReplyContent(e.target.value)}
+                                onChange={handleInputChange}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
                                 placeholder={`Reply to @${group.username}...`}
                                 className="w-full bg-white/10 border border-white/20 rounded-full py-3 px-6 pr-12 text-white placeholder:text-white/40 focus:outline-none focus:border-[var(--primary-color)] transition-all"
@@ -428,6 +476,14 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({ group, onClose, onNext
                                 )}
                             </button>
                         </div>
+
+                        {showMentions && (
+                            <MentionSuggestions
+                                query={mentionQuery}
+                                position={mentionPosition}
+                                onSelect={handleMentionSelect}
+                            />
+                        )}
                     </div>
                 )}
             </div>
