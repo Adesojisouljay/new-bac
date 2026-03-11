@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, Send, AlertCircle, CheckCircle2, ShieldCheck } from 'lucide-react';
-import { web3WalletService } from '../../../services/web3WalletService';
+import { web3WalletService, mnemonicStorage } from '../../../services/web3WalletService';
 import { NotificationService } from '../../../services/notifications';
 import { signingService } from '../../../services/signingService';
 import { useNotification } from '../../../contexts/NotificationContext';
@@ -32,6 +32,10 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
     const [error, setError] = useState<string | null>(null);
     const [txHash, setTxHash] = useState<string | null>(null);
     const { showNotification } = useNotification();
+
+    // Solana rent-exemption buffer (~0.0021 SOL)
+    const RENT_BUFFER = chain === 'SOL' ? 0.0021 : 0;
+    const spendableBalance = Math.max(0, balance - RENT_BUFFER);
 
     useEffect(() => {
         const resolveUsername = async () => {
@@ -132,8 +136,11 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
             return;
         }
 
-        if (Number(amount) > balance) {
-            setError('Insufficient balance');
+        if (Number(amount) > spendableBalance) {
+            setError(chain === 'SOL'
+                ? `Insufficient spendable balance. Solana requires keeping ~0.0021 SOL for rent.`
+                : 'Insufficient balance'
+            );
             return;
         }
 
@@ -274,9 +281,20 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                     )}
                     <div>
                         <h3 className="text-lg font-bold text-[var(--text-primary)]">Send {chain}</h3>
-                        <p className="text-xs text-[var(--text-secondary)] font-medium">Available: {balance.toFixed(6)} {chain}</p>
+                        <p className="text-xs text-[var(--text-secondary)] font-medium">Total: {balance.toFixed(6)} {chain}</p>
                     </div>
                 </div>
+                {!mnemonicStorage.getEncrypted(username) && (
+                    <div className="mb-6 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex gap-3 items-start animate-in zoom-in-95 duration-300">
+                        <AlertCircle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                        <div className="space-y-1">
+                            <p className="text-xs font-bold text-amber-500 uppercase tracking-wider">View-Only Mode</p>
+                            <p className="text-[11px] text-[var(--text-secondary)] leading-relaxed">
+                                Recovery phrase not found on this device. You can view balances, but you must <strong>Import your Phrase</strong> from the main wallet tab to enable sending.
+                            </p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Modes */}
                 <div className="flex bg-[var(--bg-canvas)] p-1 rounded-2xl mb-6 border border-[var(--border-color)]">
@@ -341,8 +359,25 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                         )}
                     </div>
 
+                    <div className="bg-[var(--bg-canvas)] rounded-2xl p-4 border border-[var(--border-color)] mb-2">
+                        <div className="flex justify-between items-end">
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-1">Spendable Balance</p>
+                                <p className="text-xl font-black text-[var(--text-primary)]">
+                                    {spendableBalance.toFixed(6)} <span className="text-xs font-bold opacity-40">{chain}</span>
+                                </p>
+                            </div>
+                            {chain === 'SOL' && (
+                                <div className="text-right">
+                                    <p className="text-[9px] font-bold text-amber-500 uppercase tracking-tighter">Rent Protected</p>
+                                    <p className="text-[10px] font-mono text-[var(--text-secondary)] opacity-60">0.0021 SOL</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
                     <div>
-                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-1.5 ml-1">Amount</label>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)] mb-1.5 ml-1">Amount to Send</label>
                         <div className="relative">
                             <input
                                 type="number"
@@ -352,8 +387,8 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                                 className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] focus:border-[var(--primary-color)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all placeholder:opacity-30"
                             />
                             <button
-                                onClick={() => setAmount(balance.toString())}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[var(--primary-color)] hover:brightness-110"
+                                onClick={() => setAmount(spendableBalance.toString())}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-[var(--primary-color)] hover:brightness-110 px-2 py-1 bg-[var(--primary-color)]/10 rounded-lg transition-all"
                             >
                                 MAX
                             </button>
@@ -384,7 +419,7 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Total Deduction</p>
-                                    <p className={`text-xs font-bold ${(fee !== null && (Number(amount) + fee) > balance) ? 'text-red-500' : 'text-[var(--text-secondary)]'}`}>
+                                    <p className={`text-xs font-bold ${(fee !== null && (Number(amount) + fee) > balance) || Number(amount) > spendableBalance ? 'text-red-500' : 'text-[var(--text-secondary)]'}`}>
                                         {fee !== null ? (Number(amount) + fee).toFixed(6) : '--'} {chain}
                                     </p>
                                 </div>
@@ -406,11 +441,11 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
 
                     <button
                         onClick={handleSend}
-                        disabled={loading || !to || !amount}
+                        disabled={loading || !to || !amount || (!privateKey && !mnemonicStorage.getEncrypted(username))}
                         className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none ${!privateKey ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : 'bg-green-600 shadow-green-600/25'}`}
                     >
                         {loading ? 'Processing...' : (
-                            !privateKey ? 'Confirm (Sign with Keychain)' : `Send ${amount} ${chain}`
+                            !mnemonicStorage.getEncrypted(username) ? 'Import Phrase to Send' : (!privateKey ? 'Confirm (Sign with Keychain)' : `Send ${amount} ${chain}`)
                         )}
                         {!loading && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
                     </button>

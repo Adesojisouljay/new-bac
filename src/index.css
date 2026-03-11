@@ -229,3 +229,21 @@ input[type="date"]::-webkit-calendar-picker-indicator {
     background: var(--text-secondary);
   }
 }
+/* Remove increment/decrement arrows (spinners) from numerical inputs globally */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield !important;
+  appearance: textfield !important;
+}
+
+/* Prevent iPhone auto-zoom on input focus by ensuring at least 16px font-size */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+}

@@ -26,6 +26,7 @@ import { Web3ActivityFeed } from '../components/Web3ActivityFeed';
 import { SwapModal } from '../components/SwapModal';
 import { QRCodeSVG } from 'qrcode.react';
 import { authService } from '../../auth/services/authService';
+import { socketService } from '../../../services/socketService';
 
 // ─── Chain colour accents ────────────────────────────────────────────────────
 const CHAIN_ACCENT: Record<string, string> = {
@@ -38,8 +39,12 @@ const CHAIN_ACCENT: Record<string, string> = {
     BASE: '#0052ff',
     POLYGON: '#8247e5',
     ARBITRUM: '#28a0f0',
+    DOGE: '#ba9f33',
+    LTC: '#345d9d',
+    SOL_USDT: '#26a17b',
     USDT_TRC20: '#26a17b',
     USDT_BEP20: '#26a17b',
+    USDT_ERC20: '#26a17b',
 };
 
 interface Web3WalletsProps {
@@ -63,53 +68,11 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const [activeMainTab, setActiveMainTab] = useState<'assets' | 'history'>('assets');
     const [authQR, setAuthQR] = useState<string | null>(null);
     const currentUser = localStorage.getItem('hive_user');
-    const normalizedCurrentUser = currentUser?.replace(/^@/, '');
-    const isOwner = normalizedCurrentUser === username;
+    const normalizedCurrentUser = currentUser?.replace(/^@/, '').toLowerCase();
+    const isOwner = normalizedCurrentUser === username.replace(/^@/, '').toLowerCase();
     const previousBalancesRef = useRef<Record<string, number>>({});
 
-    const deriveAndFetch = useCallback(async (mnemonic: string, targetChain?: string) => {
-        // Use a less destructive loader for selective derivations so we don't unmount child modals
-        if (targetChain) {
-            setLoadingInfo(true);
-        } else {
-            setLoading(true);
-        }
-        try {
-            if (targetChain) {
-                // Selective derivation
-                const wallet = await web3WalletService.deriveSingleAddress(mnemonic, targetChain);
-                setUnlockedChains(prev => ({ ...prev, [targetChain]: wallet }));
-                setLoadingInfo(false);
-                return wallet;
-            }
-
-            const derived = await web3WalletService.deriveAddresses(mnemonic);
-
-            // Update local public address cache
-            const publicCache: any = {};
-            Object.entries(derived).forEach(([chain, data]) => {
-                if (chain !== 'mnemonic') {
-                    publicCache[chain] = { address: (data as any).address, imageUrl: (data as any).imageUrl };
-                }
-            });
-            addressStorage.set(username, publicCache);
-
-            setRawWallets(derived);
-            fetchBalances(derived);
-            return derived;
-        } catch (err: any) {
-            showNotification(`Failed to derive wallets: ${err.message}`, 'error');
-            throw err;
-        } finally {
-            if (targetChain) {
-                setLoadingInfo(false);
-            } else {
-                setLoading(false);
-            }
-        }
-    }, [showNotification, username]);
-
-    const fetchBalances = async (wallets: RawWallets, isSilent = false) => {
+    const fetchBalances = useCallback(async (wallets: RawWallets, isSilent = false) => {
         if (!isSilent) setLoadingInfo(true);
         try {
             const info = await web3WalletService.getWalletInfo(wallets);
@@ -159,44 +122,125 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         } finally {
             if (!isSilent) setLoadingInfo(false);
         }
-    };
+    }, [showNotification, username]);
 
-    // ── Polling for Background Deposits ─────────────────────────────────────
-    const walletAddresses = walletInfo.map(w => w.address).join(',');
+    const deriveAndFetch = useCallback(async (mnemonic: string, targetChain?: string) => {
+        // Use a less destructive loader for selective derivations so we don't unmount child modals
+        if (targetChain) {
+            setLoadingInfo(true);
+        } else {
+            setLoading(true);
+        }
+        try {
+            if (targetChain) {
+                // Selective derivation
+                const wallet = await web3WalletService.deriveSingleAddress(mnemonic, targetChain);
+                setUnlockedChains(prev => ({ ...prev, [targetChain]: wallet }));
+                setLoadingInfo(false);
+                return wallet;
+            }
+
+            const derived = await web3WalletService.deriveAddresses(mnemonic);
+
+            // Update local public address cache
+            const publicCache: any = {};
+            Object.entries(derived).forEach(([chain, data]) => {
+                if (chain !== 'mnemonic') {
+                    publicCache[chain] = { address: (data as any).address, imageUrl: (data as any).imageUrl };
+                }
+            });
+            addressStorage.set(username, publicCache);
+
+            setRawWallets(derived);
+            fetchBalances(derived);
+            return derived;
+        } catch (err: any) {
+            showNotification(`Failed to derive wallets: ${err.message}`, 'error');
+            throw err;
+        } finally {
+            if (targetChain) {
+                setLoadingInfo(false);
+            } else {
+                setLoading(false);
+            }
+        }
+    }, [showNotification, username, fetchBalances]);
+
+    // ── Webhook Socket Listener for Background Deposits ──────────────────────
+    useEffect(() => {
+        if (!username || walletInfo.length === 0) return;
+
+        const handleWeb3Deposit = (data: any) => {
+            console.log('[Socket] Web3 Deposit Notification:', data);
+
+            // Trigger a silent refresh to update UI with latest balances
+            // We reconstruct the mock wallets structure for fetchBalances
+            const currentWallets: any = { mnemonic: '' };
+            walletInfo.forEach(w => {
+                currentWallets[w.chain] = { address: w.address, imageUrl: w.imageUrl };
+            });
+
+            fetchBalances(currentWallets as RawWallets, true); // Silent refresh
+        };
+
+        socketService.on('web3_deposit', handleWeb3Deposit);
+        return () => socketService.off('web3_deposit', handleWeb3Deposit);
+    }, [username, walletInfo, fetchBalances]);
+
+    // ── Polling Fallback for Unsupported Webhook Chains (TRON) ────────────────
     useEffect(() => {
         if (walletInfo.length === 0) return;
 
-        const pollId = setInterval(() => {
+        const needsPolling = walletInfo.some(w => ['TRON', 'USDT_TRC20'].includes(w.chain));
+        if (!needsPolling) return;
 
+        const pollId = setInterval(() => {
             const currentWallets: any = { mnemonic: '' };
             walletInfo.forEach(w => {
                 currentWallets[w.chain] = { address: w.address, imageUrl: w.imageUrl };
             });
             fetchBalances(currentWallets as RawWallets, true); // Silent refresh
-        }, 180000); // Poll every 3 minutes (180000ms)
+        }, 120000); // Poll every 2 minutes for Tron
 
         return () => clearInterval(pollId);
-    }, [walletAddresses, username]); // Only reset if the list of addresses changes
+    }, [walletInfo, username, fetchBalances]);
 
     // ── Load state on mount ──────────────────────────────────────────────────
     useEffect(() => {
         const init = async () => {
-
+            console.log(`[Web3Wallets] Initializing for ${username}...`);
             setLoading(true);
             try {
-                // 1. Check Hive Blockchain for public metadata
+                // 1. Check for persistent signature (Auto-Unlock)
+                const storedSignature = web3WalletService.signatureStorage.get(username);
+                const encryptedMnemonic = mnemonicStorage.getEncrypted(username);
+                const salt = mnemonicStorage.getSalt(username);
 
+                console.log(`[Web3Wallets] Storage check - Signature: ${!!storedSignature}, Encrypted: ${!!encryptedMnemonic}, Salt: ${!!salt}`);
+
+                if (storedSignature && encryptedMnemonic && salt) {
+                    try {
+                        console.log('[Web3Wallets] Attempting Auto-Unlock...');
+                        const mnemonic = await decryptMnemonic(encryptedMnemonic, salt, storedSignature);
+                        const derived = await web3WalletService.deriveAddresses(mnemonic);
+                        console.log('[Web3Wallets] Auto-Unlock successful!');
+                        setRawWallets(derived);
+                        fetchBalances(derived);
+                        setLoading(false);
+                        return; // Auto-unlocked!
+                    } catch (e) {
+                        console.warn('[AutoUnlock] Decryption failed or error during derivation:', e);
+                        // Optional: Clear signature if decryption specifically fails (likely invalid signature)
+                        // web3WalletService.signatureStorage.clear(username);
+                    }
+                }
+
+                // 2. Fallback to View-Only mode
+                console.log('[Web3Wallets] Falling back to View-Only mode');
                 const tokens = await fetchHiveMetadata(username);
-
-
-                // 2. Check local Address Cache (most reliable for current user)
                 const cachedAddresses = addressStorage.get(username);
-
-
-                // 3. Prepare View-Only Wallets (Merge Remote Metadata + Local Cache)
                 const combinedWallets: Record<string, { address: string; imageUrl: string }> = {};
 
-                // A. Start with remote metadata (ground truth from Hive)
                 tokens.filter(t => t.type === 'CHAIN').forEach(t => {
                     if (t.symbol && t.meta.address) {
                         combinedWallets[t.symbol] = {
@@ -206,14 +250,12 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                     }
                 });
 
-                // B. Overlay with local cache (public addresses we know)
                 if (cachedAddresses) {
                     Object.entries(cachedAddresses).forEach(([chain, data]) => {
                         combinedWallets[chain] = data;
                     });
                 }
 
-                // C. Build initial info and mock wallets for balance fetching
                 const initialInfo: Web3WalletInfo[] = [];
                 const mockWallets: any = { mnemonic: '' };
 
@@ -231,23 +273,19 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                     mockWallets[chain] = data;
                 });
 
+                setWalletInfo(initialInfo);
                 if (initialInfo.length > 0) {
-
-                    setWalletInfo(initialInfo);
-                    // Crucial: Use the constructed mockWallets for immediate balance fetching
-                    fetchBalances(mockWallets as RawWallets);
+                    fetchBalances(mockWallets as RawWallets, true); // Silent refresh
                 }
-
-
-
-            } catch (err: any) {
-                console.error('[Web3Wallets] Initialization CRITICAL error:', err);
+            } catch (err) {
+                console.error('[Web3Wallets] Initialization error:', err);
             } finally {
                 setLoading(false);
             }
         };
-        init();
-    }, [username]);
+
+        if (username) init();
+    }, [username, fetchBalances]);
 
     // ── Unlock Wallet with Keychain Signature ────────────────────────────────
     const handleUnlock = async (targetChain?: string) => {
@@ -271,6 +309,9 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
             );
 
             if (signature.success && signature.result) {
+                // Save signature for persistence
+                web3WalletService.signatureStorage.set(username, signature.result);
+
                 const mnemonic = await decryptMnemonic(encrypted, salt, signature.result);
                 const result = await deriveAndFetch(mnemonic, targetChain);
                 setAuthQR(null);
@@ -292,7 +333,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
             hasExisting ? 'Overwrite Existing Hive-Linked Wallets?' : 'Generate New Web3 Wallet',
             hasExisting
                 ? 'We found existing multi-chain addresses linked to your Hive profile. Generating a NEW wallet will REPLACE those links on Hive. If you still have your phrase for the existing addresses, use the "Import" option instead. Continue generating new?'
-                : 'This will create a new BIP-39 backup phrase for BTC, ETH, SOL and more. Your wallet will be encrypted using your Hive identity. Continue?'
+                : 'This will create a new Web3 backup phrase for BTC, ETH, SOL and more. Your wallet will be encrypted using your Hive identity and linked to your Hive account. Continue?'
         );
         if (!confirmed) return;
 
@@ -352,7 +393,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
         try {
-            const signature = await authService.signMessage(
+            const signatureRes = await authService.signMessage(
                 username,
                 UNLOCK_MESSAGE,
                 'Posting',
@@ -362,11 +403,14 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 }
             );
 
-            if (!signature.success || !signature.result) {
-                throw new Error(signature.error || 'Signature required to secure wallet');
+            if (!signatureRes.success || !signatureRes.result) {
+                throw new Error(signatureRes.error || 'Signature required to secure wallet');
             }
 
-            const { encrypted, salt } = await encryptMnemonic(mnemonic, signature.result);
+            // Save signature for persistence
+            web3WalletService.signatureStorage.set(username, signatureRes.result);
+
+            const { encrypted, salt } = await encryptMnemonic(mnemonic, signatureRes.result);
             mnemonicStorage.set(username, encrypted, salt);
 
             const derived = await web3WalletService.deriveAddresses(mnemonic);
@@ -409,12 +453,13 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // ── Clear / reset wallet ──────────────────────────────────────────────────
     const handleReset = async () => {
         const confirmed = await showConfirm(
-            'Remove Web3 Wallet',
-            'This will remove your locally stored encrypted phrase. You will NOT be able to access these wallets unless you have your 12-word recovery phrase. Continue?'
+            'Revoke Keychain Access?',
+            'You are about to revoke Keychain access for this wallet. To grant access again in the future, you will need to provide your 12-word recovery phrase. Continue?'
         );
         if (!confirmed) return;
         mnemonicStorage.clear(username);
         addressStorage.clear(username);
+        web3WalletService.signatureStorage.clear(username);
         setRawWallets(null);
         setWalletInfo([]);
     };
@@ -437,7 +482,12 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // Mnemonic Modal (One-time)
     // ─────────────────────────────────────────────────────────────────────────
     if (pendingMnemonic) {
-        return <MnemonicModal mnemonic={pendingMnemonic} username={username} onConfirm={finalizeGeneration} />;
+        return <MnemonicModal
+            mnemonic={pendingMnemonic}
+            username={username}
+            onConfirm={finalizeGeneration}
+            onClose={() => setPendingMnemonic(null)}
+        />;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -501,7 +551,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // ─────────────────────────────────────────────────────────────────────────
     // Merge remote Hive metadata + fetched info
     // ─────────────────────────────────────────────────────────────────────────
-    const CHAIN_ORDER = ['BTC', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
+    const CHAIN_ORDER = ['BTC', 'ETH', 'SOL', 'SOL_USDT', 'TRON', 'BNB', 'DOGE', 'LTC', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
 
     const mergedCards = CHAIN_ORDER.map(chain => {
         const raw = rawWallets ? (rawWallets[chain] as any) : null;
@@ -541,20 +591,42 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
                 {isOwner && (
                     <div className="flex gap-2">
+                        {/* 1. VIEW-ONLY fallback: Secret phrase missing from this device - Only show Enable Access */}
                         {!mnemonicStorage.getEncrypted(username) && walletInfo.length > 0 && (
                             <button
                                 onClick={() => setShowImport(true)}
-                                className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20"
+                                className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20 flex items-center gap-2"
+                                title="Import your phrase to enable sending/signing"
                             >
-                                Import Recovery Phrase
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                </svg>
+                                Enable Full Access
                             </button>
                         )}
-                        <button
-                            onClick={handleReset}
-                            className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
-                        >
-                            Remove
-                        </button>
+
+                        {/* 2. Phrase Present: Show Unlock (if locked) and Remove */}
+                        {mnemonicStorage.getEncrypted(username) && (
+                            <>
+                                {!rawWallets && (
+                                    <button
+                                        onClick={() => handleUnlock()}
+                                        className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 active:scale-95 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20 flex items-center gap-2"
+                                    >
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                        </svg>
+                                        Grant Keychain Access
+                                    </button>
+                                )}
+                                <button
+                                    onClick={handleReset}
+                                    className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
+                                >
+                                    Revoke Keychain Access
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
@@ -577,218 +649,237 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 </button>
             </div>
 
-            {activeMainTab === 'assets' ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    {mergedCards.map((card: any) => {
-                        const accent = CHAIN_ACCENT[card.chain] || 'var(--primary-color)';
-                        const isUnlocked = !!(rawWallets || unlockedChains[card.chain]);
-                        return (
-                            <div
-                                key={card.chain}
-                                className="group relative bg-[var(--bg-card)] border border-[var(--border-color)] rounded-[32px] p-6 hover:shadow-2xl hover:shadow-[var(--primary-color)]/5 transition-all duration-500 hover:-translate-y-1 overflow-hidden flex flex-col gap-4"
-                            >
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-white/[0.03] -mr-8 -mt-8 rounded-full" />
-
-                                {/* Top: Icon + Chain */}
-                                <div className="flex items-center justify-between z-10">
-                                    <div className="flex items-center gap-3">
-                                        <div
-                                            className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner relative"
-                                            style={{ backgroundColor: `${accent}15` }}
-                                        >
-                                            <div className="absolute inset-0 rounded-xl border border-white/5" />
-                                            {card.imageUrl ? (
-                                                <img src={card.imageUrl} alt={card.chain} className="w-6 h-6 object-contain" />
-                                            ) : (
-                                                <span className="font-bold text-xs" style={{ color: accent }}>{card.chain[0]}</span>
-                                            )}
-                                        </div>
-                                        <div>
-                                            <h4 className="font-bold text-[var(--text-primary)] leading-tight">{card.chain}</h4>
-                                            <p className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tighter opacity-70">Mainnet</p>
-                                        </div>
-                                    </div>
-                                    {card.change24h !== null && (
-                                        <div className={`text-[10px] font-black px-2 py-1 rounded-lg ${card.change24h >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
-                                            {card.change24h >= 0 ? '↑' : '↓'} {Math.abs(card.change24h).toFixed(2)}%
-                                        </div>
-                                    )}
-                                    {!isUnlocked && isOwner && (
-                                        <div className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-lg flex items-center gap-1">
-                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                            </svg>
-                                            Locked
-                                        </div>
-                                    )}
-                                    {isUnlocked && (
-                                        <div className="text-[10px] font-bold text-green-500 bg-green-500/10 px-2 py-1 rounded-lg flex items-center gap-1">
-                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                                            </svg>
-                                            Unlocked
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Balance Info */}
-                                <div className="py-2 z-10">
-                                    <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
-                                        {loadingInfo ? (
-                                            <div className="h-8 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" />
-                                        ) : card.balance !== null ? (
-                                            `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
-                                        ) : (
-                                            <span className="opacity-20">—</span>
-                                        )}
-                                        <span className="text-xs font-bold text-[var(--text-secondary)] ml-2 opacity-50">{card.chain}</span>
-                                    </div>
-                                    {!loadingInfo && card.usdValue !== null && (
-                                        <p className="text-xs font-bold text-[var(--text-secondary)] mt-1 opacity-70">
-                                            ≈ ${card.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </p>
-                                    )}
-                                </div>
-
-                                {/* Address Display */}
+            {
+                activeMainTab === 'assets' ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        {mergedCards.map((card: any) => {
+                            const accent = CHAIN_ACCENT[card.chain] || 'var(--primary-color)';
+                            const isUnlocked = !!(rawWallets || unlockedChains[card.chain]);
+                            return (
                                 <div
-                                    onClick={() => {
-                                        navigator.clipboard.writeText(card.address);
-                                        showNotification(`${card.chain} address copied!`, 'success');
-                                    }}
-                                    className="bg-[var(--bg-canvas)]/50 border border-[var(--border-color)] rounded-2xl p-3 flex items-center gap-2 group/addr z-10 cursor-pointer hover:bg-[var(--bg-card)] transition-all"
+                                    key={card.chain}
+                                    className="group relative bg-[var(--bg-card)] border border-[var(--border-color)] rounded-[32px] p-6 hover:shadow-2xl hover:shadow-[var(--primary-color)]/5 transition-all duration-500 hover:-translate-y-1 overflow-hidden flex flex-col gap-4"
                                 >
-                                    <code className="text-[10px] font-mono font-bold text-[var(--text-secondary)] flex-1 truncate opacity-80 group-hover/addr:opacity-100 transition-opacity">
-                                        {card.address}
-                                    </code>
-                                    <div className="flex gap-1">
-                                        <CopyButton text={card.address} size="sm" />
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-white/[0.03] -mr-8 -mt-8 rounded-full" />
+
+                                    {/* Top: Icon + Chain */}
+                                    <div className="flex items-center justify-between z-10">
+                                        <div className="flex items-center gap-3">
+                                            <div
+                                                className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner relative"
+                                                style={{ backgroundColor: `${accent}15` }}
+                                            >
+                                                <div className="absolute inset-0 rounded-xl border border-white/5" />
+                                                {card.imageUrl ? (
+                                                    <img src={card.imageUrl} alt={card.chain} className="w-6 h-6 object-contain" />
+                                                ) : (
+                                                    <span className="font-bold text-xs" style={{ color: accent }}>{card.chain[0]}</span>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <h4 className="font-bold text-[var(--text-primary)] leading-tight">{card.chain}</h4>
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tighter opacity-70">Mainnet</p>
+                                            </div>
+                                        </div>
+                                        {card.change24h !== null && (
+                                            <div className={`text-[10px] font-black px-2 py-1 rounded-lg ${card.change24h >= 0 ? 'text-green-500 bg-green-500/10' : 'text-red-500 bg-red-500/10'}`}>
+                                                {card.change24h >= 0 ? '↑' : '↓'} {Math.abs(card.change24h).toFixed(2)}%
+                                            </div>
+                                        )}
+                                        {!isUnlocked && isOwner && (
+                                            <div className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-lg flex items-center gap-1">
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                                </svg>
+                                                Locked
+                                            </div>
+                                        )}
+                                        {isUnlocked && (
+                                            <div className="text-[10px] font-bold text-green-500 bg-green-500/10 px-2 py-1 rounded-lg flex items-center gap-1">
+                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                                                </svg>
+                                                Unlocked
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Balance Info */}
+                                    <div className="py-2 z-10">
+                                        <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
+                                            {loadingInfo ? (
+                                                <div className="h-8 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" />
+                                            ) : card.balance !== null ? (
+                                                `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
+                                            ) : (
+                                                <span className="opacity-20">—</span>
+                                            )}
+                                            <span className="text-xs font-bold text-[var(--text-secondary)] ml-2 opacity-50">{card.chain}</span>
+                                        </div>
+                                        {!loadingInfo && card.usdValue !== null && (
+                                            <p className="text-xs font-bold text-[var(--text-secondary)] mt-1 opacity-70">
+                                                ≈ ${card.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Address Display */}
+                                    <div
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(card.address);
+                                            showNotification(`${card.chain} address copied!`, 'success');
+                                        }}
+                                        className="bg-[var(--bg-canvas)]/50 border border-[var(--border-color)] rounded-2xl p-3 flex items-center gap-2 group/addr z-10 cursor-pointer hover:bg-[var(--bg-card)] transition-all"
+                                    >
+                                        <code className="text-[10px] font-mono font-bold text-[var(--text-secondary)] flex-1 truncate opacity-80 group-hover/addr:opacity-100 transition-opacity">
+                                            {card.address}
+                                        </code>
+                                        <div className="flex gap-1">
+                                            <CopyButton text={card.address} size="sm" />
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setQrTarget(card as any);
+                                                }}
+                                                className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-all active:scale-90"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="flex flex-wrap gap-2 z-10 mt-auto">
+                                        {isOwner && (
+                                            <>
+                                                <button
+                                                    onClick={() => {
+                                                        if (!mnemonicStorage.getEncrypted(username)) {
+                                                            setShowImport(true);
+                                                            showNotification('Recovery phrase not found. Please import it to enable sending.', 'warning');
+                                                            return;
+                                                        }
+                                                        setSendTarget(card as any);
+                                                    }}
+                                                    className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] transition-all group/btn ${!isUnlocked ? 'opacity-50 grayscale' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)]'}`}
+                                                >
+                                                    Send
+                                                </button>
+                                                {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20'].includes(card.chain) && (
+                                                    <button
+                                                        disabled
+                                                        className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] opacity-30 cursor-not-allowed flex items-center justify-center gap-1.5"
+                                                    >
+                                                        Swap
+                                                    </button>
+                                                )}
+                                            </>
+                                        )}
                                         <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setQrTarget(card as any);
-                                            }}
-                                            className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-card)] transition-all active:scale-90"
+                                            onClick={() => setQrTarget(card as any)}
+                                            className={`${isOwner ? 'w-full' : 'w-full'} py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--primary-color)] hover:text-white transition-all`}
                                         >
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                                            </svg>
+                                            Receive
                                         </button>
                                     </div>
                                 </div>
-
-                                {/* Action Buttons */}
-                                <div className="flex flex-wrap gap-2 z-10 mt-auto">
-                                    {isOwner && (
-                                        <>
-                                            <button
-                                                onClick={() => setSendTarget(card as any)}
-                                                className={`flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] transition-all group/btn ${!isUnlocked ? 'opacity-50 grayscale' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)]'}`}
-                                            >
-                                                Send
-                                            </button>
-                                            {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20'].includes(card.chain) && (
-                                                <button
-                                                    disabled
-                                                    className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] opacity-30 cursor-not-allowed flex items-center justify-center gap-1.5"
-                                                >
-                                                    Swap
-                                                </button>
-                                            )}
-                                        </>
-                                    )}
-                                    <button
-                                        onClick={() => setQrTarget(card as any)}
-                                        className={`${isOwner ? 'w-full' : 'w-full'} py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--primary-color)] hover:text-white transition-all`}
-                                    >
-                                        Receive
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            ) : (
-                <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <Web3ActivityFeed username={username} />
-                </div>
-            )}
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                        <Web3ActivityFeed username={username} />
+                    </div>
+                )
+            }
 
             {/* QR Modal */}
-            {qrTarget && (
-                <QRModal
-                    address={qrTarget.address}
-                    chain={qrTarget.chain}
-                    imageUrl={qrTarget.imageUrl}
-                    onClose={() => setQrTarget(null)}
-                />
-            )}
+            {
+                qrTarget && (
+                    <QRModal
+                        address={qrTarget.address}
+                        chain={qrTarget.chain}
+                        imageUrl={qrTarget.imageUrl}
+                        onClose={() => setQrTarget(null)}
+                    />
+                )
+            }
 
             {/* Swap Modal */}
-            {swapTarget && (
-                <SwapModal
-                    initialFromAsset={swapTarget as any}
-                    rawWallets={rawWallets}
-                    onClose={() => setSwapTarget(null)}
-                    onSuccess={(hash) => {
-                        showNotification(`Swap initiated! Hash: ${hash}`, 'success');
-                        fetchBalances(rawWallets!);
-                    }}
-                />
-            )}
+            {
+                swapTarget && (
+                    <SwapModal
+                        initialFromAsset={swapTarget as any}
+                        rawWallets={rawWallets}
+                        onClose={() => setSwapTarget(null)}
+                        onSuccess={(hash) => {
+                            showNotification(`Swap initiated! Hash: ${hash}`, 'success');
+                            fetchBalances(rawWallets!);
+                        }}
+                    />
+                )
+            }
 
             {/* Send Modal */}
-            {sendTarget && (
-                <SendModal
-                    username={username}
-                    chain={sendTarget.chain}
-                    address={sendTarget.address}
-                    imageUrl={sendTarget.imageUrl}
-                    privateKey={rawWallets ? (rawWallets[sendTarget.chain] as any)?.privateKey : unlockedChains[sendTarget.chain]?.privateKey}
-                    balance={sendTarget.balance || 0}
-                    onUnlock={() => handleUnlock(sendTarget.chain)}
-                    onClose={() => setSendTarget(null)}
-                    onSuccess={(amt, hash) => {
-                        fetchBalances(rawWallets!);
-                        const shortHash = hash.slice(0, 8) + '...' + hash.slice(-4);
-                        NotificationService.addLocalNotification(
-                            username,
-                            `Sent: -${Number(amt).toFixed(6)} ${sendTarget.chain} (Hash: ${shortHash})`,
-                            'send',
-                            'wallet',
-                            hash,
-                            sendTarget.chain
-                        );
-                    }}
-                />
-            )}
+            {
+                sendTarget && (
+                    <SendModal
+                        username={username}
+                        chain={sendTarget.chain}
+                        address={sendTarget.address}
+                        imageUrl={sendTarget.imageUrl}
+                        privateKey={rawWallets ? (rawWallets[sendTarget.chain] as any)?.privateKey : unlockedChains[sendTarget.chain]?.privateKey}
+                        balance={sendTarget.balance || 0}
+                        onUnlock={() => handleUnlock(sendTarget.chain)}
+                        onClose={() => setSendTarget(null)}
+                        onSuccess={(amt, hash) => {
+                            fetchBalances(rawWallets!);
+                            const shortHash = hash.slice(0, 8) + '...' + hash.slice(-4);
+                            NotificationService.addLocalNotification(
+                                username,
+                                `Sent: -${Number(amt).toFixed(6)} ${sendTarget.chain} (Hash: ${shortHash})`,
+                                'send',
+                                'wallet',
+                                hash,
+                                sendTarget.chain
+                            );
+                        }}
+                    />
+                )
+            }
 
             {/* HiveAuth QR Overlay */}
-            {authQR && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center space-y-6">
-                        <div className="space-y-2">
-                            <h3 className="text-xl font-bold text-[var(--text-primary)]">Sign with Keychain</h3>
-                            <p className="text-xs text-[var(--text-secondary)]">Please scan or click the QR code to authorize with your Keychain mobile app.</p>
+            {
+                authQR && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+                        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] p-8 rounded-3xl shadow-2xl max-w-sm w-full text-center space-y-6">
+                            <div className="space-y-2">
+                                <h3 className="text-xl font-bold text-[var(--text-primary)]">Sign with Keychain</h3>
+                                <p className="text-xs text-[var(--text-secondary)]">Please scan or click the QR code to authorize with your Keychain mobile app.</p>
+                            </div>
+                            <div className="flex justify-center p-4 bg-white rounded-2xl mx-auto w-fit">
+                                <QRCodeSVG value={authQR} size={200} />
+                            </div>
+                            <button
+                                onClick={() => setAuthQR(null)}
+                                className="w-full py-3 text-sm font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                            >
+                                Cancel
+                            </button>
                         </div>
-                        <div className="flex justify-center p-4 bg-white rounded-2xl mx-auto w-fit">
-                            <QRCodeSVG value={authQR} size={200} />
-                        </div>
-                        <button
-                            onClick={() => setAuthQR(null)}
-                            className="w-full py-3 text-sm font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                        >
-                            Cancel
-                        </button>
                     </div>
-                </div>
-            )}
-            {showImport && (
-                <ImportModal
-                    onClose={() => setShowImport(false)}
-                    onImport={onImportPhrase}
-                />
-            )}
-        </div>
+                )
+            }
+            {
+                showImport && (
+                    <ImportModal
+                        onClose={() => setShowImport(false)}
+                        onImport={onImportPhrase}
+                    />
+                )
+            }
+        </div >
     );
 }

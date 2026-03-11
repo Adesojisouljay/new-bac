@@ -14,6 +14,7 @@ import { UnifiedDataService } from '../../../services/unified';
 import { CommunitySelect } from '../components/CommunitySelect';
 import { cloudinaryService } from '../../../services/cloudinaryService';
 import EasyMDE from 'easymde';
+import { MentionSuggestions } from '../../../components/MentionSuggestions';
 
 export default function CreatePostPage() {
     const { config } = useCommunity();
@@ -25,7 +26,19 @@ export default function CreatePostPage() {
     const [tags, setTags] = useState('');
     const [destination, setDestination] = useState<string>('');
     const [communities, setCommunities] = useState<any[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
     const isGlobal = config?.id === 'global';
+    const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Initial list of popular communities
+    const fetchPopularCommunities = async () => {
+        try {
+            const result = await UnifiedDataService.listCommunities('', 50);
+            setCommunities(result || []);
+        } catch (e) {
+            console.error("Failed to fetch global communities", e);
+        }
+    };
 
     // Lock body scroll to prevent page-level scrolling
     useEffect(() => {
@@ -38,17 +51,34 @@ export default function CreatePostPage() {
     // Fetch popular communities for Global Mode
     useEffect(() => {
         if (isGlobal) {
-            const fetchCommunities = async () => {
-                try {
-                    const result = await UnifiedDataService.listCommunities('', 50);
-                    setCommunities(result || []);
-                } catch (e) {
-                    console.error("Failed to fetch global communities", e);
-                }
-            };
-            fetchCommunities();
+            fetchPopularCommunities();
         }
     }, [isGlobal]);
+
+    const handleSearch = async (query: string) => {
+        if (!isGlobal) return;
+
+        if (searchTimeoutRef.current) {
+            clearTimeout(searchTimeoutRef.current);
+        }
+
+        if (!query.trim()) {
+            fetchPopularCommunities();
+            return;
+        }
+
+        setIsSearching(true);
+        searchTimeoutRef.current = setTimeout(async () => {
+            try {
+                const result = await UnifiedDataService.listCommunities(query, 50);
+                setCommunities(result || []);
+            } catch (e) {
+                console.error("Search failed", e);
+            } finally {
+                setIsSearching(false);
+            }
+        }, 500); // 500ms debounce
+    };
 
     // Advanced Options State
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -69,11 +99,16 @@ export default function CreatePostPage() {
     const [showUrlInput, setShowUrlInput] = useState(false);
     const [linkUrl, setLinkUrl] = useState('');
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const mdeInstanceRef = useRef<EasyMDE | null>(null);
+    const [mdeInstance, setMdeInstance] = useState<EasyMDE | null>(null);
+
+    // Mention State
+    const [mentionQuery, setMentionQuery] = useState('');
+    const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
+    const [showMentions, setShowMentions] = useState(false);
 
     const handleImageUpload = async (file: File) => {
-        if (!mdeInstanceRef.current) return;
-        const cm = mdeInstanceRef.current.codemirror;
+        if (!mdeInstance) return;
+        const cm = mdeInstance.codemirror;
         const startPos = cm.getCursor();
         const placeholder = `![Uploading ${file.name} (0%)...]()`;
 
@@ -106,8 +141,8 @@ export default function CreatePostPage() {
     };
 
     const handleInsertUrl = () => {
-        if (!mdeInstanceRef.current || !linkUrl.trim()) return;
-        const cm = mdeInstanceRef.current.codemirror;
+        if (!mdeInstance || !linkUrl.trim()) return;
+        const cm = mdeInstance.codemirror;
         cm.replaceSelection(`![image](${linkUrl.trim()})`);
         setLinkUrl('');
         setShowUrlInput(false);
@@ -140,6 +175,53 @@ export default function CreatePostPage() {
             "|", "guide"
         ] as any
     }), [showMediaChoice]);
+
+    const handleMentionSelect = (username: string) => {
+        if (!mdeInstance) return;
+        const cm = mdeInstance.codemirror;
+        const cursor = cm.getCursor();
+        const line = cm.getLine(cursor.line);
+        const startOfWord = line.lastIndexOf('@', cursor.ch - 1);
+
+        if (startOfWord !== -1) {
+            cm.replaceRange(
+                `@${username} `,
+                { line: cursor.line, ch: startOfWord },
+                { line: cursor.line, ch: cursor.ch }
+            );
+        }
+        setShowMentions(false);
+        setMentionQuery('');
+        cm.focus();
+    };
+
+    // CodeMirror listener for mentions
+    useEffect(() => {
+        const cm = mdeInstance?.codemirror;
+        if (!cm) return;
+
+        const handleChange = (instance: any) => {
+            const cursor = instance.getCursor();
+            const line = instance.getLine(cursor.line);
+
+            // Check for @ starting from cursor backwards
+            const textBefore = line.substring(0, cursor.ch);
+            const mentionMatch = textBefore.match(/@([a-z0-9.-]*)$/i);
+
+            if (mentionMatch) {
+                const query = mentionMatch[1];
+                const coords = instance.cursorCoords(true, 'window');
+                setMentionQuery(query);
+                setMentionPosition({ top: coords.top + 30, left: coords.left });
+                setShowMentions(true);
+            } else {
+                setShowMentions(false);
+            }
+        };
+
+        cm.on('keyup', handleChange);
+        return () => cm.off('keyup', handleChange);
+    }, [mdeInstance]);
 
     // Auto-save logic
     useEffect(() => {
@@ -228,7 +310,7 @@ export default function CreatePostPage() {
 
             const metadataObj: any = {
                 tags: finalTags,
-                app: 'breakaway-communities/0.1',
+                app: 'sovraniche/0.1',
                 format: 'markdown'
             };
 
@@ -301,6 +383,8 @@ export default function CreatePostPage() {
                                 onChange={setDestination}
                                 communities={communities}
                                 disabled={loading}
+                                onSearch={handleSearch}
+                                isSearching={isSearching}
                             />
                         </div>
                     )}
@@ -316,6 +400,9 @@ export default function CreatePostPage() {
                                 className="w-full bg-transparent text-[var(--text-primary)] text-xl font-bold outline-none placeholder:text-[var(--text-secondary)]"
                                 placeholder="Post Title..."
                                 disabled={loading}
+                                autoComplete="off"
+                                autoCorrect="off"
+                                spellCheck="false"
                             />
                         </div>
                         {/* Body: Editor */}
@@ -324,7 +411,7 @@ export default function CreatePostPage() {
                                 value={body}
                                 onChange={setBody}
                                 options={options}
-                                getMdeInstance={(instance) => mdeInstanceRef.current = instance as any}
+                                getMdeInstance={(instance) => setMdeInstance(instance as any)}
                                 className="h-full flex flex-col [&_.EasyMDEContainer]:flex-1 [&_.EasyMDEContainer]:flex [&_.EasyMDEContainer]:flex-col [&_.CodeMirror]:flex-1 [&_.CodeMirror]:!min-h-0 [&_.CodeMirror]:!h-0 [&_.CodeMirror-scroll]:!min-h-0 [&_.cm-s-easymde]:border-none"
                             />
                             {/* Media Input/Overlays integrated inside the editor card */}
@@ -340,6 +427,10 @@ export default function CreatePostPage() {
                                                 placeholder="Paste image URL..."
                                                 className="flex-1 px-4 py-2 border border-[var(--border-color)] rounded-lg bg-[var(--bg-canvas)] text-xs outline-none focus:ring-1 focus:ring-[var(--primary-color)]"
                                                 autoFocus
+                                                autoComplete="off"
+                                                autoCorrect="off"
+                                                autoCapitalize="off"
+                                                spellCheck="false"
                                             />
                                             <button onClick={handleInsertUrl} disabled={!linkUrl.trim()} className="px-4 py-2 bg-[var(--primary-color)] text-white text-xs font-bold rounded-lg hover:brightness-110">Insert</button>
                                             <button onClick={() => { setShowUrlInput(false); setShowMediaChoice(false); setLinkUrl(''); }} className="p-2 text-[var(--text-secondary)] hover:text-red-500 transition-colors">✕</button>
@@ -400,6 +491,10 @@ export default function CreatePostPage() {
                             className="w-full px-4 py-2.5 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] font-medium focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all shadow-sm"
                             placeholder="Add tags separated by spaces..."
                             disabled={loading}
+                            autoComplete="off"
+                            autoCorrect="off"
+                            autoCapitalize="off"
+                            spellCheck="false"
                         />
                         <div className="flex px-1.5">
                             {isGlobal ? (
@@ -453,6 +548,14 @@ export default function CreatePostPage() {
                 scheduledDate={scheduledDate}
                 onScheduledDateChange={setScheduledDate}
             />
+
+            {showMentions && (
+                <MentionSuggestions
+                    query={mentionQuery}
+                    position={mentionPosition}
+                    onSelect={handleMentionSelect}
+                />
+            )}
         </div>
     );
 }

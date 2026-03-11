@@ -23,6 +23,18 @@ const HiveMarkdown: React.FC<HiveMarkdownProps> = ({ content, className = '', co
 
         const newLines = lines.map(line => {
             const trimmed = line.trim();
+
+            // 1. Handle @username mentions
+            // Regex: match @ followed by word characters, ensuring it's not part of an email or trailing characters.
+            // Requirement: must be at start of line or preceded by whitespace.
+            line = line.replace(/(^|\s)@([a-z0-9.-]+[a-z0-9])/gi, (match, space, username) => {
+                // Basic Hive username validation: 3-16 chars, starts with letter, only alphanumeric/dot/dash
+                if (username.length >= 3 && username.length <= 16) {
+                    return `${space}[@${username}](/profile/${username})`;
+                }
+                return match;
+            });
+
             // Handle standalone URLs or Markdown links (optionally wrapped in <center> tags)
             // Group 1: Optional <center>, Group 2: Markdown Label (optional), Group 3: URL, Group 4: Optional </center>
             const standaloneMatch = trimmed.match(/^(?:<center>)?\s*(?:\[(.*?)\])?\(?(https?:\/\/[^\s\(\)\[\]"']+)\)?\s*(?:<\/center>)?$/i);

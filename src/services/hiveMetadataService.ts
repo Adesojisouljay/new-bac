@@ -97,7 +97,7 @@ export async function updateHiveMetadata(username: string, tokens: HiveWalletTok
 export function buildHiveWalletTokens(wallets?: any): HiveWalletToken[] {
     if (!wallets) return [];
 
-    const chains = ['BTC', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
+    const chains = ['BTC', 'ETH', 'SOL', 'SOL_USDT', 'TRON', 'BNB', 'DOGE', 'LTC', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
 
     const tokens: HiveWalletToken[] = [
         { symbol: 'HIVE', type: 'HIVE', meta: { show: true } },

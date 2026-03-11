@@ -48,14 +48,20 @@ export const mnemonicStorage = {
     getEncrypted: (username: string): string | null => {
         const norm = normalize(username);
         const pref = `@${norm}`;
+
         const val = localStorage.getItem(`${ENCRYPTED_MNEMONIC_KEY}_${norm}`) ||
-            localStorage.getItem(`${ENCRYPTED_MNEMONIC_KEY}_${pref}`);
+            localStorage.getItem(`${ENCRYPTED_MNEMONIC_KEY}_${username}`) ||
+            localStorage.getItem(`${ENCRYPTED_MNEMONIC_KEY}_${pref}`) ||
+            localStorage.getItem(`${ENCRYPTED_MNEMONIC_KEY}_@${username}`);
 
-        // Migration: If we found it with the prefixed key but not the normalized one, save it to the normalized one
+        // Migration: If we found it with a non-normalized key, save it to the normalized one
         if (val && !localStorage.getItem(`${ENCRYPTED_MNEMONIC_KEY}_${norm}`)) {
-
             localStorage.setItem(`${ENCRYPTED_MNEMONIC_KEY}_${norm}`, val);
-            const salt = localStorage.getItem(`${SALT_KEY}_${pref}`);
+
+            // Also migrate salt
+            const salt = localStorage.getItem(`${SALT_KEY}_${username}`) ||
+                localStorage.getItem(`${SALT_KEY}_@${username}`) ||
+                localStorage.getItem(`${SALT_KEY}_${pref}`);
             if (salt) localStorage.setItem(`${SALT_KEY}_${norm}`, salt);
         }
         return val;
@@ -63,7 +69,9 @@ export const mnemonicStorage = {
     getSalt: (username: string): string | null => {
         const norm = normalize(username);
         return localStorage.getItem(`${SALT_KEY}_${norm}`) ||
-            localStorage.getItem(`${SALT_KEY}_@${norm}`);
+            localStorage.getItem(`${SALT_KEY}_${username}`) ||
+            localStorage.getItem(`${SALT_KEY}_@${norm}`) ||
+            localStorage.getItem(`${SALT_KEY}_@${username}`);
     },
     set: (username: string, encryptedMnemonic: string, salt: string) => {
         const norm = normalize(username);
@@ -81,6 +89,7 @@ export const mnemonicStorage = {
 };
 
 const PUBLIC_ADDRESSES_KEY = 'web3_public_addresses';
+const SIGNATURE_KEY = 'web3_signature';
 
 export const addressStorage = {
     get: (username: string): Record<string, { address: string; imageUrl: string }> | null => {
@@ -93,6 +102,18 @@ export const addressStorage = {
     clear: (username: string) => {
         const norm = normalize(username);
         localStorage.removeItem(`${PUBLIC_ADDRESSES_KEY}_${norm}`);
+    },
+};
+
+export const signatureStorage = {
+    get: (username: string): string | null => {
+        return localStorage.getItem(`${SIGNATURE_KEY}_${normalize(username)}`);
+    },
+    set: (username: string, signature: string) => {
+        localStorage.setItem(`${SIGNATURE_KEY}_${normalize(username)}`, signature);
+    },
+    clear: (username: string) => {
+        localStorage.removeItem(`${SIGNATURE_KEY}_${normalize(username)}`);
     },
 };
 
@@ -198,6 +219,9 @@ export const web3WalletService = {
             USDT_TRC20: `${ICON_BASE}/325/large/tether.png`,
             USDT_BEP20: `${ICON_BASE}/325/large/tether.png`,
             USDT_ERC20: `${ICON_BASE}/325/large/tether.png`,
+            SOL_USDT: `${ICON_BASE}/325/large/tether.png`,
+            DOGE: `${ICON_BASE}/5/large/dogecoin.png`,
+            LTC: `${ICON_BASE}/2/large/litecoin.png`,
         };
 
         const rawWallets: any = { mnemonic };
@@ -231,6 +255,9 @@ export const web3WalletService = {
             USDT_TRC20: `${ICON_BASE}/325/large/tether.png`,
             USDT_BEP20: `${ICON_BASE}/325/large/tether.png`,
             USDT_ERC20: `${ICON_BASE}/325/large/tether.png`,
+            SOL_USDT: `${ICON_BASE}/325/large/tether.png`,
+            DOGE: `${ICON_BASE}/5/large/dogecoin.png`,
+            LTC: `${ICON_BASE}/2/large/litecoin.png`,
         };
 
         return {
@@ -377,5 +404,6 @@ export const web3WalletService = {
         } catch (err) {
             console.warn('[Web3Wallet] Failed to log transaction to Hive (non-critical):', err);
         }
-    }
+    },
+    signatureStorage
 };
