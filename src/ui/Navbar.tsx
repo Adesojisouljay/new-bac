@@ -60,6 +60,7 @@ export function Navbar() {
 
         if (pointsSuccess) {
             toast.success('Login Successful!');
+            window.dispatchEvent(new CustomEvent('bac-auth-change', { detail: { username, type: 'login' } }));
         }
     };
 
@@ -77,16 +78,19 @@ export function Navbar() {
     const handleSwitch = (username: string) => {
         accountManager.setActive(username);
         refreshAccounts();
+        window.dispatchEvent(new CustomEvent('bac-auth-change', { detail: { username, type: 'switch' } }));
     };
 
     const handleRemoveAccount = (username: string) => {
         accountManager.remove(username);
         refreshAccounts();
+        window.dispatchEvent(new CustomEvent('bac-auth-change', { detail: { username, type: 'remove' } }));
     };
 
     const handleLogout = () => {
         accountManager.logout();
         refreshAccounts();
+        window.dispatchEvent(new CustomEvent('bac-auth-change', { detail: { type: 'logout' } }));
     };
 
     return (

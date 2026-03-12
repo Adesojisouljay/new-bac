@@ -51,19 +51,12 @@ export const accountManager = {
         const remaining = this.getAll().filter(a => a.username !== username);
         localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(remaining));
 
-        // Clear Web3 persistent signature for this user
-        localStorage.removeItem(`web3_signature_${username.replace(/^@/, '').toLowerCase()}`);
-
         if (this.getActive() === username) {
             this.logout();
         }
     },
 
     logout() {
-        const active = this.getActive();
-        if (active) {
-            localStorage.removeItem(`web3_signature_${active.replace(/^@/, '').toLowerCase()}`);
-        }
         localStorage.removeItem(ACTIVE_USER_KEY);
     },
 
@@ -338,14 +331,27 @@ export const authService = {
         keyType: 'Posting' | 'Active' | 'Memo' = 'Posting',
         onChallenge?: (data: { qr: string; uuid: string }) => void
     ): Promise<{ success: boolean; result?: string; error?: string }> => {
-        const method = localStorage.getItem('hive_auth_method') || 'keychain';
+        const storedMethod = localStorage.getItem('hive_auth_method');
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+        let method = storedMethod || (isMobile ? 'hiveauth' : 'keychain');
+        const cleanUsername = username.replace(/^@/, '').toLowerCase();
 
         if (method === 'keychain') {
             const keychain = (window as any).hive_keychain;
-            if (!keychain) return { success: false, error: 'Hive Keychain not installed' };
+            if (!keychain) {
+                if (isMobile) {
+                    method = 'hiveauth'; // Force HAS fallback on mobile if extension is missing
+                } else {
+                    return { success: false, error: 'Hive Keychain not installed' };
+                }
+            }
+        }
 
+        if (method === 'keychain') {
+            const keychain = (window as any).hive_keychain;
             return new Promise((resolve) => {
-                keychain.requestSignBuffer(username, message, keyType, (response: any) => {
+                keychain.requestSignBuffer(cleanUsername, message, keyType, (response: any) => {
                     if (response.success) resolve({ success: true, result: response.result });
                     else resolve({ success: false, error: response.message });
                 });
@@ -353,7 +359,7 @@ export const authService = {
         } else {
             return new Promise((resolve) => {
                 const auth = {
-                    username,
+                    username: cleanUsername,
                     token: undefined,
                     expire: undefined,
                     key: HAS_STATIC_KEY
@@ -363,33 +369,72 @@ export const authService = {
                 if (storedSession) {
                     try {
                         const session = JSON.parse(storedSession);
-                        if (session.username === username) {
+                        // Validate session ownership and expiry
+                        if (session.username.replace(/^@/, '').toLowerCase() === cleanUsername && Number(session.expire) > Date.now()) {
                             auth.token = session.token;
                             auth.expire = session.expire;
                             auth.key = session.key;
+                        } else {
+                            // Clear stale or invalid session
+                            localStorage.removeItem('hive_auth_session');
                         }
-                    } catch (e) { }
+                    } catch (e) {
+                        localStorage.removeItem('hive_auth_session'); // Clear corrupted session
+                    }
                 }
 
                 import("hive-auth-wrapper").then(({ default: HAS }) => {
-                    HAS.challenge(auth, { challenge: message, key_type: keyType.toLowerCase() as any }, (evt: any) => {
-                        const qr_data = {
-                            account: auth.username,
-                            uuid: evt.uuid,
-                            key: auth.key,
-                            host: HAS_SERVER
-                        };
-                        const json = JSON.stringify(qr_data);
-                        const uri = `has://sign_req/${btoa(json)}`;
-                        if (onChallenge) {
-                            onChallenge({ qr: uri, uuid: evt.uuid });
+                    const isSessionValid = !!(auth.token && auth.expire && Number(auth.expire) > Date.now());
+
+                    const handleEvent = (evt: any) => {
+                        let uri = '';
+
+                        // If we have a session, we MUST use sign_req to get the "Sign Buffer" prompt (Screenshot 3)
+                        if (isSessionValid) {
+                            const qr_data = {
+                                account: cleanUsername,
+                                uuid: evt.uuid,
+                                key: auth.key,
+                                host: HAS_SERVER
+                            };
+                            uri = `has://sign_req/${btoa(JSON.stringify(qr_data))}`;
+                        } else {
+                            // If no session, auth_req (Screenshot 1) will be used initially.
+                            // We include the challenge in the authenticate call to trigger the sign prompt immediately after.
+                            const auth_payload = { ...evt };
+                            delete auth_payload.cmd;
+                            delete auth_payload.expire;
+                            auth_payload.host = HAS_SERVER;
+                            auth_payload.account = cleanUsername;
+                            uri = `has://auth_req/${btoa(JSON.stringify(auth_payload))}`;
                         }
-                    })
+
+                        if (onChallenge) onChallenge({ qr: uri, uuid: evt.uuid });
+                    };
+
+                    const requestPromise = isSessionValid
+                        ? HAS.challenge(auth, { challenge: message, key_type: keyType.toLowerCase() as any }, handleEvent)
+                        : HAS.authenticate(auth, APP_META, { challenge: message, key_type: keyType.toLowerCase() as any }, handleEvent);
+
+                    requestPromise
                         .then((res: any) => {
-                            resolve({ success: true, result: res.data });
+                            if (res.data) {
+                                // If we got a token back (re-auth or session refresh), save it
+                                if (res.data.token) {
+                                    const newSession = {
+                                        ...auth,
+                                        token: res.data.token,
+                                        expire: res.data.expire || (Date.now() + 24 * 60 * 60 * 1000)
+                                    };
+                                    localStorage.setItem('hive_auth_session', JSON.stringify(newSession));
+                                }
+                                resolve({ success: true, result: res.data.challenge || res.data });
+                            } else {
+                                resolve({ success: false, error: "No data returned from HiveAuth" });
+                            }
                         })
                         .catch((err: any) => {
-                            console.error("HAS Challenge error:", err);
+                            console.error("HAS Sign Error:", err);
                             resolve({ success: false, error: typeof err === 'string' ? err : (err?.message || "HiveAuth failed") });
                         });
                 });

@@ -67,10 +67,23 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const [unlockedChains, setUnlockedChains] = useState<Record<string, RawWallet>>({});
     const [activeMainTab, setActiveMainTab] = useState<'assets' | 'history'>('assets');
     const [authQR, setAuthQR] = useState<string | null>(null);
-    const currentUser = localStorage.getItem('hive_user');
-    const normalizedCurrentUser = currentUser?.replace(/^@/, '').toLowerCase();
-    const isOwner = normalizedCurrentUser === username.replace(/^@/, '').toLowerCase();
+    const [activeUser, setActiveUser] = useState<string | null>(localStorage.getItem('hive_user'));
+    const normalizedActiveUser = activeUser?.replace(/^@/, '').toLowerCase();
+    const isOwner = normalizedActiveUser === username.replace(/^@/, '').toLowerCase();
     const previousBalancesRef = useRef<Record<string, number>>({});
+
+    // Listen for auth changes to update isOwner reactively
+    useEffect(() => {
+        const handleAuthChange = () => {
+            setActiveUser(localStorage.getItem('hive_user'));
+        };
+        window.addEventListener('bac-auth-change', handleAuthChange);
+        window.addEventListener('storage', handleAuthChange);
+        return () => {
+            window.removeEventListener('bac-auth-change', handleAuthChange);
+            window.removeEventListener('storage', handleAuthChange);
+        };
+    }, []);
 
     const fetchBalances = useCallback(async (wallets: RawWallets, isSilent = false) => {
         if (!isSilent) setLoadingInfo(true);
@@ -291,20 +304,31 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const handleUnlock = async (targetChain?: string) => {
         const encrypted = mnemonicStorage.getEncrypted(username);
         const salt = mnemonicStorage.getSalt(username);
+
         if (!encrypted || !salt) {
-            throw new Error('Recovery phrase not found on this device. Please use "Import Recovery Phrase" to restore access.');
+            // Fallback to import if phrase is missing
+            setShowImport(true);
+            showNotification('No encrypted recovery phrase found on this device. Please import your phrase to continue.', 'info');
+            return;
         }
 
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const cleanUsername = username.replace(/^@/, '').toLowerCase();
+        const activeClean = activeUser?.replace(/^@/, '').toLowerCase();
+
+        // Safety check: Don't sign for someone else
+        if (cleanUsername !== activeClean) {
+            throw new Error(`Cannot unlock wallet: Active user is @${activeClean}, but this wallet belongs to @${cleanUsername}. Please switch accounts.`);
+        }
 
         try {
             const signature = await authService.signMessage(
-                username,
+                cleanUsername,
                 UNLOCK_MESSAGE,
                 'Posting',
                 ({ qr }) => {
                     setAuthQR(qr);
-                    if (isMobile) window.location.href = qr;
+                    const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                    if (mobile) window.location.href = qr;
                 }
             );
 
@@ -390,16 +414,17 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // ── Finalize Vault (shared by Generate & Import) ──────────────────────────
     const finalizeVault = async (mnemonic: string, updateHive: boolean) => {
         setGenerating(true);
-        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
         try {
+            const cleanUsername = username.replace(/^@/, '').toLowerCase();
             const signatureRes = await authService.signMessage(
-                username,
+                cleanUsername,
                 UNLOCK_MESSAGE,
                 'Posting',
                 ({ qr }) => {
                     setAuthQR(qr);
-                    if (isMobile) window.location.href = qr;
+                    const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                    if (mobile) window.location.href = qr;
                 }
             );
 
@@ -605,10 +630,10 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                             </button>
                         )}
 
-                        {/* 2. Phrase Present: Show Unlock (if locked) and Remove */}
-                        {mnemonicStorage.getEncrypted(username) && (
+                        {/* 2. Phrase Present: Show Unlock (if locked) OR Remove (if unlocked) */}
+                        {mnemonicStorage.getEncrypted(username) && isOwner && (
                             <>
-                                {!rawWallets && (
+                                {!rawWallets ? (
                                     <button
                                         onClick={() => handleUnlock()}
                                         className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 active:scale-95 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20 flex items-center gap-2"
@@ -618,13 +643,14 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                                         </svg>
                                         Grant Keychain Access
                                     </button>
+                                ) : (
+                                    <button
+                                        onClick={handleReset}
+                                        className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
+                                    >
+                                        Revoke Keychain Access
+                                    </button>
                                 )}
-                                <button
-                                    onClick={handleReset}
-                                    className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
-                                >
-                                    Revoke Keychain Access
-                                </button>
                             </>
                         )}
                     </div>
@@ -862,9 +888,23 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                             <div className="flex justify-center p-4 bg-white rounded-2xl mx-auto w-fit">
                                 <QRCodeSVG value={authQR} size={200} />
                             </div>
+
+                            {/* Mobile Deep Link Shortcut */}
+                            <button
+                                onClick={() => {
+                                    window.location.href = authQR;
+                                }}
+                                className="w-full py-4 bg-[var(--primary-color)] text-white font-bold rounded-2xl flex items-center justify-center gap-2 md:hidden"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                                Open in Wallet App
+                            </button>
+
                             <button
                                 onClick={() => setAuthQR(null)}
-                                className="w-full py-3 text-sm font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                                className="w-full py-2 text-sm font-bold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                             >
                                 Cancel
                             </button>

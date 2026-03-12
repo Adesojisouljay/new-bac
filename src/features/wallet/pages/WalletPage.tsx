@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import { useSearchParams, useParams, Link } from 'react-router-dom';
 
 const HiveWallet = lazy(() => import('../tabs/HiveWallet').then(m => ({ default: m.HiveWallet })));
@@ -28,8 +28,21 @@ export default function WalletPage() {
     // Username comes from the URL: /@username/wallet
     const { username: urlUsername } = useParams<{ username: string }>();
     const activeTab = (searchParams.get('tab') as TabId) || 'hive';
+    const [activeUser, setActiveUser] = useState<string | null>(localStorage.getItem('hive_user'));
 
-    const walletUsername = (urlUsername || localStorage.getItem('hive_user') || '').replace(/^@/, '');
+    useEffect(() => {
+        const handleAuthChange = () => {
+            setActiveUser(localStorage.getItem('hive_user'));
+        };
+        window.addEventListener('bac-auth-change', handleAuthChange);
+        window.addEventListener('storage', handleAuthChange);
+        return () => {
+            window.removeEventListener('bac-auth-change', handleAuthChange);
+            window.removeEventListener('storage', handleAuthChange);
+        };
+    }, []);
+
+    const walletUsername = (urlUsername || activeUser || '').replace(/^@/, '');
 
 
 
