@@ -51,19 +51,12 @@ export const accountManager = {
         const remaining = this.getAll().filter(a => a.username !== username);
         localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(remaining));
 
-        // Clear Web3 persistent signature for this user
-        localStorage.removeItem(`web3_signature_${username.replace(/^@/, '').toLowerCase()}`);
-
         if (this.getActive() === username) {
             this.logout();
         }
     },
 
     logout() {
-        const active = this.getActive();
-        if (active) {
-            localStorage.removeItem(`web3_signature_${active.replace(/^@/, '').toLowerCase()}`);
-        }
         localStorage.removeItem(ACTIVE_USER_KEY);
     },
 
@@ -376,28 +369,46 @@ export const authService = {
                 if (storedSession) {
                     try {
                         const session = JSON.parse(storedSession);
-                        if (session.username.replace(/^@/, '').toLowerCase() === cleanUsername) {
+                        // Validate session ownership and expiry
+                        if (session.username.replace(/^@/, '').toLowerCase() === cleanUsername && Number(session.expire) > Date.now()) {
                             auth.token = session.token;
                             auth.expire = session.expire;
                             auth.key = session.key;
+                        } else {
+                            // Clear stale or invalid session
+                            localStorage.removeItem('hive_auth_session');
                         }
-                    } catch (e) { }
+                    } catch (e) {
+                        localStorage.removeItem('hive_auth_session'); // Clear corrupted session
+                    }
                 }
 
                 import("hive-auth-wrapper").then(({ default: HAS }) => {
-                    const isSessionValid = auth.token && auth.expire && auth.expire > Date.now();
+                    const isSessionValid = !!(auth.token && auth.expire && Number(auth.expire) > Date.now());
 
                     const handleEvent = (evt: any) => {
-                        const qr_data = {
-                            account: auth.username,
-                            uuid: evt.uuid,
-                            key: auth.key,
-                            host: HAS_SERVER
-                        };
-                        const json = JSON.stringify(qr_data);
-                        // Use auth_req for authenticate, sign_req for challenge
-                        const type = isSessionValid ? 'sign_req' : 'auth_req';
-                        const uri = `has://${type}/${btoa(json)}`;
+                        let uri = '';
+
+                        // If we have a session, we MUST use sign_req to get the "Sign Buffer" prompt (Screenshot 3)
+                        if (isSessionValid) {
+                            const qr_data = {
+                                account: cleanUsername,
+                                uuid: evt.uuid,
+                                key: auth.key,
+                                host: HAS_SERVER
+                            };
+                            uri = `has://sign_req/${btoa(JSON.stringify(qr_data))}`;
+                        } else {
+                            // If no session, auth_req (Screenshot 1) will be used initially.
+                            // We include the challenge in the authenticate call to trigger the sign prompt immediately after.
+                            const auth_payload = { ...evt };
+                            delete auth_payload.cmd;
+                            delete auth_payload.expire;
+                            auth_payload.host = HAS_SERVER;
+                            auth_payload.account = cleanUsername;
+                            uri = `has://auth_req/${btoa(JSON.stringify(auth_payload))}`;
+                        }
+
                         if (onChallenge) onChallenge({ qr: uri, uuid: evt.uuid });
                     };
 

@@ -67,10 +67,23 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const [unlockedChains, setUnlockedChains] = useState<Record<string, RawWallet>>({});
     const [activeMainTab, setActiveMainTab] = useState<'assets' | 'history'>('assets');
     const [authQR, setAuthQR] = useState<string | null>(null);
-    const currentUser = localStorage.getItem('hive_user');
-    const normalizedCurrentUser = currentUser?.replace(/^@/, '').toLowerCase();
-    const isOwner = normalizedCurrentUser === username.replace(/^@/, '').toLowerCase();
+    const [activeUser, setActiveUser] = useState<string | null>(localStorage.getItem('hive_user'));
+    const normalizedActiveUser = activeUser?.replace(/^@/, '').toLowerCase();
+    const isOwner = normalizedActiveUser === username.replace(/^@/, '').toLowerCase();
     const previousBalancesRef = useRef<Record<string, number>>({});
+
+    // Listen for auth changes to update isOwner reactively
+    useEffect(() => {
+        const handleAuthChange = () => {
+            setActiveUser(localStorage.getItem('hive_user'));
+        };
+        window.addEventListener('bac-auth-change', handleAuthChange);
+        window.addEventListener('storage', handleAuthChange);
+        return () => {
+            window.removeEventListener('bac-auth-change', handleAuthChange);
+            window.removeEventListener('storage', handleAuthChange);
+        };
+    }, []);
 
     const fetchBalances = useCallback(async (wallets: RawWallets, isSilent = false) => {
         if (!isSilent) setLoadingInfo(true);
@@ -291,13 +304,23 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const handleUnlock = async (targetChain?: string) => {
         const encrypted = mnemonicStorage.getEncrypted(username);
         const salt = mnemonicStorage.getSalt(username);
+
         if (!encrypted || !salt) {
-            throw new Error('Recovery phrase not found on this device. Please use "Import Recovery Phrase" to restore access.');
+            // Fallback to import if phrase is missing
+            setShowImport(true);
+            showNotification('No encrypted recovery phrase found on this device. Please import your phrase to continue.', 'info');
+            return;
         }
 
+        const cleanUsername = username.replace(/^@/, '').toLowerCase();
+        const activeClean = activeUser?.replace(/^@/, '').toLowerCase();
+
+        // Safety check: Don't sign for someone else
+        if (cleanUsername !== activeClean) {
+            throw new Error(`Cannot unlock wallet: Active user is @${activeClean}, but this wallet belongs to @${cleanUsername}. Please switch accounts.`);
+        }
 
         try {
-            const cleanUsername = username.replace(/^@/, '').toLowerCase();
             const signature = await authService.signMessage(
                 cleanUsername,
                 UNLOCK_MESSAGE,
@@ -608,7 +631,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                         )}
 
                         {/* 2. Phrase Present: Show Unlock (if locked) OR Remove (if unlocked) */}
-                        {mnemonicStorage.getEncrypted(username) && (
+                        {mnemonicStorage.getEncrypted(username) && isOwner && (
                             <>
                                 {!rawWallets ? (
                                     <button
