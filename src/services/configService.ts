@@ -28,6 +28,16 @@ class ConfigService {
         }
     }
 
+    async fetchConfigByHiveId(hiveId: string): Promise<CommunityConfig | null> {
+        try {
+            const response = await axios.get(`${POINTS_API_URL}/config/id/${hiveId}`);
+            return response.data.config;
+        } catch (error: any) {
+            console.error('Error fetching config by ID:', error);
+            return null;
+        }
+    }
+
     async saveConfig(config: Partial<CommunityConfig>): Promise<{ success: boolean; message: string; config?: CommunityConfig }> {
         try {
             const response = await axios.post(`${POINTS_API_URL}/config`, config);

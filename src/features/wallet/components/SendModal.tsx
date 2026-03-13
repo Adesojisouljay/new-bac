@@ -96,6 +96,14 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
         return () => clearTimeout(timer);
     }, [to, resolvedAddress, sendMode, amount, chain, address]);
 
+    // Hide BottomNav when modal is open
+    useEffect(() => {
+        document.body.setAttribute('data-hide-nav', 'true');
+        return () => {
+            document.body.removeAttribute('data-hide-nav');
+        };
+    }, []);
+
     const handleSend = async () => {
         let currentPrivateKey = privateKey;
 
@@ -170,6 +178,15 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                     amount: Number(amount),
                     recentBlockhash: params.recentBlockhash
                 });
+            } else if (chain === 'SOL_USDT') {
+                signedTx = await signingService.signSolTokenTransaction(currentPrivateKey, {
+                    from: address,
+                    to: destination,
+                    amount: Number(amount),
+                    mintAddress: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+                    recentBlockhash: params.recentBlockhash,
+                    ataExists: params.ataExists
+                });
             } else if (chain === 'BTC') {
                 signedTx = await signingService.signBtcTransaction(currentPrivateKey, {
                     from: address,
@@ -225,7 +242,7 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
 
     if (txHash) {
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
                 <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl relative">
                     <button
                         onClick={onClose}
@@ -262,7 +279,7 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
             <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
                 <button
                     onClick={onClose}

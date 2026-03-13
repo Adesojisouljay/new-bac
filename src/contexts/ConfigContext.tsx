@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { configService, CommunityConfig } from '../services/configService';
+import { Capacitor } from '@capacitor/core';
 
 interface ConfigContextType {
     config: CommunityConfig | null;
@@ -19,27 +20,50 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const fetchCurrentConfig = async () => {
         setLoading(true);
         const domain = window.location.hostname;
+        const isNative = Capacitor.isNativePlatform();
+        const selectedCommunityId = localStorage.getItem('selected_community_id');
 
         try {
-            const data = await configService.fetchConfig(domain);
-
-            if (data) {
-                console.log("ConfigContext: Loaded config from API for domain:", domain);
-                setConfig(data);
-                setIsConfigured(true);
-                if (data.primaryColor) {
-                    document.documentElement.style.setProperty('--primary-color', data.primaryColor);
+            // Priority 1: User-selected community (Mobile & Web)
+            if (selectedCommunityId && selectedCommunityId !== 'global') {
+                console.log("ConfigContext: User selected community found:", selectedCommunityId);
+                const data = await configService.fetchConfigByHiveId(selectedCommunityId);
+                if (data) {
+                    setConfig(data);
+                    setIsConfigured(true);
+                    applyPrimaryColor(data.primaryColor);
+                    setLoading(false);
+                    return;
                 }
-            } else {
-                // Fallback to Env variables if API returns null (domain not found)
-                console.log("ConfigContext: Domain not found in API, checking ENV fallback...");
-                checkEnvFallback();
             }
+
+            // Priority 2: Domain-based config (Web)
+            if (!isNative) {
+                const data = await configService.fetchConfig(domain);
+                if (data) {
+                    console.log("ConfigContext: Loaded config from API for domain:", domain);
+                    setConfig(data);
+                    setIsConfigured(true);
+                    applyPrimaryColor(data.primaryColor);
+                    setLoading(false);
+                    return;
+                }
+            }
+
+            // Priority 3: Fallback (Env or Global)
+            console.log("ConfigContext: Falling back to ENV/Global...");
+            checkEnvFallback();
         } catch (error) {
-            console.error("ConfigContext: API call failed, falling back to ENV:", error);
+            console.error("ConfigContext: Configuration fetch failed:", error);
             checkEnvFallback();
         } finally {
             setLoading(false);
+        }
+    };
+
+    const applyPrimaryColor = (color?: string) => {
+        if (color) {
+            document.documentElement.style.setProperty('--primary-color', color);
         }
     };
 
@@ -102,7 +126,9 @@ export const ConfigProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             const hostname = window.location.hostname;
             const isGlobalDomain =
                 hostname === '127.0.0.1' ||
+                hostname === 'localhost' ||
                 hostname === 'beta.sovraniche.com' ||
+                Capacitor.isNativePlatform() ||
                 import.meta.env.VITE_GLOBAL_MODE === 'true';
 
             if (isGlobalDomain) {
