@@ -71,6 +71,39 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const normalizedActiveUser = activeUser?.replace(/^@/, '').toLowerCase();
     const isOwner = normalizedActiveUser === username.replace(/^@/, '').toLowerCase();
     const previousBalancesRef = useRef<Record<string, number>>({});
+    const [needsSync, setNeedsSync] = useState(false);
+
+    const checkSync = useCallback(async (derived: RawWallets) => {
+        const cleanUsername = username.replace(/^@/, '').toLowerCase();
+        const activeClean = localStorage.getItem('hive_user')?.replace(/^@/, '').toLowerCase();
+        const isCurrentlyOwner = activeClean === cleanUsername;
+
+        console.log(`[checkSync] isOwner: ${isCurrentlyOwner}, Username: ${cleanUsername}, Active: ${activeClean}`);
+
+        if (!isCurrentlyOwner) return;
+        try {
+            const hiveTokens = await fetchHiveMetadata(username);
+            const derivedTokens = buildHiveWalletTokens(derived);
+
+            // Detect missing tokens or mismatched addresses
+            const mismatch = derivedTokens.some(dt => {
+                if (dt.type !== 'CHAIN' || !dt.meta.address) return false;
+                const ht = hiveTokens.find(t => t.symbol === dt.symbol);
+                return !ht || ht.meta.address !== dt.meta.address;
+            });
+
+            if (mismatch) {
+                console.log('[Web3Wallets] Hive metadata mismatch detected. Sync recommended.');
+                setNeedsSync(true);
+                showNotification('New tokens found in your wallet! Please click "Sync to Hive" to link them to your profile.', 'info');
+            } else {
+                console.log('[Web3Wallets] Hive metadata is up to date.');
+                setNeedsSync(false);
+            }
+        } catch (err) {
+            console.error('[Web3Wallets] Sync check failed:', err);
+        }
+    }, [username, showNotification]);
 
     // Listen for auth changes to update isOwner reactively
     useEffect(() => {
@@ -166,6 +199,10 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
             setRawWallets(derived);
             fetchBalances(derived);
+
+            // Check if Hive metadata needs sync
+            await checkSync(derived);
+
             return derived;
         } catch (err: any) {
             showNotification(`Failed to derive wallets: ${err.message}`, 'error');
@@ -239,6 +276,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                         console.log('[Web3Wallets] Auto-Unlock successful!');
                         setRawWallets(derived);
                         fetchBalances(derived);
+                        checkSync(derived);
                         setLoading(false);
                         return; // Auto-unlocked!
                     } catch (e) {
@@ -298,7 +336,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         };
 
         if (username) init();
-    }, [username, fetchBalances]);
+    }, [username, fetchBalances, checkSync]);
 
     // ── Unlock Wallet with Keychain Signature ────────────────────────────────
     const handleUnlock = async (targetChain?: string) => {
@@ -487,6 +525,22 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         web3WalletService.signatureStorage.clear(username);
         setRawWallets(null);
         setWalletInfo([]);
+        setNeedsSync(false);
+    };
+
+    const handleSync = async () => {
+        if (!rawWallets) return;
+        setGenerating(true);
+        try {
+            const tokens = buildHiveWalletTokens(rawWallets);
+            await updateHiveMetadata(username, tokens);
+            setNeedsSync(false);
+            showNotification('Hive metadata synced successfully!', 'success');
+        } catch (err: any) {
+            showNotification(err.message || 'Sync failed', 'error');
+        } finally {
+            setGenerating(false);
+        }
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -644,12 +698,27 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                                         Grant Keychain Access
                                     </button>
                                 ) : (
-                                    <button
-                                        onClick={handleReset}
-                                        className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
-                                    >
-                                        Revoke Keychain Access
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        {needsSync && (
+                                            <button
+                                                onClick={handleSync}
+                                                disabled={generating}
+                                                className="px-6 py-3 text-xs font-bold uppercase tracking-widest bg-amber-500 text-white hover:brightness-110 active:scale-95 transition-all rounded-xl shadow-lg shadow-amber-500/20 animate-pulse flex items-center gap-2"
+                                                title="New tokens found! Click to sync your Hive profile metadata"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                </svg>
+                                                Sync to Hive
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={handleReset}
+                                            className="px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
+                                        >
+                                            Revoke Keychain Access
+                                        </button>
+                                    </div>
                                 )}
                             </>
                         )}

@@ -170,6 +170,15 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                     amount: Number(amount),
                     recentBlockhash: params.recentBlockhash
                 });
+            } else if (chain === 'SOL_USDT') {
+                signedTx = await signingService.signSolTokenTransaction(currentPrivateKey, {
+                    from: address,
+                    to: destination,
+                    amount: Number(amount),
+                    mintAddress: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+                    recentBlockhash: params.recentBlockhash,
+                    ataExists: params.ataExists
+                });
             } else if (chain === 'BTC') {
                 signedTx = await signingService.signBtcTransaction(currentPrivateKey, {
                     from: address,

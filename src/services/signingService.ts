@@ -32,6 +32,15 @@ export interface SolTxParams {
     recentBlockhash: string;
 }
 
+export interface SolTokenTxParams {
+    from: string;
+    to: string;
+    amount: number;
+    mintAddress: string;
+    recentBlockhash: string;
+    ataExists?: boolean;
+}
+
 export interface BtcTxParams {
     from: string;
     to: string;
@@ -97,6 +106,78 @@ export const signingService = {
                 fromPubkey: sender.publicKey,
                 toPubkey: new PublicKey(params.to),
                 lamports: params.amount * 1e9,
+            })
+        );
+
+        transaction.partialSign(sender);
+        const serializedTransaction = transaction.serialize();
+        return serializedTransaction.toString('base64');
+    },
+
+    /**
+     * Sign a Solana SPL Token transaction locally.
+     */
+    signSolTokenTransaction: async (privateKey: string, params: SolTokenTxParams): Promise<string> => {
+        const secretKey = Buffer.from(privateKey, 'hex');
+        const sender = Keypair.fromSecretKey(secretKey);
+        const mintPubKey = new PublicKey(params.mintAddress);
+        const destPubKey = new PublicKey(params.to);
+        const tokenProgramId = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+        const ataProgramId = new PublicKey("ATokenGPvbdQxrXJvGfsCSGDbqzJuLS6mYGGZAKiT16");
+
+        // Find ATAs
+        const [fromTokenAccount] = PublicKey.findProgramAddressSync(
+            [sender.publicKey.toBuffer(), tokenProgramId.toBuffer(), mintPubKey.toBuffer()],
+            ataProgramId
+        );
+        const [toTokenAccount] = PublicKey.findProgramAddressSync(
+            [destPubKey.toBuffer(), tokenProgramId.toBuffer(), mintPubKey.toBuffer()],
+            ataProgramId
+        );
+
+        const transaction = new Transaction({
+            recentBlockhash: params.recentBlockhash,
+            feePayer: sender.publicKey
+        });
+
+        // Instruction data for Transfer: [3, amount_u64]
+        const amountData = Buffer.alloc(9);
+        amountData.writeUInt8(3, 0);
+        // USDT on Solana has 6 decimals
+        const decimals = params.mintAddress === "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" ? 6 : 9;
+        const sunAmount = Math.floor(params.amount * Math.pow(10, decimals));
+        amountData.writeBigUInt64LE(BigInt(sunAmount), 1);
+
+        const { TransactionInstruction, SystemProgram: SolSystemProgram } = await import('@solana/web3.js');
+
+        // 1. Add ATA creation instruction if needed
+        if (params.ataExists === false) {
+            transaction.add(
+                new TransactionInstruction({
+                    keys: [
+                        { pubkey: sender.publicKey, isSigner: true, isWritable: true },
+                        { pubkey: toTokenAccount, isSigner: false, isWritable: true },
+                        { pubkey: destPubKey, isSigner: false, isWritable: false },
+                        { pubkey: mintPubKey, isSigner: false, isWritable: false },
+                        { pubkey: SolSystemProgram.programId, isSigner: false, isWritable: false },
+                        { pubkey: tokenProgramId, isSigner: false, isWritable: false },
+                    ],
+                    programId: ataProgramId,
+                    data: Buffer.alloc(0),
+                })
+            );
+        }
+
+        // 2. Add transfer instruction
+        transaction.add(
+            new TransactionInstruction({
+                keys: [
+                    { pubkey: fromTokenAccount, isSigner: false, isWritable: true },
+                    { pubkey: toTokenAccount, isSigner: false, isWritable: true },
+                    { pubkey: sender.publicKey, isSigner: true, isWritable: false },
+                ],
+                programId: tokenProgramId,
+                data: amountData,
             })
         );
 
