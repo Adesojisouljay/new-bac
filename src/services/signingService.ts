@@ -123,17 +123,12 @@ export const signingService = {
         const mintPubKey = new PublicKey(params.mintAddress);
         const destPubKey = new PublicKey(params.to);
         const tokenProgramId = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-        const ataProgramId = new PublicKey("ATokenGPvbdQxrXJvGfsCSGDbqzJuLS6mYGGZAKiT16");
+
+        const { getAssociatedTokenAddressSync } = await import('@solana/spl-token');
 
         // Find ATAs
-        const [fromTokenAccount] = PublicKey.findProgramAddressSync(
-            [sender.publicKey.toBuffer(), tokenProgramId.toBuffer(), mintPubKey.toBuffer()],
-            ataProgramId
-        );
-        const [toTokenAccount] = PublicKey.findProgramAddressSync(
-            [destPubKey.toBuffer(), tokenProgramId.toBuffer(), mintPubKey.toBuffer()],
-            ataProgramId
-        );
+        const fromTokenAccount = getAssociatedTokenAddressSync(mintPubKey, sender.publicKey);
+        const toTokenAccount = getAssociatedTokenAddressSync(mintPubKey, destPubKey);
 
         const transaction = new Transaction({
             recentBlockhash: params.recentBlockhash,
@@ -148,23 +143,18 @@ export const signingService = {
         const sunAmount = Math.floor(params.amount * Math.pow(10, decimals));
         amountData.writeBigUInt64LE(BigInt(sunAmount), 1);
 
-        const { TransactionInstruction, SystemProgram: SolSystemProgram } = await import('@solana/web3.js');
+        const { TransactionInstruction } = await import('@solana/web3.js');
+        const { createAssociatedTokenAccountInstruction } = await import('@solana/spl-token');
 
         // 1. Add ATA creation instruction if needed
         if (params.ataExists === false) {
             transaction.add(
-                new TransactionInstruction({
-                    keys: [
-                        { pubkey: sender.publicKey, isSigner: true, isWritable: true },
-                        { pubkey: toTokenAccount, isSigner: false, isWritable: true },
-                        { pubkey: destPubKey, isSigner: false, isWritable: false },
-                        { pubkey: mintPubKey, isSigner: false, isWritable: false },
-                        { pubkey: SolSystemProgram.programId, isSigner: false, isWritable: false },
-                        { pubkey: tokenProgramId, isSigner: false, isWritable: false },
-                    ],
-                    programId: ataProgramId,
-                    data: Buffer.alloc(0),
-                })
+                createAssociatedTokenAccountInstruction(
+                    sender.publicKey, // payer
+                    toTokenAccount,   // ata
+                    destPubKey,       // owner
+                    mintPubKey        // mint
+                )
             );
         }
 

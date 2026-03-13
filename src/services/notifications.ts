@@ -139,7 +139,8 @@ export const NotificationService = {
                 case 'ARBITRUM': return `https://arbiscan.io/tx/${hash}`;
                 case 'BNB':
                 case 'USDT_BEP20': return `https://bscscan.com/tx/${hash}`;
-                case 'SOL': return `https://solscan.io/tx/${hash}`;
+                case 'SOL':
+                case 'SOL_USDT': return `https://solscan.io/tx/${hash}`;
                 case 'TRON':
                 case 'USDT_TRC20': return `https://tronscan.org/#/transaction/${hash}`;
                 case 'APTOS': return `https://explorer.aptoslabs.com/txn/${hash}`;
@@ -155,7 +156,8 @@ export const NotificationService = {
                 case 'ARBITRUM': return `https://arbiscan.io/address/${address}`;
                 case 'BNB':
                 case 'USDT_BEP20': return `https://bscscan.com/address/${address}`;
-                case 'SOL': return `https://solscan.io/account/${address}`;
+                case 'SOL':
+                case 'SOL_USDT': return `https://solscan.io/account/${address}`;
                 case 'TRON':
                 case 'USDT_TRC20': return `https://tronscan.org/#/address/${address}`;
                 case 'APTOS': return `https://explorer.aptoslabs.com/account/${address}`;
