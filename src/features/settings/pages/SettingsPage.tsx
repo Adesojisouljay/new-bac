@@ -4,6 +4,8 @@ import { useCommunity } from '../../community/context/CommunityContext';
 import { UnifiedDataService } from '../../../services/unified';
 import { transactionService } from '../../wallet/services/transactionService';
 import { useNotification } from '../../../contexts/NotificationContext';
+import { CommunitySelector } from '../../community/components/CommunitySelector';
+import { Capacitor } from '@capacitor/core';
 
 export default function SettingsPage() {
     const { username: rawUsername } = useParams();
@@ -141,6 +143,15 @@ export default function SettingsPage() {
                             }`}
                     >
                         Keys & Permissions
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('setup' as any)}
+                        className={`w-full text-left px-4 py-3 rounded-lg font-medium transition-colors ${activeTab as any === 'setup'
+                            ? 'bg-[var(--primary-color)] text-white'
+                            : 'text-[var(--text-secondary)] hover:bg-[var(--bg-card)]'
+                            }`}
+                    >
+                        App Setup
                     </button>
                 </div>
 
@@ -350,6 +361,21 @@ export default function SettingsPage() {
                                         </a>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* APP SETUP TAB (COMMUNITY SELECTOR) */}
+                    {(activeTab as any) === 'setup' && (
+                        <div className="bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] p-8">
+                            <div className="max-w-xl">
+                                <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">Switch Community</h3>
+                                <p className="text-[var(--text-secondary)] mb-8">
+                                    You are currently using the <strong>{Capacitor.isNativePlatform() ? 'Native App' : 'Web App'}</strong>.
+                                    By default, it loads the Global instance, but you can search for and select a specific community to set as your default view.
+                                </p>
+
+                                <CommunitySelector />
                             </div>
                         </div>
                     )}

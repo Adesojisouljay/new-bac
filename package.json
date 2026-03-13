@@ -7,10 +7,17 @@
     "dev": "vite",
     "build": "tsc && NODE_OPTIONS=--max-old-space-size=4096 vite build && node scripts/zip-dist.js",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "npx cap sync",
+    "cap:open:android": "npx cap open android",
+    "cap:open:ios": "npx cap open ios"
   },
   "dependencies": {
     "@aptos-labs/ts-sdk": "^6.0.0",
+    "@capacitor/android": "^8.2.0",
+    "@capacitor/ios": "^8.2.0",
+    "@capacitor/keyboard": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.1",
     "@ethersproject/signing-key": "^5.8.0",
     "@ethersproject/transactions": "^5.8.0",
     "@scure/bip32": "^2.0.1",
@@ -56,6 +63,9 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
     "@tailwindcss/postcss": "^4.2.0",
     "@types/react": "^18.2.15",
     "@types/react-dom": "^18.2.7",

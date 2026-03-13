@@ -25,7 +25,7 @@ const Layout = () => {
       <Navbar />
       <DelegationBanner />
 
-      <main className="w-full pt-20 pb-20 lg:pb-12 h-screen overflow-y-auto custom-scrollbar md:h-auto md:overflow-visible">
+      <main className="w-full pt-[calc(5rem+var(--safe-area-inset-top))] pb-[calc(5rem+var(--safe-area-inset-bottom))] lg:pb-12 h-screen overflow-y-auto custom-scrollbar md:h-auto md:overflow-visible">
         <Suspense fallback={<div className="flex justify-center p-12 text-[var(--text-secondary)]">Loading...</div>}>
           <Outlet />
         </Suspense>

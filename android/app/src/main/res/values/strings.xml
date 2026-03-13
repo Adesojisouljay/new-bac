@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">BAC</string>
+    <string name="title_activity_main">BAC</string>
+    <string name="package_name">com.sovraniche.bac</string>
+    <string name="custom_url_scheme">com.sovraniche.bac</string>
+</resources>
