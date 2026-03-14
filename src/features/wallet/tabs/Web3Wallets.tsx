@@ -66,6 +66,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const [showImport, setShowImport] = useState(false);
     const [unlockedChains, setUnlockedChains] = useState<Record<string, RawWallet>>({});
     const [activeMainTab, setActiveMainTab] = useState<'assets' | 'history'>('assets');
+    const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [authQR, setAuthQR] = useState<string | null>(null);
     const [activeUser, setActiveUser] = useState<string | null>(localStorage.getItem('hive_user'));
     const normalizedActiveUser = activeUser?.replace(/^@/, '').toLowerCase();
@@ -726,30 +727,133 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 )}
             </div>
 
-            {/* Tab Navigation */}
-            <div className="flex gap-4 border-b border-[var(--border-color)]">
-                <button
-                    onClick={() => setActiveMainTab('assets')}
-                    className={`pb-4 px-2 text-sm font-bold transition-all relative ${activeMainTab === 'assets' ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
-                >
-                    Assets
-                    {activeMainTab === 'assets' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--primary-color)] rounded-full" />}
-                </button>
-                <button
-                    onClick={() => setActiveMainTab('history')}
-                    className={`pb-4 px-2 text-sm font-bold transition-all relative ${activeMainTab === 'history' ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
-                >
-                    History
-                    {activeMainTab === 'history' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--primary-color)] rounded-full" />}
-                </button>
+            {/* Tab Navigation & View Toggle */}
+            <div className="flex items-center justify-between border-b border-[var(--border-color)]">
+                <div className="flex gap-4">
+                    <button
+                        onClick={() => setActiveMainTab('assets')}
+                        className={`pb-4 px-2 text-sm font-bold transition-all relative ${activeMainTab === 'assets' ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        Assets
+                        {activeMainTab === 'assets' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--primary-color)] rounded-full" />}
+                    </button>
+                    <button
+                        onClick={() => setActiveMainTab('history')}
+                        className={`pb-4 px-2 text-sm font-bold transition-all relative ${activeMainTab === 'history' ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        History
+                        {activeMainTab === 'history' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--primary-color)] rounded-full" />}
+                    </button>
+                </div>
+
+                {activeMainTab === 'assets' && (
+                    <div className="flex bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-lg p-1 mb-2">
+                        <button
+                            onClick={() => setViewMode('grid')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-[var(--bg-card)] text-[var(--primary-color)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                            title="Grid View"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('list')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-[var(--bg-card)] text-[var(--primary-color)] shadow-sm' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                            title="List View"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
+                        </button>
+                    </div>
+                )}
             </div>
 
             {
                 activeMainTab === 'assets' ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    <div className={viewMode === 'grid' ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500" : "flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500"}>
                         {mergedCards.map((card: any) => {
                             const accent = CHAIN_ACCENT[card.chain] || 'var(--primary-color)';
                             const isUnlocked = !!(rawWallets || unlockedChains[card.chain]);
+
+                            if (viewMode === 'list') {
+                                return (
+                                    <div
+                                        key={card.chain}
+                                        className="group relative bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 hover:bg-[var(--bg-canvas)] transition-all duration-300 flex flex-col md:flex-row items-center gap-4 overflow-hidden shadow-sm hover:shadow-md"
+                                    >
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-transparent to-white/[0.03] -mr-8 -mt-8 rounded-full pointer-events-none" />
+
+                                        <div className="flex items-center gap-4 w-full md:w-56 shrink-0 z-10">
+                                            <div className="w-12 h-12 rounded-[14px] flex items-center justify-center shadow-inner relative shrink-0" style={{ backgroundColor: `${accent}15` }}>
+                                                <div className="absolute inset-0 rounded-[14px] border border-white/5" />
+                                                {card.imageUrl ? <img src={card.imageUrl} alt={card.chain} className="w-7 h-7 object-contain" /> : <span className="font-bold text-sm" style={{ color: accent }}>{card.chain[0]}</span>}
+
+                                                {/* Mini status dot */}
+                                                <div className="absolute -bottom-1 -right-1">
+                                                    {!isUnlocked && isOwner && <div className="w-3.5 h-3.5 rounded-full bg-[var(--bg-card)] flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-amber-500" title="Locked" /></div>}
+                                                    {isUnlocked && <div className="w-3.5 h-3.5 rounded-full bg-[var(--bg-card)] flex items-center justify-center"><div className="w-2 h-2 rounded-full bg-green-500" title="Unlocked" /></div>}
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h4 className="font-bold text-[var(--text-primary)] text-sm md:text-base leading-tight truncate">{card.chain}</h4>
+                                                <p className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tighter opacity-70 truncate">
+                                                    {card.address ? `${card.address.slice(0, 6)}...${card.address.slice(-4)}` : 'Mainnet'}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-1 w-full flex flex-col justify-center z-10 md:pl-4">
+                                            <div className="text-lg md:text-xl font-black text-[var(--text-primary)] tracking-tight">
+                                                {loadingInfo ? <div className="h-6 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" /> : card.balance !== null ? `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : <span className="opacity-20">—</span>}
+                                            </div>
+                                            {!loadingInfo && card.usdValue !== null && (
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <p className="text-xs font-bold text-[var(--text-secondary)] opacity-70">≈ ${card.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                                    {card.change24h !== null && (
+                                                        <span className={`text-[10px] font-black ${card.change24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                                            {card.change24h >= 0 ? '↑' : '↓'} {Math.abs(card.change24h).toFixed(2)}%
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div className="flex flex-row gap-2 shrink-0 z-10 w-full md:w-auto h-full items-center justify-end border-t md:border-t-0 border-[var(--border-color)] pt-3 md:pt-0">
+                                            {isOwner && (
+                                                <button
+                                                    onClick={() => {
+                                                        if (!mnemonicStorage.getEncrypted(username)) {
+                                                            setShowImport(true);
+                                                            showNotification('Recovery phrase not found. Please import it to enable sending.', 'warning');
+                                                            return;
+                                                        }
+                                                        setSendTarget(card as any);
+                                                    }}
+                                                    className={`px-5 py-2 h-9 text-xs font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] transition-all ${!isUnlocked ? 'opacity-50 grayscale' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--text-secondary)]'}`}
+                                                >
+                                                    Send
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={() => setQrTarget(card as any)}
+                                                className="px-5 py-2 h-9 text-xs font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] hover:bg-[var(--primary-color)] hover:text-white transition-all"
+                                            >
+                                                Receive
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(card.address);
+                                                    showNotification(`${card.chain} address copied!`, 'success');
+                                                }}
+                                                className="p-2 h-9 w-9 flex items-center justify-center border border-[var(--border-color)] bg-[var(--bg-canvas)] hover:bg-[var(--bg-card)] rounded-xl text-[var(--text-secondary)] transition-all tooltip-trigger"
+                                                title="Copy Address"
+                                            >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            // Grid View Fallback
                             return (
                                 <div
                                     key={card.chain}
@@ -927,6 +1031,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                         imageUrl={sendTarget.imageUrl}
                         privateKey={rawWallets ? (rawWallets[sendTarget.chain] as any)?.privateKey : unlockedChains[sendTarget.chain]?.privateKey}
                         balance={sendTarget.balance || 0}
+                        allWallets={walletInfo}
                         onUnlock={() => handleUnlock(sendTarget.chain)}
                         onClose={() => setSendTarget(null)}
                         onSuccess={(amt, hash) => {

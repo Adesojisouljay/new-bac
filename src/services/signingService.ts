@@ -3,8 +3,13 @@ import {
     PublicKey,
     Transaction,
     SystemProgram,
-    Keypair
+    Keypair,
+    TransactionInstruction
 } from '@solana/web3.js';
+import {
+    getAssociatedTokenAddressSync,
+    createAssociatedTokenAccountInstruction
+} from '@solana/spl-token';
 import { Buffer } from 'buffer';
 // @ts-ignore
 import bs58 from 'bs58';
@@ -124,8 +129,6 @@ export const signingService = {
         const destPubKey = new PublicKey(params.to);
         const tokenProgramId = new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
 
-        const { getAssociatedTokenAddressSync } = await import('@solana/spl-token');
-
         // Find ATAs
         const fromTokenAccount = getAssociatedTokenAddressSync(mintPubKey, sender.publicKey);
         const toTokenAccount = getAssociatedTokenAddressSync(mintPubKey, destPubKey);
@@ -142,9 +145,6 @@ export const signingService = {
         const decimals = params.mintAddress === "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" ? 6 : 9;
         const sunAmount = Math.floor(params.amount * Math.pow(10, decimals));
         amountData.writeBigUInt64LE(BigInt(sunAmount), 1);
-
-        const { TransactionInstruction } = await import('@solana/web3.js');
-        const { createAssociatedTokenAccountInstruction } = await import('@solana/spl-token');
 
         // 1. Add ATA creation instruction if needed
         if (params.ataExists === false) {
