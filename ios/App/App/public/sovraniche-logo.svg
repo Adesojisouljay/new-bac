@@ -1,0 +1,13 @@
+<svg width="400" height="400" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Abstract S -->
+    <g transform="translate(50, 50)">
+        <!-- Top Orange Arch -->
+        <path d="M 250 30 C 250 30 200 0 100 0 C 20 0 0 60 0 60 L 40 100 C 40 100 60 40 120 40 C 180 40 200 80 150 120 L 50 200 L 90 240 L 190 160 C 260 100 280 50 250 30 Z" fill="#ff4400"/>
+        
+        <!-- Bottom Dark Arch -->
+        <path d="M 50 270 C 50 270 100 300 200 300 C 280 300 300 240 300 240 L 260 200 C 260 200 240 260 180 260 C 120 260 100 220 150 180 L 250 100 L 210 60 L 110 140 C 40 200 20 250 50 270 Z" fill="#2a2a2a"/>
+        
+        <!-- Center Connecting Block for depth -->
+        <polygon points="175,140 110,140 125,160 190,160" fill="#cc3600" opacity="0.8" />
+    </g>
+</svg>

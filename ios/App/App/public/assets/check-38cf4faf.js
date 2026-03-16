@@ -1,0 +1,1 @@
+import{c,__tla as __tla_0}from"./index-748cf411.js";let t;let __tla=Promise.all([(()=>{try{return __tla_0}catch{}})()]).then(async()=>{let e;e=[["path",{d:"M20 6 9 17l-5-5",key:"1gmf2c"}]];t=c("check",e)});export{t as C,__tla};

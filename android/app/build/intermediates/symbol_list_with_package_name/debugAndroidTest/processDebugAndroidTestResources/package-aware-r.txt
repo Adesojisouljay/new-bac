@@ -1,0 +1,3 @@
+com.sovraniche.bac.test
+style WhiteBackgroundDialogTheme
+style WhiteBackgroundTheme

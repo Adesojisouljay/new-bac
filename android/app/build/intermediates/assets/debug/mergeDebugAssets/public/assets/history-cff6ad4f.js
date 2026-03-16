@@ -1,0 +1,1 @@
+import{c as o,__tla as __tla_0}from"./index-748cf411.js";let a;let __tla=Promise.all([(()=>{try{return __tla_0}catch{}})()]).then(async()=>{let t;t=[["path",{d:"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8",key:"1357e3"}],["path",{d:"M3 3v5h5",key:"1xhq8a"}],["path",{d:"M12 7v5l4 2",key:"1fdv2h"}]];a=o("history",t)});export{a as H,__tla};
