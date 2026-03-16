@@ -41,7 +41,7 @@ export function Navbar() {
         await authService.checkDelegation(username.toLowerCase());
 
         // 2. Silent login to Points backend using the Login signature we just got!
-        const community = config?.id || 'hive-106130';
+        const community = config?.id || 'global';
         const pointsSuccess = await pointsService.loginToPointsBackend(
             username,
             community,
@@ -95,7 +95,7 @@ export function Navbar() {
 
     return (
         <>
-            <header className="fixed top-0 w-full border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/80 backdrop-blur-md z-50 transition-colors duration-300">
+            <header className="fixed top-0 w-full border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/80 backdrop-blur-md z-50 transition-colors duration-300 pt-safe">
                 <div className="w-full max-w-[1400px] mx-auto px-4 h-16 flex items-center justify-between gap-2 md:gap-8">
 
                     {/* Logo Section */}

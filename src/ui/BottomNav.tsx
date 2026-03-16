@@ -2,13 +2,14 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { Home, Play, MessageSquare, Bell, PlusCircle } from 'lucide-react';
 
 import { useChat } from '../contexts/ChatContext';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SearchModal } from '../features/feed/components/SearchModal';
 
 export function BottomNav() {
     const { unreadCount } = useChat();
     const location = useLocation();
     const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+    const [isHidden, setIsHidden] = useState(false);
 
     // Determine active states for parent routes
     const isHomeActive = location.pathname === '/' || location.pathname.startsWith('/posts') || location.pathname.startsWith('/c/');
@@ -18,8 +19,23 @@ export function BottomNav() {
     const isSinglePost = location.pathname.startsWith('/post/');
     const isSubmitActive = location.pathname.startsWith('/submit');
 
+    // Subscribe to body attribute changes
+    useEffect(() => {
+        const checkAttribute = () => {
+            setIsHidden(document.body.getAttribute('data-hide-nav') === 'true');
+        };
+
+        const observer = new MutationObserver(checkAttribute);
+        observer.observe(document.body, { attributes: true, attributeFilter: ['data-hide-nav'] });
+
+        // Initial check
+        checkAttribute();
+
+        return () => observer.disconnect();
+    }, []);
+
     // Hide on shorts/story/post view/submit to avoid overlaying interaction buttons/content
-    if (isShortsActive || isSinglePost || isSubmitActive) return null;
+    if (isShortsActive || isSinglePost || isSubmitActive || isHidden) return null;
 
     const navItemClass = "flex flex-col items-center justify-center w-full h-full text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-all relative tap-highlight-transparent";
     const activeIconClass = "text-[var(--primary-color)]";

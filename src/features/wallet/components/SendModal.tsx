@@ -17,9 +17,10 @@ interface SendModalProps {
     onUnlock: () => Promise<any>;
     onClose: () => void;
     onSuccess: (amount: string, hash: string) => void;
+    allWallets: any[]; // Used to check native balances
 }
 
-export function SendModal({ username, chain, address, imageUrl, privateKey, balance, onUnlock, onClose, onSuccess }: SendModalProps) {
+export function SendModal({ username, chain, address, imageUrl, privateKey, balance, onUnlock, onClose, onSuccess, allWallets }: SendModalProps) {
     const [to, setTo] = useState('');
     const [sendMode, setSendMode] = useState<'username' | 'address'>('username');
     const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
@@ -96,6 +97,14 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
         return () => clearTimeout(timer);
     }, [to, resolvedAddress, sendMode, amount, chain, address]);
 
+    // Hide BottomNav when modal is open
+    useEffect(() => {
+        document.body.setAttribute('data-hide-nav', 'true');
+        return () => {
+            document.body.removeAttribute('data-hide-nav');
+        };
+    }, []);
+
     const handleSend = async () => {
         let currentPrivateKey = privateKey;
 
@@ -144,10 +153,16 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
             return;
         }
 
+
+
         setLoading(true);
         setError(null);
 
         try {
+            // 0. Update UI state (Optional, but good for UX)
+            setLoading(true);
+            showNotification('Awaiting Hive Keychain confirmation...', 'info');
+
             // 1. Get transaction parameters (nonce, gas, blockhash, etc.)
             const params = await web3WalletService.getTxParams(chain, address, destination, Number(amount));
 
@@ -169,6 +184,15 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                     to: destination,
                     amount: Number(amount),
                     recentBlockhash: params.recentBlockhash
+                });
+            } else if (chain === 'SOL_USDT') {
+                signedTx = await signingService.signSolTokenTransaction(currentPrivateKey, {
+                    from: address,
+                    to: destination,
+                    amount: Number(amount),
+                    mintAddress: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+                    recentBlockhash: params.recentBlockhash,
+                    ataExists: params.ataExists
                 });
             } else if (chain === 'BTC') {
                 signedTx = await signingService.signBtcTransaction(currentPrivateKey, {
@@ -196,7 +220,23 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                 throw new Error(`Local signing for ${chain} not yet implemented`);
             }
 
-            // 3. Broadcast the raw signed transaction
+            // 3. Request Hive Keychain Confirmation (Active Key)
+            // We do this BEFORE broadcasting to the network to ensure they explicitly agree
+            try {
+                await web3WalletService.logTransactionToHive(username, {
+                    chain,
+                    to: destination,
+                    amount: Number(amount),
+                    type: 'send'
+                });
+            } catch (hiveErr: any) {
+                // If the user hits cancel on the Keychain prompt, we stop here.
+                setLoading(false);
+                setError(hiveErr.message || 'Transaction cancelled in Hive Keychain');
+                return; // Stop execution
+            }
+
+            // 4. Broadcast the raw signed transaction
             const hash = await web3WalletService.broadcastTransaction(chain, signedTx);
 
             setTxHash(hash);
@@ -205,19 +245,19 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
             // Call onSuccess immediately to update parent state, but DON'T auto-close
             onSuccess(amount, hash);
 
-            // 4. Record to Hive for permanent cross-device history (Fire and forget)
-            // We do this AFTER onSuccess and we do not await it so the UI doesn't hang on the Keychain prompt
-            web3WalletService.logTransactionToHive(username, {
-                chain,
-                to: destination,
-                amount: Number(amount),
-                hash,
-                type: 'send'
-            }).catch(e => console.warn('Failed to log tx to Hive:', e));
-
         } catch (err: any) {
-            setError(err.message || 'Transaction failed');
-            showNotification(err.message || 'Failed to send transaction', 'error');
+            console.error('Send failed:', err);
+            let message = err.message || 'Transaction failed';
+
+            // Handle Solana specific insufficient SOL errors for ATA/gas
+            if (message.includes('0x1') && chain.startsWith('SOL')) {
+                message = 'Transaction failed: You do not have enough native SOL to pay for network fees and token account creation. Please deposit a small amount of SOL (e.g. 0.005 SOL) to fund operations.';
+            } else if (message.includes('Failed to fetch tx params (500)')) {
+                message = 'Backend error: Could not fetch transaction parameters. The provider may be down or the address is invalid.';
+            }
+
+            setError(message);
+            showNotification(message, 'error');
         } finally {
             setLoading(false);
         }
@@ -225,7 +265,7 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
 
     if (txHash) {
         return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
                 <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl relative">
                     <button
                         onClick={onClose}
@@ -261,8 +301,12 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
         );
     }
 
+    const nativeSolWallet = allWallets?.find(w => w.chain === 'SOL');
+    const solBalance = nativeSolWallet?.balance || 0;
+    const hasInsufficientNativeSol = chain === 'SOL_USDT' && solBalance < 0.0025;
+
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
             <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
                 <button
                     onClick={onClose}
@@ -439,15 +483,24 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                         </div>
                     )}
 
+                    {hasInsufficientNativeSol && (
+                        <div className="flex items-start gap-2 text-red-500 bg-red-500/5 p-4 rounded-xl text-xs font-bold border border-red-500/20 shadow-inner">
+                            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                            <p className="leading-relaxed">
+                                Transaction disabled: You do not have enough native SOL to pay for network fees and token account creation. Please deposit at least 0.0025 SOL to fund operations.
+                            </p>
+                        </div>
+                    )}
+
                     <button
                         onClick={handleSend}
-                        disabled={loading || !to || !amount || (!privateKey && !mnemonicStorage.getEncrypted(username))}
-                        className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none ${!privateKey ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : 'bg-green-600 shadow-green-600/25'}`}
+                        disabled={loading || !to || !amount || hasInsufficientNativeSol || (!privateKey && !mnemonicStorage.getEncrypted(username))}
+                        className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none disabled:active:scale-100 ${(!privateKey && !hasInsufficientNativeSol) ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : (hasInsufficientNativeSol ? 'bg-red-500/50 cursor-not-allowed' : 'bg-green-600 shadow-green-600/25')}`}
                     >
                         {loading ? 'Processing...' : (
                             !mnemonicStorage.getEncrypted(username) ? 'Import Phrase to Send' : (!privateKey ? 'Confirm (Sign with Keychain)' : `Send ${amount} ${chain}`)
                         )}
-                        {!loading && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
+                        {!loading && !hasInsufficientNativeSol && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
                     </button>
                 </div>
             </div>

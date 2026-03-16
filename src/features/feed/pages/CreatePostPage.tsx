@@ -304,7 +304,7 @@ export default function CreatePostPage() {
         try {
             const permlink = generatePermlink(title);
             const tagList = tags.split(/\s+/).map(t => t.trim().toLowerCase()).filter(t => t);
-            const baseTag = isGlobal ? destination : (config?.id || 'hive-106130');
+            const baseTag = isGlobal ? destination : (config?.id || 'global');
             const finalTags = baseTag ? [baseTag, ...tagList.filter(t => t !== baseTag)] : tagList;
             const parentPermlink = finalTags.length > 0 ? finalTags[0] : 'blog';
 
@@ -500,7 +500,7 @@ export default function CreatePostPage() {
                             {isGlobal ? (
                                 <p className="text-[10px] md:text-xs text-[var(--text-secondary)] leading-tight italic">First tag becomes the category.</p>
                             ) : (
-                                <p className="text-[10px] md:text-xs text-[var(--text-secondary)] leading-tight italic">Auto-tag: <b>#{config?.id || 'hive-106130'}</b></p>
+                                <p className="text-[10px] md:text-xs text-[var(--text-secondary)] leading-tight italic">Auto-tag: <b>#{config?.id || 'global'}</b></p>
                             )}
                         </div>
                     </div>

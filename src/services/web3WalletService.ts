@@ -388,22 +388,24 @@ export const web3WalletService = {
     /**
      * Log a Web3 transaction to the Hive blockchain for permanent history.
      */
-    logTransactionToHive: async (username: string, data: { chain: string, to: string, amount: number, hash: string, type: 'send' | 'deposit' }) => {
+    logTransactionToHive: async (username: string, data: { chain: string, to: string, amount: number, hash?: string, type: 'send' | 'deposit' }) => {
         const { authService } = await import('../features/auth/services/authService');
-        const logId = 'bac_web3_tx';
+        const logId = 'sovraniche_web3_tx';
         const payload = {
             ...data,
-            app: 'bac-web3',
+            app: 'sovraniche.app',
             version: '1.0.0',
             timestamp: Date.now()
         };
 
-        try {
-            await authService.broadcastJson(username, logId, payload, 'Posting');
-
-        } catch (err) {
-            console.warn('[Web3Wallet] Failed to log transaction to Hive (non-critical):', err);
+        // We use Active key to force the Hive Keychain confirmation prompt
+        const response = await authService.broadcastJson(username, logId, payload, 'Active');
+        
+        if (!response.success) {
+            throw new Error(response.error || 'User cancelled Hive Keychain confirmation');
         }
+        
+        return response;
     },
     signatureStorage
 };
