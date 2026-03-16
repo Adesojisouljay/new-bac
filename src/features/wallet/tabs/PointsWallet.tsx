@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { pointsService, PointsBalance, PointsHistoryEntry } from '../../../services/pointsService';
+import { useCommunity } from '../../community/context/CommunityContext';
 
 const OPERATION_ICONS: Record<string, string> = {
     login: '🔑',
@@ -32,11 +33,13 @@ interface PointsWalletProps {
 }
 
 export function PointsWallet({ username }: PointsWalletProps) {
-    const communityId = import.meta.env.VITE_COMMUNITY_ID || '';
+    const { config } = useCommunity();
+    const communityId = config?.id || import.meta.env.VITE_COMMUNITY_ID || 'global';
 
     const [pointsData, setPointsData] = useState<PointsBalance | null>(null);
     const [history, setHistory] = useState<PointsHistoryEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isClaiming, setIsClaiming] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -51,8 +54,8 @@ export function PointsWallet({ username }: PointsWalletProps) {
                     pointsService.getPointsHistory(username, communityId),
                 ]);
 
-                if (balanceRes.status === 'fulfilled' && balanceRes.value.length > 0) {
-                    setPointsData(balanceRes.value[0]);
+                if (balanceRes.status === 'fulfilled' && balanceRes.value) {
+                    setPointsData(balanceRes.value);
                 }
                 if (historyRes.status === 'fulfilled') {
                     setHistory(historyRes.value);
@@ -76,7 +79,36 @@ export function PointsWallet({ username }: PointsWalletProps) {
         );
     }
 
-    const totalPoints = (pointsData?.pointsBalance ?? 0) + (pointsData?.unclaimedPoints ?? 0);
+    const handleClaim = async () => {
+        if (!username || !communityId || !pointsData || pointsData.unclaimedPoints <= 0) return;
+
+        setIsClaiming(true);
+        try {
+            const { toast } = await import('react-hot-toast');
+            const res = await pointsService.claimPoints(username, communityId);
+
+            if (res.success) {
+                toast.success('Points claimed successfully!');
+                // We fake-refresh the local state instantly for UX
+                setPointsData(prev => prev ? {
+                    ...prev,
+                    totalPoints: (prev.totalPoints || 0) + (prev.unclaimedPoints || 0),
+                    unclaimedPoints: 0
+                } : null);
+
+                // Refresh history in background
+                pointsService.getPointsHistory(username, communityId).then(setHistory);
+            } else {
+                toast.error(res.message || 'Failed to claim points.');
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsClaiming(false);
+        }
+    };
+
+    const totalPoints = (pointsData?.totalPoints ?? 0);
 
     return (
         <div className="space-y-6">
@@ -96,11 +128,14 @@ export function PointsWallet({ username }: PointsWalletProps) {
                         {(pointsData?.unclaimedPoints ?? 0).toLocaleString()}
                     </p>
                     <button
-                        disabled
-                        className="mt-4 w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider border border-[var(--border-color)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed"
-                        title="Coming soon"
+                        onClick={handleClaim}
+                        disabled={isClaiming || (pointsData?.unclaimedPoints ?? 0) <= 0}
+                        className={`mt-4 w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider ${(pointsData?.unclaimedPoints ?? 0) > 0
+                            ? 'bg-gradient-to-r from-[var(--primary-color)] to-[var(--accent-color)] text-white shadow hover:scale-[1.02] active:scale-95 transition-all'
+                            : 'border border-[var(--border-color)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed'
+                            }`}
                     >
-                        Claim Rewards
+                        {isClaiming ? 'Claiming...' : 'Claim Rewards'}
                     </button>
                 </div>
             </div>
@@ -121,24 +156,6 @@ export function PointsWallet({ username }: PointsWalletProps) {
                 </div>
             )}
 
-            {/* Points Breakdown */}
-            {pointsData && (
-                <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5">
-                    <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-4">Earnings by Type</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {Object.entries(pointsData.points_by_type).map(([type, data]) => (
-                            <div key={type} className="bg-[var(--bg-canvas)] rounded-xl p-3 border border-[var(--border-color)] text-center">
-                                <div className="text-xl mb-1">{OPERATION_ICONS[type] || '⭐'}</div>
-                                <div className="text-base font-bold text-[var(--text-primary)]">{data.points.toLocaleString()}</div>
-                                <div className="text-[10px] text-[var(--text-secondary)] uppercase font-bold tracking-tight mt-0.5">
-                                    {OPERATION_LABELS[type] || type}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
             {/* Coming Soon Actions */}
             <div className="grid grid-cols-3 gap-3">
                 {['Redeem', 'Transfer', 'Community Perks'].map(label => (
@@ -155,7 +172,7 @@ export function PointsWallet({ username }: PointsWalletProps) {
 
             {/* History */}
             {history.length > 0 && (
-                <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
+                <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden mt-6">
                     <div className="px-5 py-4 border-b border-[var(--border-color)]">
                         <h3 className="text-sm font-bold uppercase tracking-wider text-[var(--text-secondary)]">Earning History</h3>
                     </div>
@@ -163,15 +180,17 @@ export function PointsWallet({ username }: PointsWalletProps) {
                         {history.slice(0, 30).map(entry => (
                             <div key={entry._id} className="px-5 py-3 flex items-center justify-between hover:bg-[var(--bg-canvas)] transition-colors">
                                 <div className="flex items-center gap-3">
-                                    <span className="text-xl">{OPERATION_ICONS[entry.operationType] || '⭐'}</span>
+                                    <span className="text-xl">{OPERATION_ICONS[entry.actionType] || '⭐'}</span>
                                     <div>
                                         <p className="text-sm font-medium text-[var(--text-primary)]">
-                                            {OPERATION_LABELS[entry.operationType] || entry.operationType}
+                                            {OPERATION_LABELS[entry.actionType] || entry.actionType}
                                         </p>
-                                        <p className="text-xs text-[var(--text-secondary)]">{formatDate(entry.timestamp)}</p>
+                                        <p className="text-xs text-[var(--text-secondary)]">{formatDate(entry.createdAt)}</p>
                                     </div>
                                 </div>
-                                <span className="text-sm font-bold text-green-500">+{entry.pointsEarned}</span>
+                                <span className={`text-sm font-bold ${entry.points > 0 ? 'text-green-500' : 'text-red-500'}`}>
+                                    {entry.points > 0 ? '+' : ''}{entry.points}
+                                </span>
                             </div>
                         ))}
                     </div>

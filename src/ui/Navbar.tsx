@@ -41,7 +41,7 @@ export function Navbar() {
         await authService.checkDelegation(username.toLowerCase());
 
         // 2. Silent login to Points backend using the Login signature we just got!
-        const community = config?.id || 'hive-106130';
+        const community = config?.id || 'global';
         const pointsSuccess = await pointsService.loginToPointsBackend(
             username,
             community,

@@ -251,7 +251,7 @@ export const transactionService = {
      */
     broadcastRelay: async (op: WalletOperation): Promise<{ success: boolean; result?: any; error?: string }> => {
         try {
-            const token = localStorage.getItem('points_auth_token');
+            const token = localStorage.getItem('breakaway_token');
 
             if (!token) {
                 return { success: false, error: "Authentication token missing. Please try logging in again." };

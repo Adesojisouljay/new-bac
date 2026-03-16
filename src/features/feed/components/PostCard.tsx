@@ -22,7 +22,7 @@ interface PostCardProps {
 export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
     const { showNotification, showConfirm } = useNotification();
     const { config } = useCommunity();
-    const community = config?.id || 'hive-106130';
+    const community = config?.id || 'global';
 
     const [voting, setVoting] = useState(false);
     const [voted, setVoted] = useState(false);

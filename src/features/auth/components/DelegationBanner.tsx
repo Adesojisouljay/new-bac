@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { authService, accountManager } from '../services/authService';
 import { QRCodeSVG } from 'qrcode.react';
+import { useCommunity } from '../../community/context/CommunityContext';
 
 export const DelegationBanner: React.FC = () => {
     const [isVisible, setIsVisible] = useState(false);
@@ -10,6 +11,9 @@ export const DelegationBanner: React.FC = () => {
     const [hasQR, setHasQR] = useState<string | null>(null);
     const [isMobile] = useState(() => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent));
     const [debugForced, setDebugForced] = useState(false);
+
+    const { config } = useCommunity();
+    const communityId = config?.id || 'global';
 
     useEffect(() => {
         (window as any).forceShowDelegationBanner = () => {
@@ -64,7 +68,7 @@ export const DelegationBanner: React.FC = () => {
 
             try {
                 const isDelegated = await authService.checkDelegation(activeUser);
-                const hasToken = !!localStorage.getItem('points_auth_token');
+                const hasToken = !!localStorage.getItem('breakaway_token');
                 console.log("DelegationBanner: Status - isDelegated:", isDelegated, "hasToken:", hasToken);
 
                 setNeedsTokenOnly(isDelegated && !hasToken);
@@ -85,7 +89,7 @@ export const DelegationBanner: React.FC = () => {
 
         try {
             const method = localStorage.getItem('hive_auth_method') as 'keychain' | 'hiveauth' || 'keychain';
-            const community = 'hive-106130'; // Should come from configContext but using safe default
+            const community = communityId;
 
             if (needsTokenOnly) {
                 console.log("DelegationBanner: Delegation already active, requesting points token only...");
@@ -147,7 +151,7 @@ export const DelegationBanner: React.FC = () => {
                 // Immediately get a points token so relay works without logout/login
                 try {
                     const { pointsService } = await import('../../../services/pointsService');
-                    const community = 'hive-106130'; // Should ideally be from config
+                    const community = communityId;
                     console.log("DelegationBanner: Requesting points token for relay...");
                     await pointsService.loginToPointsBackend(activeUser, community, method);
                 } catch (pe) {
