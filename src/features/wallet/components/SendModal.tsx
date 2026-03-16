@@ -159,6 +159,10 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
         setError(null);
 
         try {
+            // 0. Update UI state (Optional, but good for UX)
+            setLoading(true);
+            showNotification('Awaiting Hive Keychain confirmation...', 'info');
+
             // 1. Get transaction parameters (nonce, gas, blockhash, etc.)
             const params = await web3WalletService.getTxParams(chain, address, destination, Number(amount));
 
@@ -216,7 +220,23 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                 throw new Error(`Local signing for ${chain} not yet implemented`);
             }
 
-            // 3. Broadcast the raw signed transaction
+            // 3. Request Hive Keychain Confirmation (Active Key)
+            // We do this BEFORE broadcasting to the network to ensure they explicitly agree
+            try {
+                await web3WalletService.logTransactionToHive(username, {
+                    chain,
+                    to: destination,
+                    amount: Number(amount),
+                    type: 'send'
+                });
+            } catch (hiveErr: any) {
+                // If the user hits cancel on the Keychain prompt, we stop here.
+                setLoading(false);
+                setError(hiveErr.message || 'Transaction cancelled in Hive Keychain');
+                return; // Stop execution
+            }
+
+            // 4. Broadcast the raw signed transaction
             const hash = await web3WalletService.broadcastTransaction(chain, signedTx);
 
             setTxHash(hash);
@@ -224,16 +244,6 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
 
             // Call onSuccess immediately to update parent state, but DON'T auto-close
             onSuccess(amount, hash);
-
-            // 4. Record to Hive for permanent cross-device history (Fire and forget)
-            // We do this AFTER onSuccess and we do not await it so the UI doesn't hang on the Keychain prompt
-            web3WalletService.logTransactionToHive(username, {
-                chain,
-                to: destination,
-                amount: Number(amount),
-                hash,
-                type: 'send'
-            }).catch(e => console.warn('Failed to log tx to Hive:', e));
 
         } catch (err: any) {
             console.error('Send failed:', err);
