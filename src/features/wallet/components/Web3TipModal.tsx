@@ -25,12 +25,12 @@ const CHAIN_ACCENT: Record<string, string> = {
     BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', TRON: '#ef0027',
     BNB: '#f0b90b', APTOS: '#00bcd4', BASE: '#0052ff', POLYGON: '#8247e5',
     ARBITRUM: '#28a0f0', USDT_TRC20: '#26a17b', USDT_BEP20: '#26a17b', USDT_ERC20: '#26a17b',
-    TON: '#0088cc',
+    TON: '#0088cc', DOGE: '#f6c342', LTC: '#345D9D', ARB: '#28a0f0',
 };
 
 const INTEGRATED_CHAINS = [
-    'BTC', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM',
-    'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'
+    'BTC', 'LTC', 'DOGE', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM',
+    'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20', 'ARB'
 ];
 
 const SYMBOL_MAP: Record<string, string> = {
@@ -250,11 +250,13 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
             const params = await web3WalletService.getTxParams(selectedChain, wallet.address, recipientAddr, Number(amount));
             let signedTx = '';
 
-            if (['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM'].includes(selectedChain)) {
+            if (['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_ERC20', 'USDT_BEP20', 'ARB'].includes(selectedChain)) {
                 signedTx = await signingService.signEthTransaction(wallet.privateKey, {
-                    to: recipientAddr, value: (Number(amount) * 1e18).toString(),
+                    to: params.to || recipientAddr,
+                    value: ['USDT_ERC20', 'USDT_BEP20', 'ARB'].includes(selectedChain) ? "0" : (Number(amount) * 1e18).toString(),
                     nonce: params.nonce, gasLimit: params.gasLimit,
                     gasPrice: params.gasPrice, chainId: params.chainId,
+                    data: params.data
                 });
             } else if (selectedChain === 'SOL') {
                 signedTx = await signingService.signSolTransaction(wallet.privateKey, {
@@ -266,7 +268,17 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                     from: wallet.address, to: recipientAddr,
                     amount: Number(amount), utxos: params.utxos, feeRate: params.feeRate,
                 });
-            } else if (selectedChain === 'TRON') {
+            } else if (selectedChain === 'DOGE') {
+                signedTx = await signingService.signDogeTransaction(wallet.privateKey, {
+                    from: wallet.address, to: recipientAddr,
+                    amount: Number(amount), utxos: params.utxos, feeRate: params.feeRate,
+                });
+            } else if (selectedChain === 'LTC') {
+                signedTx = await signingService.signLtcTransaction(wallet.privateKey, {
+                    from: wallet.address, to: recipientAddr,
+                    amount: Number(amount), utxos: params.utxos, feeRate: params.feeRate,
+                });
+            } else if (selectedChain === 'TRON' || selectedChain === 'USDT_TRC20') {
                 signedTx = await signingService.signTronTransaction(wallet.privateKey, {
                     to: recipientAddr, amount: Number(amount), transaction: params.transaction,
                 });
@@ -588,7 +600,7 @@ export function Web3TipModal({ recipientUsername, onClose, onSuccess }: Web3TipM
                                                         <Loader2 className="animate-spin text-[var(--text-secondary)]" size={10} />
                                                     ) : (
                                                         <span className="font-mono text-[var(--text-secondary)]">
-                                                            {fee !== null ? `≈ ${fee.toFixed(6)}` : '—'} {selectedChain}
+                                                            {fee !== null ? `≈ ${fee.toFixed(6)}` : '—'} {['USDT_ERC20', 'USDT_BEP20', 'ARB', 'USDT_TRC20'].includes(selectedChain) ? (selectedChain === 'USDT_BEP20' ? 'BNB' : selectedChain === 'USDT_TRC20' ? 'TRX' : 'ETH') : selectedChain}
                                                         </span>
                                                     )}
                                                 </div>

@@ -45,6 +45,7 @@ const CHAIN_ACCENT: Record<string, string> = {
     USDT_TRC20: '#26a17b',
     USDT_BEP20: '#26a17b',
     USDT_ERC20: '#26a17b',
+    ARB: '#28a0f0',
 };
 
 interface Web3WalletsProps {
@@ -306,6 +307,12 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                     Object.entries(cachedAddresses).forEach(([chain, data]) => {
                         combinedWallets[chain] = data;
                     });
+                }
+
+                // Patch missing EVM chains in view-only mode that weren't cached yet
+                if (combinedWallets['ETH']) {
+                    const evmAddress = combinedWallets['ETH'].address;
+                    if (!combinedWallets['ARB']) combinedWallets['ARB'] = { address: evmAddress, imageUrl: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/assets/0x912CE59144191C1204E64559FE8253a0e49E6548/logo.png' };
                 }
 
                 const initialInfo: Web3WalletInfo[] = [];
@@ -631,7 +638,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // ─────────────────────────────────────────────────────────────────────────
     // Merge remote Hive metadata + fetched info
     // ─────────────────────────────────────────────────────────────────────────
-    const CHAIN_ORDER = ['BTC', 'ETH', 'SOL', 'SOL_USDT', 'TRON', 'BNB', 'DOGE', 'LTC', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
+    const CHAIN_ORDER = ['BTC', 'ETH', 'SOL', 'SOL_USDT', 'TRON', 'BNB', 'DOGE', 'LTC', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'ARB', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
 
     const mergedCards = CHAIN_ORDER.map(chain => {
         const raw = rawWallets ? (rawWallets[chain] as any) : null;
@@ -966,7 +973,7 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                                                 >
                                                     Send
                                                 </button>
-                                                {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20'].includes(card.chain) && (
+                                                {['ETH', 'BNB', 'BASE', 'POLYGON', 'ARBITRUM', 'USDT_BEP20', 'ARB'].includes(card.chain) && (
                                                     <button
                                                         disabled
                                                         className="flex-1 py-2.5 text-[10px] font-black uppercase tracking-widest rounded-xl bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-secondary)] opacity-30 cursor-not-allowed flex items-center justify-center gap-1.5"

@@ -21,6 +21,7 @@ export interface RawWallets {
     BASE?: RawWallet;
     POLYGON?: RawWallet;
     ARBITRUM?: RawWallet;
+    ARB?: RawWallet;
     USDT_TRC20?: RawWallet;
     USDT_BEP20?: RawWallet;
     [chain: string]: RawWallet | string | undefined;
@@ -215,7 +216,8 @@ export const web3WalletService = {
             APTOS: `${ICON_BASE}/26455/standard/Aptos-Network-Symbol-Black-RGB-1x.png?1761789140`,
             BASE: `${ICON_BASE}/279/large/ethereum.png`,
             POLYGON: `${ICON_BASE}/4713/large/matic-token-icon.png`,
-            ARBITRUM: `${ICON_BASE}/16547/large/arbitrum-shield.png`,
+            ARBITRUM: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
+            ARB: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/assets/0x912CE59144191C1204E64559FE8253a0e49E6548/logo.png",
             USDT_TRC20: `${ICON_BASE}/325/large/tether.png`,
             USDT_BEP20: `${ICON_BASE}/325/large/tether.png`,
             USDT_ERC20: `${ICON_BASE}/325/large/tether.png`,
@@ -251,7 +253,8 @@ export const web3WalletService = {
             APTOS: `${ICON_BASE}/26455/standard/Aptos-Network-Symbol-Black-RGB-1x.png?1761789140`,
             BASE: `${ICON_BASE}/279/large/ethereum.png`,
             POLYGON: `${ICON_BASE}/4713/large/matic-token-icon.png`,
-            ARBITRUM: `${ICON_BASE}/16547/large/arbitrum-shield.png`,
+            ARBITRUM: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png",
+            ARB: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/assets/0x912CE59144191C1204E64559FE8253a0e49E6548/logo.png",
             USDT_TRC20: `${ICON_BASE}/325/large/tether.png`,
             USDT_BEP20: `${ICON_BASE}/325/large/tether.png`,
             USDT_ERC20: `${ICON_BASE}/325/large/tether.png`,

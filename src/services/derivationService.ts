@@ -6,6 +6,7 @@ import { computeAddress } from '@ethersproject/transactions';
 import { Keypair } from '@solana/web3.js';
 import { derivePath } from 'ed25519-hd-key';
 import * as bitcoin from 'bitcoinjs-lib';
+import ECPairFactory from 'ecpair';
 import { TronWeb } from 'tronweb';
 import { Account } from '@aptos-labs/ts-sdk';
 
@@ -24,6 +25,7 @@ export const CHAIN_PATHS = {
     BASE: "m/44'/60'/0'/0/0",
     POLYGON: "m/44'/60'/0'/0/0",
     ARBITRUM: "m/44'/60'/0'/0/0",
+    ARB: "m/44'/60'/0'/0/0",
     SOL: "m/44'/501'/0'/0'",
     SOL_USDT: "m/44'/501'/0'/0'",
     TRON: "m/44'/195'/0'/0/0",
@@ -86,6 +88,7 @@ const strategies: Record<string, DerivationStrategy> = {
     BASE: async (mnemonic) => strategies.ETH(mnemonic),
     POLYGON: async (mnemonic) => strategies.ETH(mnemonic),
     ARBITRUM: async (mnemonic) => strategies.ETH(mnemonic),
+    ARB: async (mnemonic) => strategies.ETH(mnemonic),
     USDT_TRC20: async (mnemonic) => strategies.TRON(mnemonic),
     USDT_BEP20: async (mnemonic) => strategies.ETH(mnemonic),
     USDT_ERC20: async (mnemonic) => strategies.ETH(mnemonic),
@@ -176,9 +179,12 @@ const strategies: Record<string, DerivationStrategy> = {
 
         if (!address) throw new Error('Failed to derive DOGE address');
 
+        // toWIF uses the network by creating an ECPair
+        const keyPair = ECPairFactory(ecc).fromPrivateKey(child.privateKey!, { network: DOGE_NETWORK });
+
         return {
             address,
-            privateKey: child.toWIF(),
+            privateKey: keyPair.toWIF(),
             publicKey: child.publicKey.toString('hex')
         };
     },
@@ -194,9 +200,11 @@ const strategies: Record<string, DerivationStrategy> = {
 
         if (!address) throw new Error('Failed to derive LTC address');
 
+        const keyPair = ECPairFactory(ecc).fromPrivateKey(child.privateKey!, { network: LTC_NETWORK });
+
         return {
             address,
-            privateKey: child.toWIF(),
+            privateKey: keyPair.toWIF(),
             publicKey: child.publicKey.toString('hex')
         };
     },
