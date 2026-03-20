@@ -18,6 +18,7 @@ const LIFI_CHAINS: Record<string, number> = {
     'BASE': 8453,
     'POLYGON': 137,
     'ARBITRUM': 42161,
+    'ARB': 42161,
 };
 
 export function SwapModal({ onClose, initialFromAsset, rawWallets, onSuccess }: SwapModalProps) {
@@ -29,7 +30,9 @@ export function SwapModal({ onClose, initialFromAsset, rawWallets, onSuccess }: 
     const [toToken] = useState<string>('0x0000000000000000000000000000000000000000'); // Native
 
     const fromChainId = initialFromAsset ? LIFI_CHAINS[initialFromAsset.chain] : 1;
-    const fromToken = initialFromAsset?.chain === 'USDT_BEP20' ? '0x55d398326f99059fF775485246999027B3197955' : '0x0000000000000000000000000000000000000000';
+    const fromToken = initialFromAsset?.chain === 'USDT_BEP20' ? '0x55d398326f99059fF775485246999027B3197955' : 
+                      initialFromAsset?.chain === 'ARB' ? '0x912CE59144191C1204E64559FE8253a0e49E6548' :
+                      '0x0000000000000000000000000000000000000000';
 
     const handleGetQuote = async () => {
         if (!amount || !initialFromAsset || !fromChainId) return;
@@ -67,7 +70,7 @@ export function SwapModal({ onClose, initialFromAsset, rawWallets, onSuccess }: 
             if (initialFromAsset.chain === 'BNB' || initialFromAsset.chain === 'USDT_BEP20') rpcUrl = "https://binance.llamarpc.com";
             else if (initialFromAsset.chain === 'BASE') rpcUrl = "https://base.llamarpc.com";
             else if (initialFromAsset.chain === 'POLYGON') rpcUrl = "https://polygon.llamarpc.com";
-            else if (initialFromAsset.chain === 'ARBITRUM') rpcUrl = "https://arbitrum.llamarpc.com";
+            else if (initialFromAsset.chain === 'ARBITRUM' || initialFromAsset.chain === 'ARB') rpcUrl = "https://arbitrum.llamarpc.com";
 
 
             const provider = new ethers.JsonRpcProvider(rpcUrl, undefined, { staticNetwork: true });

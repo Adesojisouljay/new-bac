@@ -169,14 +169,15 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
             let signedTx = '';
 
             // 2. Sign locally based on the chain
-            if (chain === 'ETH' || chain === 'BNB') {
+            if (['ETH', 'BNB', 'USDT_ERC20', 'USDT_BEP20', 'ARB', 'BASE', 'POLYGON', 'ARBITRUM'].includes(chain)) {
                 signedTx = await signingService.signEthTransaction(currentPrivateKey, {
-                    to: destination,
-                    value: (Number(amount) * 1e18).toString(), // simplified wei conversion
+                    to: params.to || destination, // USDT ERC20/BEP20 params.to is the contract
+                    value: ['USDT_ERC20', 'USDT_BEP20', 'ARB'].includes(chain) ? "0" : (Number(amount) * 1e18).toString(), // USDT sends 0 value, encodes amount in data
                     nonce: params.nonce,
                     gasLimit: params.gasLimit,
                     gasPrice: params.gasPrice,
-                    chainId: params.chainId
+                    chainId: params.chainId,
+                    data: params.data
                 });
             } else if (chain === 'SOL') {
                 signedTx = await signingService.signSolTransaction(currentPrivateKey, {
@@ -202,7 +203,23 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                     utxos: params.utxos,
                     feeRate: params.feeRate
                 });
-            } else if (chain === 'TRON') {
+            } else if (chain === 'DOGE') {
+                signedTx = await signingService.signDogeTransaction(currentPrivateKey, {
+                    from: address,
+                    to: destination,
+                    amount: Number(amount),
+                    utxos: params.utxos,
+                    feeRate: params.feeRate
+                });
+            } else if (chain === 'LTC') {
+                signedTx = await signingService.signLtcTransaction(currentPrivateKey, {
+                    from: address,
+                    to: destination,
+                    amount: Number(amount),
+                    utxos: params.utxos,
+                    feeRate: params.feeRate
+                });
+            } else if (chain === 'TRON' || chain === 'USDT_TRC20') {
                 // TRON backend gives us the transaction object
                 signedTx = await signingService.signTronTransaction(currentPrivateKey, {
                     to: destination,
@@ -303,7 +320,38 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
 
     const nativeSolWallet = allWallets?.find(w => w.chain === 'SOL');
     const solBalance = nativeSolWallet?.balance || 0;
+    
+    const nativeEthWallet = allWallets?.find(w => w.chain === 'ETH');
+    const nativeBnbWallet = allWallets?.find(w => w.chain === 'BNB');
+    const nativeTronWallet = allWallets?.find(w => w.chain === 'TRON');
+    const ethBalance = nativeEthWallet?.balance || 0;
+    const bnbBalance = nativeBnbWallet?.balance || 0;
+    const tronBalance = nativeTronWallet?.balance || 0;
+    const arbitrumBalance = allWallets?.find(w => w.chain === 'ARBITRUM')?.balance || 0;
+
+    let hasInsufficientNativeGas = false;
+    let insufficientGasMsg = '';
+
     const hasInsufficientNativeSol = chain === 'SOL_USDT' && solBalance < 0.0025;
+
+    if (hasInsufficientNativeSol) {
+        hasInsufficientNativeGas = true;
+        insufficientGasMsg = 'Transaction disabled: You do not have enough native SOL to pay for network fees and token account creation. Please deposit at least 0.0025 SOL to fund operations.';
+    } else if (chain === 'USDT_ERC20' && fee !== null && ethBalance < fee) {
+        hasInsufficientNativeGas = true;
+        insufficientGasMsg = `Transaction disabled: You do not have enough native ETH to pay for the network fee (${fee.toFixed(6)} ETH). Please deposit more ETH.`;
+    } else if (chain === 'USDT_BEP20' && fee !== null && bnbBalance < fee) {
+        hasInsufficientNativeGas = true;
+        insufficientGasMsg = `Transaction disabled: You do not have enough native BNB to pay for the network fee (${fee.toFixed(6)} BNB). Please deposit more BNB.`;
+    } else if (chain === 'ARB' && fee !== null && arbitrumBalance < fee) {
+        hasInsufficientNativeGas = true;
+        insufficientGasMsg = `Transaction disabled: You do not have enough native ETH on Arbitrum to pay for the network fee (${fee.toFixed(6)} ETH). Please deposit more ETH.`;
+    } else if (chain === 'USDT_TRC20' && fee !== null && tronBalance < fee) {
+        hasInsufficientNativeGas = true;
+        insufficientGasMsg = `Transaction disabled: You do not have enough native TRON to pay for the network fee (${fee.toFixed(2)} TRX). Please deposit more TRX.`;
+    }
+
+    const isErc20Token = ['USDT_ERC20', 'USDT_BEP20', 'ARB', 'USDT_TRC20'].includes(chain);
 
     return (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -451,7 +499,7 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                                     <span className="text-[var(--text-secondary)] animate-pulse text-[10px]">Calculating...</span>
                                 ) : (
                                     <span className="text-[var(--text-primary)] font-bold">
-                                        {fee !== null && typeof fee === 'number' ? fee.toFixed(6) : '--'} {chain}
+                                        {fee !== null && typeof fee === 'number' ? fee.toFixed(6) : '--'} {isErc20Token ? (chain === 'USDT_BEP20' ? 'BNB' : chain === 'USDT_TRC20' ? 'TRX' : 'ETH') : chain}
                                     </span>
                                 )}
                             </div>
@@ -463,12 +511,12 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Total Deduction</p>
-                                    <p className={`text-xs font-bold ${(fee !== null && (Number(amount) + fee) > balance) || Number(amount) > spendableBalance ? 'text-red-500' : 'text-[var(--text-secondary)]'}`}>
-                                        {fee !== null ? (Number(amount) + fee).toFixed(6) : '--'} {chain}
+                                    <p className={`text-xs font-bold ${(fee !== null && !isErc20Token && (Number(amount) + fee) > balance) || Number(amount) > spendableBalance ? 'text-red-500' : 'text-[var(--text-secondary)]'}`}>
+                                        {fee !== null ? (isErc20Token ? `${Number(amount).toFixed(6)} ${chain} + Gas` : `${(Number(amount) + fee).toFixed(6)} ${chain}`) : '--'}
                                     </p>
                                 </div>
                             </div>
-                            {fee !== null && (Number(amount) + fee) > balance && (
+                            {fee !== null && !isErc20Token && (Number(amount) + fee) > balance && (
                                 <p className="text-[10px] text-red-500 font-bold text-center animate-pulse mt-1">
                                     ⚠️ Total deduction exceeds your available balance
                                 </p>
@@ -483,24 +531,24 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                         </div>
                     )}
 
-                    {hasInsufficientNativeSol && (
+                    {hasInsufficientNativeGas && (
                         <div className="flex items-start gap-2 text-red-500 bg-red-500/5 p-4 rounded-xl text-xs font-bold border border-red-500/20 shadow-inner">
                             <AlertCircle size={16} className="mt-0.5 shrink-0" />
                             <p className="leading-relaxed">
-                                Transaction disabled: You do not have enough native SOL to pay for network fees and token account creation. Please deposit at least 0.0025 SOL to fund operations.
+                                {insufficientGasMsg}
                             </p>
                         </div>
                     )}
 
                     <button
                         onClick={handleSend}
-                        disabled={loading || !to || !amount || hasInsufficientNativeSol || (!privateKey && !mnemonicStorage.getEncrypted(username))}
-                        className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none disabled:active:scale-100 ${(!privateKey && !hasInsufficientNativeSol) ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : (hasInsufficientNativeSol ? 'bg-red-500/50 cursor-not-allowed' : 'bg-green-600 shadow-green-600/25')}`}
+                        disabled={loading || !to || !amount || hasInsufficientNativeGas || (!privateKey && !mnemonicStorage.getEncrypted(username))}
+                        className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none disabled:active:scale-100 ${(!privateKey && !hasInsufficientNativeGas) ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : (hasInsufficientNativeGas ? 'bg-red-500/50 cursor-not-allowed' : 'bg-green-600 shadow-green-600/25')}`}
                     >
                         {loading ? 'Processing...' : (
                             !mnemonicStorage.getEncrypted(username) ? 'Import Phrase to Send' : (!privateKey ? 'Confirm (Sign with Keychain)' : `Send ${amount} ${chain}`)
                         )}
-                        {!loading && !hasInsufficientNativeSol && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
+                        {!loading && !hasInsufficientNativeGas && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
                     </button>
                 </div>
             </div>
