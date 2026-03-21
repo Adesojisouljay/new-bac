@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { shortService, Short } from '../services/shortService';
 import { socketService } from '../../../services/socketService';
@@ -40,6 +40,8 @@ import { formatDistanceToNow } from 'date-fns';
 
 
 
+import { UnifiedDataService } from '../../../services/unified';
+
 interface ShortsFeedProps {
     onClose?: () => void;
     communityId?: string;
@@ -54,7 +56,9 @@ export const ShortsFeed: React.FC<ShortsFeedProps> = ({ onClose, communityId = '
     const [isLoading, setIsLoading] = useState(true);
     const [showShortCreator, setShowShortCreator] = useState(false);
     const [isReplyingGlobal, setIsReplyingGlobal] = useState(false);
+    const [hasInitialScrolled, setHasInitialScrolled] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+    const { shortPermlink } = useParams<{ shortPermlink: string }>();
 
 
 
@@ -92,6 +96,34 @@ export const ShortsFeed: React.FC<ShortsFeedProps> = ({ onClose, communityId = '
             setActiveIndex(index);
         }
     };
+
+    // Deep link scroll interception for initial page loads
+    useEffect(() => {
+        if (shorts.length > 0 && shortPermlink && !hasInitialScrolled) {
+            const idx = shorts.findIndex(s => s.permlink === shortPermlink);
+            if (idx >= 0) {
+                setActiveIndex(idx);
+                setTimeout(() => {
+                    if (containerRef.current) {
+                        containerRef.current.scrollTo({
+                            top: idx * containerRef.current.clientHeight,
+                            behavior: 'instant' as ScrollBehavior
+                        });
+                    }
+                }, 100);
+            }
+            setHasInitialScrolled(true);
+        } else if (shorts.length > 0 && !hasInitialScrolled) {
+            setHasInitialScrolled(true);
+        }
+    }, [shorts, shortPermlink, hasInitialScrolled]);
+
+    // Keep active video in-sync with URL as user scrolls manually
+    useEffect(() => {
+        if (hasInitialScrolled && shorts[activeIndex]) {
+            navigate(`/shorts/${shorts[activeIndex].permlink}`, { replace: true });
+        }
+    }, [activeIndex, shorts, navigate, hasInitialScrolled]);
 
     if (isLoading && shorts.length === 0) {
         return (
@@ -251,6 +283,54 @@ const ShortItem: React.FC<ShortItemProps> = ({
     const [showWeb3Tip, setShowWeb3Tip] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
     const [hasTipped, setHasTipped] = useState(short.hasTipped || false);
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [isTogglingFollow, setIsTogglingFollow] = useState(false);
+    const [isFollowHovered, setIsFollowHovered] = useState(false);
+
+    useEffect(() => {
+        const fetchFollowStatus = async () => {
+            const rawUser = localStorage.getItem('hive_user');
+            const currentUser = rawUser ? rawUser.replace(/^@/, '') : null;
+            if (!currentUser || !short.username) return;
+            try {
+                // Aligning closely with ProfilePage for flawless cross-component follow state detection
+                const profile = await UnifiedDataService.getProfile(short.username, currentUser);
+                if (profile?.metadata?.context?.followed) {
+                    setIsFollowing(true);
+                }
+            } catch (e) {
+                console.error('Failed to fetch follow status via profile context', e);
+            }
+        };
+        fetchFollowStatus();
+    }, [short.username]);
+
+    const handleFollowToggle = async () => {
+        const currentUser = localStorage.getItem('hive_user');
+        if (!currentUser) {
+            showNotification("Please login to follow", 'warning');
+            return;
+        }
+
+        const previousState = isFollowing;
+        setIsFollowing(!previousState);
+        setIsTogglingFollow(true);
+
+        try {
+            const success = await UnifiedDataService.followUser(currentUser, short.username, !previousState);
+            if (success) {
+                showNotification(!previousState ? `Following @${short.username}` : `Unfollowed @${short.username}`, 'success');
+            } else {
+                setIsFollowing(previousState);
+                showNotification("Failed to update follow status", 'error');
+            }
+        } catch (err) {
+            setIsFollowing(previousState);
+            showNotification("Error updating follow status", 'error');
+        } finally {
+            setIsTogglingFollow(false);
+        }
+    };
 
     // Mention State for Reply
     const [mentionQuery, setMentionQuery] = useState('');
@@ -559,9 +639,17 @@ const ShortItem: React.FC<ShortItemProps> = ({
                             <div className="flex flex-col">
                                 <div className="flex items-center gap-2">
                                     <span className="font-black text-lg drop-shadow-lg">@{short.username}</span>
-                                    <button className="bg-[var(--primary-color)] text-[10px] font-black uppercase px-3 py-1 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all">
-                                        Follow
-                                    </button>
+                                    {short.username !== (localStorage.getItem('hive_user') || '').replace(/^@/, '') && (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleFollowToggle(); }}
+                                            onMouseEnter={() => setIsFollowHovered(true)}
+                                            onMouseLeave={() => setIsFollowHovered(false)}
+                                            disabled={isTogglingFollow}
+                                            className="bg-[var(--primary-color)] text-[10px] font-black uppercase px-3 py-1 rounded-full shadow-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50 z-20"
+                                        >
+                                            {isTogglingFollow ? '...' : isFollowing ? (isFollowHovered ? 'Unfollow' : 'Following') : 'Follow'}
+                                        </button>
+                                    )}
                                 </div>
                                 <span className="text-[10px] text-white/60 font-medium">{new Date(short.timestamp).toLocaleDateString()}</span>
                             </div>
@@ -835,7 +923,7 @@ const ShortItem: React.FC<ShortItemProps> = ({
             <ShareModal
                 isOpen={showShareModal}
                 onClose={() => setShowShareModal(false)}
-                url={`${window.location.origin}/post/${short.username}/${short.permlink}`}
+                url={`${window.location.origin}/shorts/${short.permlink}`}
                 title={short.content.caption || `Short by @${short.username}`}
             />
         </div>

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import { CommunityProvider } from './features/community/context/CommunityContext';
 import { Navbar } from './ui/Navbar';
 import { Suspense, lazy } from 'react';
@@ -44,7 +44,8 @@ import { ChatProvider } from './contexts/ChatContext';
 import { SetupPage } from './features/setup/SetupPage';
 
 const AppContent = () => {
-  const { isConfigured, loading } = useConfig();
+  const { isConfigured, loading, config: dynamicConfig } = useConfig();
+  const isGlobalInstance = !dynamicConfig || dynamicConfig.hiveCommunityId === 'global';
 
   if (loading) {
     return (
@@ -76,16 +77,23 @@ const AppContent = () => {
         <Route path="subscribers" element={<Feed />} />
 
         {/* Dynamic Community Routes */}
-        <Route path="c/:communityId" element={<Feed />} />
-        <Route path="c/:communityId/posts" element={<Feed />} />
-        <Route path="c/:communityId/posts/:sort" element={<Feed />} />
-        <Route path="c/:communityId/about" element={<Feed />} />
-        <Route path="c/:communityId/subscribers" element={<Feed />} />
-        <Route path="c/:communityId/activities" element={<Feed />} />
+        {isGlobalInstance ? (
+          <>
+            <Route path="c/:communityId" element={<Feed />} />
+            <Route path="c/:communityId/posts" element={<Feed />} />
+            <Route path="c/:communityId/posts/:sort" element={<Feed />} />
+            <Route path="c/:communityId/about" element={<Feed />} />
+            <Route path="c/:communityId/subscribers" element={<Feed />} />
+            <Route path="c/:communityId/activities" element={<Feed />} />
+          </>
+        ) : (
+          <Route path="c/*" element={<Navigate to="/" replace />} />
+        )}
 
         <Route path="analytics" element={<Analytics />} />
         <Route path="analytics/:username" element={<Analytics />} />
         <Route path="shorts" element={<ShortsFeed />} />
+        <Route path="shorts/:shortPermlink" element={<ShortsFeed />} />
         <Route path="market" element={<Market />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="governance/:tab?" element={<Governance />} />

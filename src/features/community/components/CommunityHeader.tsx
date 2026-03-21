@@ -44,7 +44,7 @@ export function CommunityHeader({ community, isBaseRoute = false, userRole }: Co
                         </div>
 
                         <div className="bg-black/30 backdrop-blur-md border border-white/10 rounded-xl p-4 text-center text-white shadow-xl hover:bg-black/40 transition-all">
-                            <div className="text-2xl font-black drop-shadow-md">{community.pending_rewards}</div>
+                            <div className="text-2xl font-black drop-shadow-md">${community.pending_rewards}</div>
                             <div className="text-xs uppercase tracking-widest font-medium opacity-80 mt-1">Rewards</div>
                         </div>
 

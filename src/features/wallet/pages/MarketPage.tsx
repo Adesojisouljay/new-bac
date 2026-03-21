@@ -80,25 +80,25 @@ export default function MarketPage() {
                     <div>
                         <h2 className="text-xs uppercase font-bold text-[var(--text-secondary)] tracking-wider mb-1">HIVE / HBD Price</h2>
                         <div className="text-2xl font-bold text-[var(--text-primary)]">
-                            {ticker.latest} HBD
+                            {parseFloat(ticker.latest).toFixed(6)} HBD
                         </div>
                     </div>
                     <div>
                         <h2 className="text-xs uppercase font-bold text-[var(--text-secondary)] tracking-wider mb-1">24h Change</h2>
                         <div className={`text-xl font-bold ${parseFloat(ticker.percent_change) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {ticker.percent_change}%
+                            {parseFloat(ticker.percent_change).toFixed(2)}%
                         </div>
                     </div>
                     <div>
                         <h2 className="text-xs uppercase font-bold text-[var(--text-secondary)] tracking-wider mb-1">24h Volume (HIVE)</h2>
                         <div className="text-xl font-bold text-[var(--text-primary)]">
-                            {ticker.hive_volume}
+                            {parseFloat(ticker.hive_volume.split(' ')[0]).toLocaleString(undefined, { maximumFractionDigits: 3 })}
                         </div>
                     </div>
                     <div>
                         <h2 className="text-xs uppercase font-bold text-[var(--text-secondary)] tracking-wider mb-1">24h Volume (HBD)</h2>
                         <div className="text-xl font-bold text-[var(--text-primary)]">
-                            {ticker.hbd_volume}
+                            {parseFloat(ticker.hbd_volume.split(' ')[0]).toLocaleString(undefined, { maximumFractionDigits: 3 })}
                         </div>
                     </div>
                 </div>
@@ -164,7 +164,8 @@ function TradeForm({ type, ticker, balance, username, onSuccess }: { type: 'buy'
 
     useEffect(() => {
         if (ticker && !price) {
-            setPrice(isBuy ? ticker.lowest_ask.split(' ')[0] : ticker.highest_bid.split(' ')[0]);
+            const rawPrice = isBuy ? ticker.lowest_ask.split(' ')[0] : ticker.highest_bid.split(' ')[0];
+            setPrice(parseFloat(rawPrice).toFixed(6));
         }
     }, [ticker, isBuy]);
 

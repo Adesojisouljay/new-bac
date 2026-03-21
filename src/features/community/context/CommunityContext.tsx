@@ -78,19 +78,43 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         if (configLoading) return;
 
+        const baseCommunityId = dynamicConfig?.hiveCommunityId || DEFAULT_CONFIG.id;
+        const isGlobalInstance = baseCommunityId === 'global';
+
         let overrideCommunityId = null;
-        if (location.pathname.startsWith('/c/')) {
+        // Strict mapping: Only allow community overrides via URL if instance is global
+        if (isGlobalInstance && location.pathname.startsWith('/c/')) {
             const parts = location.pathname.split('/');
             if (parts.length > 2 && parts[2]) {
                 overrideCommunityId = parts[2];
             }
         }
 
+        const updateMeta = (configObj: CommunityConfig) => {
+            const isGlobal = configObj.id === 'global' || (!overrideCommunityId && dynamicConfig?.hiveCommunityId === 'global');
+            const faviconUrl = isGlobal 
+                ? '/sovraniche-logo.png' 
+                : (!configObj.logo || configObj.logo.includes('vite.svg')) 
+                    ? `https://images.hive.blog/u/${configObj.id}/avatar` 
+                    : configObj.logo;
+            const pageTitle = isGlobal ? 'Sovraniche' : configObj.name;
+
+            document.title = pageTitle;
+            let link = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
+            if (!link) {
+                link = document.createElement('link');
+                link.rel = 'icon';
+                document.getElementsByTagName('head')[0].appendChild(link);
+            }
+            link.type = 'image/png';
+            link.href = faviconUrl || '/sovraniche-logo.png';
+        };
+
         if (dynamicConfig) {
             const mergedConfig: CommunityConfig = {
                 ...DEFAULT_CONFIG,
                 id: overrideCommunityId || dynamicConfig.hiveCommunityId || DEFAULT_CONFIG.id,
-                name: dynamicConfig.communityName,
+                name: dynamicConfig.communityName || DEFAULT_CONFIG.name,
                 logo: dynamicConfig.logoUrl || DEFAULT_CONFIG.logo,
                 theme: {
                     ...DEFAULT_CONFIG.theme,
@@ -99,6 +123,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
             };
             setConfig(mergedConfig);
             applyTheme(mergedConfig.theme);
+            updateMeta(mergedConfig);
             setIsLoading(false);
         } else {
             const finalConfig = {
@@ -107,6 +132,7 @@ export function CommunityProvider({ children }: { children: ReactNode }) {
             };
             setConfig(finalConfig);
             applyTheme(finalConfig.theme);
+            updateMeta(finalConfig);
             setIsLoading(false);
         }
     }, [dynamicConfig, configLoading, location.pathname]);

@@ -15,6 +15,9 @@ interface CommentCardProps {
 
 export function CommentCard({ post, parentAuthor }: CommentCardProps) {
     const { showNotification } = useNotification();
+    const reputation = post.author_reputation !== undefined ? post.author_reputation : 25;
+    const isLowReputation = reputation < 25;
+    const [isHidden, setIsHidden] = useState(isLowReputation);
     const [voting, setVoting] = useState(false);
     const [voted, setVoted] = useState(false);
     const [downvoting, setDownvoting] = useState(false);
@@ -140,28 +143,44 @@ export function CommentCard({ post, parentAuthor }: CommentCardProps) {
 
     return (
         <article className="bg-[var(--bg-card)] rounded-xl border border-[var(--border-color)] p-4 shadow-sm hover:shadow-md transition-shadow mb-4">
-            <div className="flex gap-4">
+            <div className={`flex gap-4 ${isHidden ? 'opacity-80 grayscale-[50%]' : ''}`}>
                 {/* Avatar */}
                 <div className="flex-shrink-0">
                     <Link to={`/@${post.author}`}>
                         <img
                             src={`https://images.hive.blog/u/${post.author}/avatar/small`}
                             alt={post.author}
-                            className="w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700"
+                            className={`w-10 h-10 rounded-full bg-gray-200 dark:bg-gray-700 ${isHidden ? 'opacity-50' : ''}`}
                         />
                     </Link>
                 </div>
 
                 <div className="flex-grow min-w-0">
                     {/* Header */}
-                    <div className="flex items-baseline gap-2 mb-1">
-                        <Link to={`/@${post.author}`} className="font-bold text-[var(--text-primary)] hover:underline">
-                            @{post.author} ({post.author_reputation || 25})
-                        </Link>
-                        <span className="text-xs text-[var(--text-secondary)]">• {formatRelativeTime(post.created)}</span>
+                    <div className="flex items-baseline justify-between mb-1">
+                        <div className="flex items-baseline gap-2">
+                            <Link to={`/@${post.author}`} className="font-bold text-[var(--text-primary)] hover:underline">
+                                @{post.author} ({reputation})
+                            </Link>
+                            <span className="text-xs text-[var(--text-secondary)]">• {formatRelativeTime(post.created)}</span>
+                        </div>
+                        {isLowReputation && (
+                            <button
+                                onClick={() => setIsHidden(!isHidden)}
+                                className="text-xs text-[var(--primary-color)] font-bold hover:underline ml-4"
+                            >
+                                {isHidden ? "Show Comment" : "Hide"}
+                            </button>
+                        )}
                     </div>
 
-                    {/* Context / Replying to */}
+                    {isHidden ? (
+                        <div className="text-xs text-[var(--text-secondary)] italic py-2">
+                            Comment hidden due to low reputation.
+                        </div>
+                    ) : (
+                        <>
+                            {/* Context / Replying to */}
                     {parentAuthor && (
                         <div className="text-xs text-[var(--text-secondary)] mb-2">
                             Replying to <Link to={`/@${parentAuthor}`} className="hover:underline">@{parentAuthor}</Link>
@@ -290,6 +309,8 @@ export function CommentCard({ post, parentAuthor }: CommentCardProps) {
                                 <CommentCard key={reply.id} post={reply} parentAuthor={post.author} />
                             ))}
                         </div>
+                    )}
+                    </>
                     )}
                 </div>
             </div>
