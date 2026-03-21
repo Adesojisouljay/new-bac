@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { ChevronDown, Check } from 'lucide-react';
 import { hiveClient } from '../../../services/hive/client';
 import { transactionService } from '../../wallet/services/transactionService';
 import { useNotification } from '../../../contexts/NotificationContext';
@@ -10,6 +11,31 @@ interface Witness {
     url: string;
     total_missed: number;
     last_confirmed_block_num: number;
+    running_version: string;
+    hbd_exchange_rate: {
+        base: string;
+        quote: string;
+    };
+    last_hbd_exchange_update: string;
+    props: {
+        account_creation_fee: string;
+        hbd_interest_rate: number;
+    }
+}
+
+function timeAgo(dateString: string) {
+    if (!dateString) return 'Never';
+    const date = new Date(dateString + 'Z');
+    const now = new Date();
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays}d ago`;
 }
 
 interface Proposal {
@@ -49,15 +75,22 @@ export function GovernancePage() {
     const [proposalSearch, setProposalSearch] = useState('');
     const [hasMoreWitnesses, setHasMoreWitnesses] = useState(true);
     const [hasMoreProposals, setHasMoreProposals] = useState(true);
+    const [proposalStatus, setProposalStatus] = useState<'votable' | 'all' | 'upcoming'>('votable');
+    const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
     // Proxy
     const [currentProxy, setCurrentProxy] = useState('');
     const [proxyInput, setProxyInput] = useState('');
     const [settingProxy, setSettingProxy] = useState(false);
 
     useEffect(() => {
+        // Reset feeds when switching tabs or status
+        if (activeTab === 'proposals') setProposals([]);
+        if (activeTab === 'witnesses') setWitnesses([]);
+        setHasMoreWitnesses(true);
+        setHasMoreProposals(true);
         fetchData();
         if (username) fetchUserGovernanceData();
-    }, [username, activeTab]);
+    }, [username, activeTab, proposalStatus]);
 
     const fetchData = async (isLoadMore = false) => {
         if (isLoadMore) setLoadingMore(true);
@@ -80,7 +113,7 @@ export function GovernancePage() {
                     limit: 50,
                     order: 'by_total_votes',
                     order_direction: 'descending',
-                    status: 'all'
+                    status: proposalStatus === 'upcoming' ? 'inactive' : proposalStatus
                 });
 
                 const newProposals = isLoadMore ? [...proposals, ...proposalData.proposals.slice(1)] : proposalData.proposals;
@@ -217,19 +250,64 @@ export function GovernancePage() {
             </header>
 
             <div className="flex flex-col gap-6 mb-8">
-                <div className="relative w-full max-w-2xl mx-auto">
-                    <input
-                        type="text"
-                        placeholder={activeTab === 'witnesses' ? "Search witness name..." : "Search proposal title or creator..."}
-                        value={activeTab === 'witnesses' ? witnessSearch : proposalSearch}
-                        onChange={(e) => {
-                            const val = e.target.value.toLowerCase();
-                            if (activeTab === 'witnesses') setWitnessSearch(val);
-                            else setProposalSearch(val);
-                        }}
-                        className="w-full pl-12 pr-4 py-3 bg-[var(--bg-card)] border border-2 border-[var(--border-color)] rounded-2xl text-base shadow-sm focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] outline-none transition-all placeholder:text-[var(--text-secondary)]"
-                    />
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl opacity-50">🔍</span>
+                <div className="w-full max-w-2xl mx-auto flex flex-col sm:flex-row gap-3">
+                    <div className="relative flex-1">
+                        <input
+                            type="text"
+                            placeholder={activeTab === 'witnesses' ? "Search witness name..." : "Search proposal title or creator..."}
+                            value={activeTab === 'witnesses' ? witnessSearch : proposalSearch}
+                            onChange={(e) => {
+                                const val = e.target.value.toLowerCase();
+                                if (activeTab === 'witnesses') setWitnessSearch(val);
+                                else setProposalSearch(val);
+                            }}
+                            className="w-full pl-12 pr-4 py-3 bg-[var(--bg-card)] border-2 border-[var(--border-color)] rounded-2xl text-base shadow-sm focus:ring-4 focus:ring-[var(--primary-color)]/10 focus:border-[var(--primary-color)] outline-none transition-all placeholder:text-[var(--text-secondary)]"
+                        />
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl opacity-50">🔍</span>
+                    </div>
+                    {activeTab === 'proposals' && (
+                        <div className="relative min-w-[140px]">
+                            <button
+                                onClick={() => setStatusDropdownOpen(!statusDropdownOpen)}
+                                className="w-full h-full flex items-center justify-between px-4 py-3 bg-[var(--bg-card)] border-2 border-[var(--border-color)] rounded-2xl text-sm font-bold text-[var(--text-primary)] hover:border-[var(--primary-color)] transition-all"
+                            >
+                                <span>{proposalStatus === 'votable' ? 'Active' : proposalStatus === 'upcoming' ? 'Upcoming' : 'All'}</span>
+                                <ChevronDown className={`w-4 h-4 ml-2 transition-transform text-[var(--text-secondary)] ${statusDropdownOpen ? 'rotate-180' : ''}`} />
+                            </button>
+                            
+                            {statusDropdownOpen && (
+                                <>
+                                    <div 
+                                        className="fixed inset-0 z-40"
+                                        onClick={() => setStatusDropdownOpen(false)}
+                                    />
+                                    <div className="absolute top-14 right-0 w-full min-w-[160px] bg-[var(--bg-card)] border-2 border-[var(--border-color)] rounded-2xl shadow-xl z-50 overflow-hidden py-2 animate-in fade-in slide-in-from-top-2">
+                                        <button
+                                            onClick={() => { setProposalStatus('votable'); setStatusDropdownOpen(false); }}
+                                            className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--bg-canvas)] transition-colors"
+                                        >
+                                            <span>Active</span>
+                                            {proposalStatus === 'votable' && <Check className="w-4 h-4 text-[var(--primary-color)]" />}
+                                        </button>
+                                        <button
+                                            onClick={() => { setProposalStatus('upcoming'); setStatusDropdownOpen(false); }}
+                                            className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--bg-canvas)] transition-colors"
+                                        >
+                                            <span>Upcoming</span>
+                                            {proposalStatus === 'upcoming' && <Check className="w-4 h-4 text-[var(--primary-color)]" />}
+                                        </button>
+                                        <button
+                                            onClick={() => { setProposalStatus('all'); setStatusDropdownOpen(false); }}
+                                            className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-bold text-[var(--text-primary)] hover:bg-[var(--bg-canvas)] transition-colors"
+                                        >
+                                            <span>All</span>
+                                            {proposalStatus === 'all' && <Check className="w-4 h-4 text-[var(--primary-color)]" />}
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex p-1.5 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)] flex max-w-sm mx-auto w-full shadow-sm">
@@ -297,12 +375,16 @@ export function GovernancePage() {
                     )}
 
                     {/* Witness Table */}
-                    <div className="bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] overflow-hidden">
-                        <table className="w-full text-left">
+                    <div className="bg-[var(--bg-card)] rounded-3xl border border-[var(--border-color)] overflow-x-auto">
+                        <table className="w-full text-left min-w-[800px]">
                             <thead className="bg-[var(--bg-canvas)]/50 text-[10px] uppercase font-bold tracking-widest text-[var(--text-secondary)]">
                                 <tr>
                                     <th className="px-6 py-4">Rank</th>
                                     <th className="px-6 py-4">Witness</th>
+                                    <th className="px-6 py-4">Version</th>
+                                    <th className="px-6 py-4">Miss</th>
+                                    <th className="px-6 py-4 whitespace-nowrap">Price Feed</th>
+                                    <th className="px-6 py-4">APR</th>
                                     <th className="px-6 py-4">Votes</th>
                                     <th className="px-6 py-4 text-right">Action</th>
                                 </tr>
@@ -316,18 +398,48 @@ export function GovernancePage() {
                                             <tr key={w.owner} className="hover:bg-[var(--bg-canvas)] transition-colors group">
                                                 <td className="px-6 py-4 text-sm font-bold text-[var(--text-secondary)]">#{i + 1}</td>
                                                 <td className="px-6 py-4">
-                                                    <div className="flex flex-col">
-                                                        <span className="font-bold text-[var(--text-primary)] group-hover:text-[var(--primary-color)] transition-colors">@{w.owner}</span>
-                                                        <a href={w.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[var(--text-secondary)] hover:underline truncate max-w-[150px]">Link</a>
+                                                    <div className="flex items-center gap-3">
+                                                        <img 
+                                                            src={`https://images.hive.blog/u/${w.owner}/avatar/small`} 
+                                                            alt={w.owner} 
+                                                            className="w-10 h-10 rounded-full bg-[var(--bg-canvas)] border border-[var(--border-color)] object-cover"
+                                                            onError={(e) => { (e.target as HTMLImageElement).src = `https://images.hive.blog/u/hive-106130/avatar/small`; }}
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-bold text-[var(--text-primary)] group-hover:text-[var(--primary-color)] transition-colors text-base">@{w.owner}</span>
+                                                                <a href={w.url} target="_blank" rel="noopener noreferrer" className="text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-colors" title="View Proposal details or external site">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                                                                </a>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 text-sm text-[var(--text-primary)]">
-                                                    {(parseFloat(w.votes) / 1e12).toFixed(2)}T
+                                                <td className="px-6 py-4 text-xs font-mono">
+                                                    <span className="bg-[var(--primary-color)]/10 text-[var(--primary-color)] px-2 py-1 rounded-lg font-bold border border-[var(--primary-color)]/20 whitespace-nowrap">{w.running_version}</span>
+                                                </td>
+                                                <td className="px-6 py-4 text-sm font-medium text-[var(--text-primary)]">
+                                                    {w.total_missed?.toLocaleString() || 0}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-bold text-[var(--text-primary)] whitespace-nowrap">{parseFloat(w.hbd_exchange_rate?.base || '0').toFixed(3)} HBD</span>
+                                                        <span className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider whitespace-nowrap">{timeAgo(w.last_hbd_exchange_update)}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-sm font-bold text-[var(--text-primary)]">
+                                                    {w.props?.hbd_interest_rate ? (w.props.hbd_interest_rate / 100).toFixed(1) : 0}%
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-bold text-[var(--text-primary)]">{(parseFloat(w.votes) / 1e12).toFixed(1)}T</span>
+                                                        <span className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">VESTS</span>
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
                                                     <button
                                                         onClick={() => handleWitnessVote(w.owner, !isVoted)}
-                                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${isVoted ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white' : 'bg-[var(--primary-color)]/10 text-[var(--primary-color)] border-[var(--primary-color)]/20 hover:bg-[var(--primary-color)] hover:text-white'}`}
+                                                        className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all border ${isVoted ? 'bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500 hover:text-white' : 'bg-[var(--primary-color)]/10 text-[var(--primary-color)] border-[var(--primary-color)]/20 hover:bg-[var(--primary-color)] hover:text-white shadow-sm'}`}
                                                     >
                                                         {isVoted ? 'Unvote' : 'Vote'}
                                                     </button>
@@ -353,9 +465,26 @@ export function GovernancePage() {
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {proposals
-                        .filter(p => p.subject.toLowerCase().includes(proposalSearch.toLowerCase()) || p.creator.toLowerCase().includes(proposalSearch.toLowerCase()))
-                        .map(p => {
+                    {(() => {
+                        const filteredProposals = proposals
+                            .filter(p => p.subject.toLowerCase().includes(proposalSearch.toLowerCase()) || p.creator.toLowerCase().includes(proposalSearch.toLowerCase()))
+                            .sort((a, b) => {
+                                if (a.status === 'active' && b.status !== 'active') return -1;
+                                if (a.status !== 'active' && b.status === 'active') return 1;
+                                return 0;
+                            });
+
+                        if (filteredProposals.length === 0 && !loading) {
+                            return (
+                                <div className="text-center p-12 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl my-8">
+                                    <span className="text-5xl block mb-4 opacity-80">📭</span>
+                                    <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">No Proposals Found</h3>
+                                    <p className="text-[var(--text-secondary)]">There are currently no {proposalStatus === 'upcoming' ? 'upcoming' : ''} proposals matching your selected filters.</p>
+                                </div>
+                            );
+                        }
+
+                        return filteredProposals.map(p => {
                             const isVoted = votedProposals.includes(p.proposal_id);
                             return (
                                 <div key={p.proposal_id} className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-6 transition-all hover:shadow-lg group">
@@ -401,24 +530,23 @@ export function GovernancePage() {
                                         <div className="bg-[var(--bg-canvas)] p-3 rounded-2xl border border-[var(--border-color)]">
                                             <span className="block text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest mb-1">Votes</span>
                                             <span className="text-sm font-bold text-[var(--text-primary)]">
-                                                {(parseFloat(p.total_votes) / 1e12).toFixed(2)}T HP
+                                                {(parseFloat(p.total_votes) / 1e12).toFixed(2)}T VESTS
                                             </span>
                                         </div>
                                     </div>
 
                                     <div className="flex justify-end">
-                                        <a
-                                            href={`https://peakd.com/proposals/${p.proposal_id}`}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-xs font-bold text-[var(--primary-color)] hover:underline flex items-center gap-1"
+                                        <button
+                                            onClick={() => navigate(`/post/${p.creator}/${p.permlink}`)}
+                                            className="text-xs font-bold text-[var(--primary-color)] hover:underline flex items-center gap-1 cursor-pointer"
                                         >
                                             Read Proposal Details ↗
-                                        </a>
+                                        </button>
                                     </div>
                                 </div>
                             );
-                        })}
+                        });
+                    })()}
 
                     {hasMoreProposals && proposalSearch === '' && (
                         <div className="py-4 text-center">

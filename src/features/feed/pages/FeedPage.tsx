@@ -99,6 +99,29 @@ export default function FeedPage() {
     const [excludeReblogs, setExcludeReblogs] = useState(false);
     const [user] = useState<string | null>(localStorage.getItem('hive_user'));
 
+    // Strict community enforcement: Redirect if trying to visit /c/communityId on a strict instance
+    // Note: The context lock prevents rendering external config, this redirects to clear the URL payload.
+    useEffect(() => {
+        if (config && config.id !== 'global' && communityId && communityId !== config.id) {
+            navigate('/', { replace: true });
+        }
+    }, [config, communityId, navigate]);
+
+    const renderWithLinks = (text: string) => {
+        if (!text) return text;
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const parts = text.split(urlRegex);
+        return parts.map((part, i) => 
+            urlRegex.test(part) ? (
+                <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">
+                    {part}
+                </a>
+            ) : (
+                <span key={i}>{part}</span>
+            )
+        );
+    };
+
     // Dropdown States
     const [showMoreFilters, setShowMoreFilters] = useState(false);
     const [showReblogFilters, setShowReblogFilters] = useState(false);
@@ -757,7 +780,7 @@ export default function FeedPage() {
                         <div className="bg-[var(--bg-card)] rounded-xl shadow-sm p-8 border border-[var(--border-color)]">
                             <h2 className="text-2xl font-bold mb-4 text-[var(--text-primary)]">About {community.title}</h2>
                             <div className="prose max-w-none text-[var(--text-secondary)]">
-                                <p className="whitespace-pre-wrap">{community.description || community.about}</p>
+                                <p className="whitespace-pre-wrap">{renderWithLinks(community.description || community.about || '')}</p>
                             </div>
                         </div>
                     )}

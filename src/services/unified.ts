@@ -35,6 +35,12 @@ export interface Post {
     // Community role fields from bridge API
     author_role?: string;  // e.g. 'owner', 'admin', 'mod', 'member', 'guest'
     author_title?: string; // Custom title set by community (e.g. 'Lead Dev')
+    // Thread fields
+    parent_author?: string;
+    parent_permlink?: string;
+    root_author?: string;
+    root_permlink?: string;
+    depth?: number;
 }
 
 export interface Subscriber {
@@ -356,6 +362,37 @@ export const UnifiedDataService = {
     },
 
     /**
+     * Fetches the list of users that follow a specific user.
+     * condenser_api.get_followers is paginated with a max limit of 100 per request.
+     */
+    getFollowers: async (username: string, limit: number = 1000): Promise<string[]> => {
+        try {
+            let followers: string[] = [];
+            let startAccount = '';
+
+            while (followers.length < limit) {
+                const requestLimit = Math.min(100, limit - followers.length + (startAccount ? 1 : 0));
+                const result = await hiveClient.call('condenser_api', 'get_followers', [username, startAccount, 'blog', requestLimit]);
+
+                if (!result || !Array.isArray(result) || result.length === 0) break;
+
+                const accounts = startAccount ? result.slice(1) : result;
+                if (accounts.length === 0) break;
+
+                followers = followers.concat(accounts.map((item: any) => item.follower));
+                startAccount = result[result.length - 1].follower;
+
+                if (result.length < requestLimit) break;
+            }
+
+            return followers;
+        } catch (error) {
+            console.error('Failed to fetch followers list:', error);
+            return [];
+        }
+    },
+
+    /**
      * Fetches the list of communities that a specific user is subscribed to.
      */
     getSubscriptions: async (username: string): Promise<string[]> => {
@@ -412,9 +449,30 @@ export const UnifiedDataService = {
                         author_reputation: UnifiedDataService.formatReputation(fallback.author_reputation),
                         cashout_time: fallback.cashout_time,
                         max_accepted_payout: fallback.max_accepted_payout,
-                        percent_hbd: fallback.percent_hbd
+                        percent_hbd: fallback.percent_hbd,
+                        parent_author: fallback.parent_author,
+                        parent_permlink: fallback.parent_permlink,
+                        root_author: fallback.root_author,
+                        root_permlink: fallback.root_permlink,
+                        depth: fallback.depth
                         // author_role / author_title not available from get_content fallback
                     };
+                }
+
+                let root_author = result.root_author;
+                let root_permlink = result.root_permlink;
+                
+                // Bridge API sometimes omits root info for comments
+                if (result.depth > 0 && !root_author) {
+                    try {
+                        const content = await hiveClient.database.call('get_content', [author, permlink]);
+                        if (content && content.root_author) {
+                            root_author = content.root_author;
+                            root_permlink = content.root_permlink;
+                        }
+                    } catch (e) {
+                        console.warn('Failed to fetch root details for comment', e);
+                    }
                 }
 
                 // Explicitly fetch reblogged_by for single posts to be robust
@@ -455,7 +513,12 @@ export const UnifiedDataService = {
                     max_accepted_payout: result.max_accepted_payout || '1000000.000 HBD',
                     percent_hbd: result.percent_hbd || 10000,
                     author_role: result.author_role,
-                    author_title: result.author_title
+                    author_title: result.author_title,
+                    parent_author: result.parent_author,
+                    parent_permlink: result.parent_permlink,
+                    root_author,
+                    root_permlink,
+                    depth: result.depth
                 };
             } catch (hiveError) {
                 console.error('Hive fetch failed:', hiveError);
@@ -854,9 +917,10 @@ export const UnifiedDataService = {
      * Fetches user posts specifically within a community.
      * Note: Bridge API doesn't support direct filtering, so we filter locally.
      */
-    getUserCommunityPosts: async (
+    getUserCommunityFeed: async (
         username: string,
         communityId: string,
+        type: 'blog' | 'posts' | 'comments' | 'replies' = 'posts',
         limit: number = 20,
         start_author?: string,
         start_permlink?: string
@@ -877,7 +941,7 @@ export const UnifiedDataService = {
                 attempts++;
                 const result = await UnifiedDataService.getUserFeed(
                     cleanUsername,
-                    'posts', // Switch back to posts to avoid reblog noise
+                    type,
                     FETCH_BATCH_SIZE,
                     current_start_author,
                     current_start_permlink

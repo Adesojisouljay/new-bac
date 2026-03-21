@@ -1,15 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { NotificationService, HiveNotification } from '../../../services/notifications';
+import { useCommunity } from '../../community/context/CommunityContext';
+import { UnifiedDataService } from '../../../services/unified';
 
 interface NotificationDropdownProps {
     username: string;
 }
 
 export function NotificationDropdown({ username }: NotificationDropdownProps) {
+    const { config } = useCommunity();
+    const isGlobalInstance = !config || config.id === 'global';
+
     const [isOpen, setIsOpen] = useState(false);
-    const [notifications, setNotifications] = useState<HiveNotification[]>([]);
+    const [allNotifications, setAllNotifications] = useState<HiveNotification[]>([]);
+    const [filteredNotifications, setFilteredNotifications] = useState<HiveNotification[]>([]);
     const [loading, setLoading] = useState(false);
+    const [filtering, setFiltering] = useState(false);
+    const [communityOnly, setCommunityOnly] = useState(!isGlobalInstance);
     const [unreadCount, setUnreadCount] = useState(0);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -35,14 +43,63 @@ export function NotificationDropdown({ username }: NotificationDropdownProps) {
                 }
                 return true;
             })
-            .sort((a, b) =>
-                new Date(b.date).getTime() - new Date(a.date).getTime()
-            ).slice(0, 30);
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+            .slice(0, 30);
 
-        setNotifications(combined);
-        setUnreadCount(NotificationService.getUnreadCount(combined, lastCheckedId));
+        setAllNotifications(combined);
         setLoading(false);
     };
+
+    useEffect(() => {
+        let isMounted = true;
+        
+        const filterNotifications = async () => {
+            if (!communityOnly || isGlobalInstance || !config?.id) {
+                setFilteredNotifications(allNotifications);
+                setUnreadCount(NotificationService.getUnreadCount(allNotifications, lastCheckedId));
+                return;
+            }
+            
+            setFiltering(true);
+            const passed: HiveNotification[] = [];
+            
+            const chunkSize = 10;
+            for (let i = 0; i < allNotifications.length; i += chunkSize) {
+                const chunk = allNotifications.slice(i, i + chunkSize);
+                const results = await Promise.all(chunk.map(async (n) => {
+                    if (n.id.startsWith('local_') || n.id.startsWith('hive_')) return n;
+                    if (n.url) {
+                        try {
+                            const parts = n.url.split('/');
+                            if (parts.length >= 2) {
+                                let author = parts[0].replace('@', '');
+                                let permlink = parts[1];
+                                const post = await UnifiedDataService.getPost(author, permlink).catch(() => null);
+                                if (post && post.community === config.id) return n;
+                            }
+                        } catch(e) {}
+                    }
+                    return null;
+                }));
+                passed.push(...(results.filter(Boolean) as HiveNotification[]));
+            }
+            
+            if (isMounted) {
+                setFilteredNotifications(passed);
+                setUnreadCount(NotificationService.getUnreadCount(passed, lastCheckedId));
+                setFiltering(false);
+            }
+        };
+
+        if (allNotifications.length > 0) {
+            filterNotifications();
+        } else {
+            setFilteredNotifications([]);
+            setUnreadCount(0);
+        }
+
+        return () => { isMounted = false; };
+    }, [allNotifications, communityOnly, config?.id, isGlobalInstance, lastCheckedId]);
 
     useEffect(() => {
         if (username) {
@@ -75,8 +132,8 @@ export function NotificationDropdown({ username }: NotificationDropdownProps) {
     const handleToggle = () => {
         if (!isOpen) {
             setIsOpen(true);
-            if (notifications.length > 0) {
-                localStorage.setItem(`last_notification_${username}`, notifications[0].id);
+            if (filteredNotifications.length > 0) {
+                localStorage.setItem(`last_notification_${username}`, filteredNotifications[0].id);
                 setUnreadCount(0);
             }
         } else {
@@ -114,26 +171,43 @@ export function NotificationDropdown({ username }: NotificationDropdownProps) {
 
             {isOpen && (
                 <div className="absolute right-0 mt-2 w-80 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in duration-200">
-                    <div className="p-4 border-b border-[var(--border-color)] flex justify-between items-center bg-[var(--bg-canvas)]/50">
-                        <h3 className="font-bold text-[var(--text-primary)]">Notifications</h3>
-                        <Link to="/notifications" className="text-xs text-[var(--primary-color)] hover:underline" onClick={() => setIsOpen(false)}>
-                            View All
-                        </Link>
+                    <div className="p-3 flex flex-col gap-2 border-b border-[var(--border-color)] bg-[var(--bg-canvas)]/50">
+                        <div className="flex justify-between items-center">
+                            <h3 className="font-bold text-[var(--text-primary)]">Notifications</h3>
+                            <Link to="/notifications" className="text-xs text-[var(--primary-color)] hover:underline" onClick={() => setIsOpen(false)}>
+                                View All
+                            </Link>
+                        </div>
+                        {!isGlobalInstance && (
+                            <label className="flex items-center gap-2 cursor-pointer self-start">
+                               <span className={`text-[10px] font-bold uppercase tracking-wider ${!communityOnly ? 'text-[var(--text-secondary)]' : 'text-[var(--primary-color)]'}`}>
+                                   {config?.name}
+                               </span>
+                               <div className="relative flex items-center">
+                                   <input type="checkbox" className="sr-only" checked={communityOnly} onChange={(e) => setCommunityOnly(e.target.checked)} disabled={filtering} />
+                                   <div className={`block w-6 h-3 rounded-full transition-colors ${communityOnly ? 'bg-[var(--primary-color)]' : 'bg-gray-600'}`}></div>
+                                   <div className={`absolute left-0.5 top-0.5 bg-white w-2 h-2 rounded-full transition-transform ${communityOnly ? 'translate-x-3' : ''}`}></div>
+                               </div>
+                               <span className={`text-[10px] font-bold uppercase tracking-wider ${communityOnly ? 'text-[var(--text-secondary)]' : 'text-white'}`}>
+                                   Global
+                               </span>
+                            </label>
+                        )}
                     </div>
 
                     <div className="max-h-[400px] overflow-y-auto">
-                        {loading && notifications.length === 0 ? (
+                        {(loading || filtering) && filteredNotifications.length === 0 ? (
                             <div className="p-10 text-center text-[var(--text-secondary)]">
-                                <div className="animate-spin mb-2">⏳</div>
+                                <div className="animate-spin mb-2 w-5 h-5 border-2 border-[var(--primary-color)] border-t-transparent mx-auto rounded-full"></div>
                                 <p className="text-xs">Loading...</p>
                             </div>
-                        ) : notifications.length === 0 ? (
+                        ) : filteredNotifications.length === 0 ? (
                             <div className="p-10 text-center text-[var(--text-secondary)]">
                                 <p className="text-sm">No notifications yet</p>
                             </div>
                         ) : (
                             <div className="divide-y divide-[var(--border-color)]">
-                                {notifications.map((n) => (
+                                {filteredNotifications.map((n) => (
                                     <Link
                                         key={n.id}
                                         to={n.id.startsWith('local_') ? `/${username}/wallet` : `/post/${n.url}`}

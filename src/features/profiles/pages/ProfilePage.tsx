@@ -4,8 +4,25 @@ import { UnifiedDataService, Post } from '../../../services/unified';
 import { PostCard } from '../../feed/components/PostCard';
 import { CommentCard } from '../components/CommentCard';
 import { WalletView } from '../components/WalletView';
+import { FollowListModal } from '../components/FollowListModal';
 import { useCommunity } from '../../community/context/CommunityContext';
 import { MapPin, Globe, Calendar, Rss, Shield, Search, ChevronDown, X } from 'lucide-react';
+
+const renderTextWithLinks = (text: string) => {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    return parts.map((part, i) => {
+        if (part.match(urlRegex)) {
+            return (
+                <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">
+                    {part}
+                </a>
+            );
+        }
+        return part;
+    });
+};
 
 export default function ProfilePage() {
     const params = useParams();
@@ -22,20 +39,17 @@ export default function ProfilePage() {
     const [profile, setProfile] = useState<any>(null);
 
     const isGlobal = config?.id === 'global';
+    const [communityOnly, setCommunityOnly] = useState(!isGlobal);
 
-    // valid tabs - Prioritize the community tab for platform focus
+    // valid tabs - Default standard user views
     const validTabs = useMemo(() => {
-        const tabs = ['community', 'blog', 'posts', 'comments', 'replies', 'wallet'];
-        if (isGlobal) {
-            return tabs.filter(t => t !== 'community');
-        }
-        return tabs;
-    }, [isGlobal]);
+        return ['blog', 'posts', 'comments', 'replies', 'wallet'];
+    }, []);
 
     const activeTab = useMemo(() => {
         if (section && validTabs.includes(section)) return section;
-        return isGlobal ? 'blog' : 'community';
-    }, [section, validTabs, isGlobal]);
+        return 'blog';
+    }, [section, validTabs]);
 
     const [feed, setFeed] = useState<Post[]>([]);
     const [wallet, setWallet] = useState<any>(null);
@@ -50,6 +64,9 @@ export default function ProfilePage() {
     const [isFollowing, setIsFollowing] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const [actionLoading, setActionLoading] = useState(false);
+
+    const [followModalOpen, setFollowModalOpen] = useState(false);
+    const [followModalType, setFollowModalType] = useState<'followers' | 'following'>('followers');
 
     useEffect(() => {
         if (!username) return;
@@ -75,7 +92,7 @@ export default function ProfilePage() {
             return;
         }
         setActionLoading(true);
-        const success = await UnifiedDataService.followUser(currentUser, username!, isFollowing);
+        const success = await UnifiedDataService.followUser(currentUser, username!, !isFollowing);
         if (success) {
             setIsFollowing(!isFollowing);
             // Optimistically update stats if we want, but usually better to wait for indexer
@@ -119,23 +136,24 @@ export default function ProfilePage() {
                     ]);
                     setWallet({ ...walletData, history, username }); // Store username to invalidate on change
                 }
-            } else if (activeTab === 'community') {
-                if (config?.id) {
-                    const data = await UnifiedDataService.getUserCommunityPosts(username, config.id);
+            } else {
+                const type = activeTab as 'blog' | 'posts' | 'comments' | 'replies';
+                if (communityOnly && config?.id && config.id !== 'global') {
+                    const data = await UnifiedDataService.getUserCommunityFeed(username, config.id, type);
+                    setFeed(data);
+                    if (data.length < 20) setHasMore(false);
+                } else {
+                    const data = await UnifiedDataService.getUserFeed(username, type);
                     setFeed(data);
                     if (data.length < 20) setHasMore(false);
                 }
-            } else {
-                const data = await UnifiedDataService.getUserFeed(username, activeTab as 'blog' | 'posts' | 'comments' | 'replies');
-                setFeed(data);
-                if (data.length < 20) setHasMore(false);
             }
 
             setContentLoading(false);
         };
 
         fetchContent();
-    }, [username, activeTab, config?.id]);
+    }, [username, activeTab, config?.id, communityOnly]);
 
     // Infinite Scroll Handler
     useEffect(() => {
@@ -163,21 +181,23 @@ export default function ProfilePage() {
 
         try {
             let newPosts: Post[] = [];
+            const type = activeTab as 'blog' | 'posts' | 'comments' | 'replies';
+            
+            if (activeTab === 'wallet') return;
 
-            if (activeTab === 'community') {
-                if (config?.id) {
-                    newPosts = await UnifiedDataService.getUserCommunityPosts(
-                        username!,
-                        config.id,
-                        20,
-                        lastPost.author,
-                        lastPost.permlink
-                    );
-                }
+            if (communityOnly && config?.id && config.id !== 'global') {
+                newPosts = await UnifiedDataService.getUserCommunityFeed(
+                    username!,
+                    config.id,
+                    type,
+                    20,
+                    lastPost.author,
+                    lastPost.permlink
+                );
             } else {
                 newPosts = await UnifiedDataService.getUserFeed(
                     username!,
-                    activeTab as 'blog' | 'posts' | 'comments' | 'replies',
+                    type,
                     20,
                     lastPost.author,
                     lastPost.permlink
@@ -288,7 +308,7 @@ export default function ProfilePage() {
                                 {/* Bio */}
                                 {profile?.metadata?.profile?.about ? (
                                     <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-6 whitespace-pre-wrap">
-                                        {profile.metadata.profile.about}
+                                        {renderTextWithLinks(profile.metadata.profile.about)}
                                     </p>
                                 ) : (
                                     <p className="text-sm text-[var(--text-secondary)] italic mb-6">No bio provided.</p>
@@ -331,12 +351,18 @@ export default function ProfilePage() {
 
                                 {/* Stats Block */}
                                 <div className="flex justify-between items-center py-3 border-y border-[var(--border-color)] mb-4">
-                                    <div className="text-center flex-1">
+                                    <div 
+                                        className="text-center flex-1 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors p-1.5 -mx-1.5 rounded-lg"
+                                        onClick={() => { setFollowModalType('followers'); setFollowModalOpen(true); }}
+                                    >
                                         <span className="block text-xs text-[var(--text-secondary)] uppercase font-bold tracking-wider">Followers</span>
                                         <span className="text-sm font-bold text-[var(--text-primary)]">{profile?.stats?.followers?.toLocaleString() || 0}</span>
                                     </div>
                                     <div className="w-px h-6 bg-[var(--border-color)]" />
-                                    <div className="text-center flex-1">
+                                    <div 
+                                        className="text-center flex-1 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors p-1.5 -mx-1.5 rounded-lg"
+                                        onClick={() => { setFollowModalType('following'); setFollowModalOpen(true); }}
+                                    >
                                         <span className="block text-xs text-[var(--text-secondary)] uppercase font-bold tracking-wider">Following</span>
                                         <span className="text-sm font-bold text-[var(--text-primary)]">{profile?.stats?.following?.toLocaleString() || 0}</span>
                                     </div>
@@ -428,6 +454,26 @@ export default function ProfilePage() {
 
                 {/* Right Column - Navigation Tabs & Main Content Feed */}
                 <div className="lg:col-span-9 space-y-6">
+                    {/* Universal Context Toggle */}
+                    {!isGlobal && activeTab !== 'wallet' && (
+                        <div className="flex bg-[var(--bg-card)] border border-[var(--border-color)] px-4 py-3 rounded-2xl md:hidden lg:flex items-center justify-between shadow-sm">
+                            <h3 className="font-bold text-[var(--text-primary)] leading-none text-sm hidden sm:block">Context Bound</h3>
+                            <label className="flex items-center gap-3 cursor-pointer ml-auto">
+                                <span className={`text-[11px] font-bold uppercase tracking-wider ${!communityOnly ? 'text-[var(--text-secondary)]' : 'text-[var(--primary-color)]'}`}>
+                                    {config?.name} Only
+                                </span>
+                                <div className="relative flex items-center">
+                                    <input type="checkbox" className="sr-only" checked={communityOnly} onChange={(e) => setCommunityOnly(e.target.checked)} disabled={contentLoading} />
+                                    <div className={`block w-10 h-6 rounded-full transition-colors ${communityOnly ? 'bg-[var(--primary-color)]' : 'bg-gray-600'}`}></div>
+                                    <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${communityOnly ? 'translate-x-4' : ''}`}></div>
+                                </div>
+                                <span className={`text-[11px] font-bold uppercase tracking-wider ${communityOnly ? 'text-[var(--text-secondary)]' : 'text-[var(--text-primary)]'}`}>
+                                    Global Identity
+                                </span>
+                            </label>
+                        </div>
+                    )}
+
                     {/* Floating Glass Navigation Tabs & Search */}
                     <div className="relative md:sticky md:top-[84px] z-20 mb-2 flex items-center justify-end gap-2 md:justify-between w-full h-[52px]">
                         {/* Mobile & Desktop Tabs Group */}
@@ -590,6 +636,15 @@ export default function ProfilePage() {
                     </div>
                 </div>
             </div>
+
+            {followModalOpen && (
+                <FollowListModal
+                    isOpen={followModalOpen}
+                    onClose={() => setFollowModalOpen(false)}
+                    type={followModalType}
+                    username={username}
+                />
+            )}
         </div>
     );
 }

@@ -75,25 +75,25 @@ export function WalletActionsModal({ isOpen, onClose, type, username, initialDat
 
             switch (type) {
                 case 'transfer':
-                    op = { type: 'transfer', username, to, amount, memo, currency };
+                    op = { type: 'transfer', username, to, amount: parseFloat(amount).toFixed(3), memo, currency };
                     break;
                 case 'powerup':
-                    op = { type: 'power_up', username, to, amount };
+                    op = { type: 'power_up', username, to, amount: parseFloat(amount).toFixed(3) };
                     break;
                 case 'powerdown':
-                    op = { type: 'power_down', username, amount };
+                    op = { type: 'power_down', username, amount: parseFloat(amount).toFixed(3) };
                     break;
                 case 'delegate':
-                    op = { type: 'delegate', username, delegatee: to, amount };
+                    op = { type: 'delegate', username, delegatee: to, amount: parseFloat(amount).toFixed(3) };
                     break;
                 case 'delegate_rc':
                     op = { type: 'delegate_rc', username, delegatee: to, amount: parseFloat(amount) * 1e9 }; // Convert B to raw units
                     break;
                 case 'deposit_savings':
-                    op = { type: 'deposit_savings', username, to, amount };
+                    op = { type: 'deposit_savings', username, to, amount: parseFloat(amount).toFixed(3) };
                     break;
                 case 'withdraw_savings':
-                    op = { type: 'withdraw_savings', username, to, amount };
+                    op = { type: 'withdraw_savings', username, to, amount: parseFloat(amount).toFixed(3) };
                     break;
                 default:
                     throw new Error("Unknown operation type");

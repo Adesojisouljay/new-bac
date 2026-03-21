@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { UnifiedDataService, Post } from '../../../services/unified';
 import HiveMarkdown from '../../../components/HiveMarkdown';
 import { CommentBox } from '../components/CommentBox';
@@ -17,7 +17,9 @@ import { Web3TipModal } from '../../wallet/components/Web3TipModal';
 
 
 export default function PostViewPage() {
-    const { author, permlink } = useParams();
+    const { author: rawAuthor, permlink } = useParams();
+    const navigate = useNavigate();
+    const author = rawAuthor?.replace('@', '');
     const { showNotification, showConfirm } = useNotification();
     const { config } = useCommunity();
     const [post, setPost] = useState<Post | null>(null);
@@ -114,6 +116,14 @@ export default function PostViewPage() {
                 const observer = localStorage.getItem('hive_user') || '';
                 const data = await UnifiedDataService.getPost(author, permlink, observer);
                 if (data) {
+                    // Enforce Community Application Sandboxing boundaries
+                    if (config?.id && config.id !== 'global') {
+                        if (data.community !== config.id) {
+                            setError("This post is not available in this community.");
+                            setLoading(false);
+                            return;
+                        }
+                    }
                     setPost(data);
 
                 } else {
@@ -177,8 +187,12 @@ export default function PostViewPage() {
         async function loadSuggestedPosts() {
             setLoadingSuggestedPosts(true);
             try {
-                // Fetch trending global posts for discovery
-                const posts = await UnifiedDataService.getCommunityFeed('global', 'trending', 15);
+                // Fetch trending globally, or fetch strictly from the configured community origin
+                const fetchTarget = (config?.id && config.id !== 'global')
+                    ? config.id
+                    : 'global';
+                
+                const posts = await UnifiedDataService.getCommunityFeed(fetchTarget, 'trending', 15);
                 // Filter out current author's posts and current post to ensure diversity
                 setSuggestedPosts(posts.filter(p => p.author !== author && p.permlink !== permlink).slice(0, 5));
             } catch (err) {
@@ -694,10 +708,35 @@ export default function PostViewPage() {
                         ref={mainContentRef}
                         className="min-w-0 h-full lg:overflow-y-auto lg:overscroll-contain scrollbar-hide lg:pb-32 lg:pt-8 relative group/main"
                     >
-                        <Link to="/" className="inline-flex items-center gap-2 mb-12 text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-all group px-4 lg:px-0">
+                        <button 
+                            onClick={() => {
+                                if (window.history.length > 2) {
+                                    navigate(-1);
+                                } else {
+                                    navigate('/');
+                                }
+                            }}
+                            className="inline-flex items-center gap-2 mb-12 text-[10px] uppercase tracking-[0.2em] font-bold text-[var(--text-secondary)] hover:text-[var(--primary-color)] transition-all group px-4 lg:px-0 cursor-pointer bg-transparent border-none appearance-none"
+                        >
                             <ChevronLeft size={14} className="group-hover:-translate-x-1 transition-transform" />
-                            Back to Discovery
-                        </Link>
+                            Go Back
+                        </button>
+
+                        {/* Comment Context Banner */}
+                        {post?.depth ? (post.depth > 0 && (
+                            <div className="max-w-3xl mx-auto mb-8 bg-[var(--primary-color)]/10 border border-[var(--primary-color)]/20 rounded-xl p-4 text-center text-sm font-medium text-[var(--text-primary)]">
+                                You are viewing a single comment.
+                                <div className="mt-3 flex items-center justify-center gap-6 text-xs font-bold uppercase tracking-wider">
+                                    <Link to={`/post/${post.parent_author}/${post.parent_permlink}`} className="text-[var(--primary-color)] hover:underline flex items-center gap-1">
+                                        <ChevronLeft size={14}/> View Parent
+                                    </Link>
+                                    <span className="opacity-30">|</span>
+                                    <Link to={`/post/${post.root_author}/${post.root_permlink}`} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors inline-block pt-[1px]">
+                                        View Full Thread
+                                    </Link>
+                                </div>
+                            </div>
+                        )) : null}
 
                         {/* Editorial Header */}
                         <header className="mb-16 text-center max-w-3xl mx-auto px-4">

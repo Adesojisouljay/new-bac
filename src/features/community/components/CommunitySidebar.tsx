@@ -14,6 +14,21 @@ export function CommunitySidebar({ community, showCreatePost = true }: Community
     const [isJoined, setIsJoined] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
 
+    const renderWithLinks = (text: string) => {
+        if (!text) return text;
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const parts = text.split(urlRegex);
+        return parts.map((part, i) => 
+            urlRegex.test(part) ? (
+                <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-[var(--primary-color)] hover:underline break-all">
+                    {part}
+                </a>
+            ) : (
+                <span key={i}>{part}</span>
+            )
+        );
+    };
+
     useEffect(() => {
         async function checkSubscription() {
             if (currentUsername) {
@@ -73,7 +88,7 @@ export function CommunitySidebar({ community, showCreatePost = true }: Community
                     <p className="text-sm font-medium text-[var(--primary-color)] text-center lg:text-left mb-4">@{community.id}</p>
 
                     <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-6 text-center lg:text-left">
-                        {community.description || community.about || "No description provided."}
+                        {renderWithLinks(community.description || community.about || "No description provided.")}
                     </p>
 
                     <div className="grid grid-cols-2 gap-4 mb-6 pt-4 border-t border-[var(--border-color)]">
@@ -123,7 +138,7 @@ export function CommunitySidebar({ community, showCreatePost = true }: Community
                             <div key={idx} className={idx > 0 ? "pt-4 border-t border-[var(--border-color)]" : ""}>
                                 <ol className="list-decimal pl-4 space-y-2">
                                     {section.split('\n').filter(line => line.trim().length > 0).map((rule, rIdx) => (
-                                        <li key={rIdx}>{rule.trim()}</li>
+                                        <li key={rIdx}>{renderWithLinks(rule.trim())}</li>
                                     ))}
                                 </ol>
                             </div>
