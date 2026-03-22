@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { UnifiedDataService, MarketTicker, OrderBook, MarketTrade, OpenOrder } from '../../../services/unified';
+import { P2PService, P2PAd, TradeType, CryptoCurrency, FiatCurrency } from '../../../services/p2pService';
 import { transactionService } from '../services/transactionService';
 import { useNotification } from '../../../contexts/NotificationContext';
+import P2POrderModal from '../components/P2POrderModal';
 
 export default function MarketPage() {
     const [ticker, setTicker] = useState<MarketTicker | null>(null);
@@ -12,6 +16,9 @@ export default function MarketPage() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const { showNotification, showConfirm } = useNotification();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const isP2P = location.pathname.includes('/market/p2p');
     const username = localStorage.getItem('hive_user');
 
     const fetchData = async () => {
@@ -104,7 +111,43 @@ export default function MarketPage() {
                 </div>
             )}
 
-            {/* 2. Trading Forms */}
+            {/* P2P vs Internal Market Tabs */}
+            <div className="flex justify-between items-end border-b border-[var(--border-color)] mb-6 relative">
+                <div className="flex space-x-6">
+                    <button 
+                        onClick={() => navigate('/market')}
+                        className={`pb-4 text-base font-bold transition-all relative ${!isP2P ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        Internal Market
+                        {!isP2P && (
+                            <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[var(--primary-color)] rounded-t-full shadow-[0_0_10px_var(--primary-color)]"></div>
+                        )}
+                    </button>
+                    <button 
+                        onClick={() => navigate('/market/p2p')}
+                        className={`pb-4 text-base font-bold transition-all relative ${isP2P ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        P2P Trading
+                        <span className="ml-2 px-2 py-0.5 text-[10px] bg-red-500 text-white rounded-full animate-pulse">HOT</span>
+                        {isP2P && (
+                            <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[var(--primary-color)] rounded-t-full shadow-[0_0_10px_var(--primary-color)]"></div>
+                        )}
+                    </button>
+                </div>
+
+                {isP2P && (
+                    <button 
+                        onClick={() => navigate('/market/p2p/dashboard')}
+                        className="mb-2 px-4 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-primary)] hover:border-[var(--primary-color)] hover:text-[var(--primary-color)] text-sm font-bold rounded-xl transition-all shadow-sm flex items-center gap-2 group"
+                    >
+                        P2P Dashboard
+                    </button>
+                )}
+            </div>
+
+            {!isP2P ? (
+                <>
+                    {/* 2. Trading Forms */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <TradeForm
                     type="buy"
@@ -150,6 +193,10 @@ export default function MarketPage() {
                     <TradesTable trades={trades} />
                 </div>
             </div>
+                </>
+            ) : (
+                <P2PMarketLayout />
+            )}
         </div>
     );
 }
@@ -399,6 +446,270 @@ function OpenOrdersTable({ orders, onCancel, loading }: { orders: OpenOrder[], o
                     })}
                 </tbody>
             </table>
+        </div>
+    );
+}
+
+export function P2PMarketLayout() {
+    const PAYMENT_METHODS_BY_FIAT: Record<FiatCurrency, string[]> = {
+        USD: ['PayPal', 'CashApp', 'Zelle', 'Wire Transfer', 'Skrill'],
+        NGN: ['Bank Transfer', 'Opay', 'Kuda', 'PalmPay', 'Chipper Cash'],
+        EUR: ['SEPA', 'Revolut', 'Wise', 'N26', 'Paysera'],
+        GBP: ['Faster Payments', 'Revolut', 'Monzo', 'Starling Bank'],
+        MXN: ['SPEI', 'OXXO', 'Mercado Pago', 'STP'],
+        GHS: ['MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money'],
+    };
+    const [action, setAction] = useState<TradeType>('BUY');
+    const [cryptoItem, setCryptoItem] = useState<CryptoCurrency>('HIVE');
+    const [fiat, setFiat] = useState<FiatCurrency>(
+        (localStorage.getItem('p2p_preferred_fiat') as FiatCurrency) || 'USD'
+    );
+    const [paymentMethod, setPaymentMethod] = useState<string>('All Payments');
+    const [ads, setAds] = useState<P2PAd[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [selectedAd, setSelectedAd] = useState<P2PAd | null>(null);
+    const { showNotification } = useNotification();
+
+    useEffect(() => {
+        loadAds();
+    }, [action, cryptoItem, fiat, paymentMethod]);
+
+    const loadAds = async () => {
+        setLoading(true);
+        try {
+            const data = await P2PService.getAds(action, cryptoItem, fiat);
+            if (paymentMethod !== 'All Payments') {
+                setAds(data.filter(ad => ad.paymentMethods.includes(paymentMethod as any)));
+            } else {
+                setAds(data);
+            }
+        } catch (err) {
+            console.error(err);
+        }
+        setLoading(false);
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+                <div className="flex bg-[var(--bg-canvas)] rounded-xl p-1 overflow-hidden w-full md:w-auto">
+                    <button 
+                        onClick={() => setAction('BUY')}
+                        className={`flex-1 min-w-[100px] py-2 px-4 rounded-lg font-bold text-sm transition-all pb-2 ${action === 'BUY' ? 'bg-green-500 text-white shadow-md' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        Buy
+                    </button>
+                    <button 
+                        onClick={() => setAction('SELL')}
+                        className={`flex-1 min-w-[100px] py-2 px-4 rounded-lg font-bold text-sm transition-all pb-2 ${action === 'SELL' ? 'bg-red-500 text-white shadow-md' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        Sell
+                    </button>
+                </div>
+
+                <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+                    <CustomSelect 
+                        value={cryptoItem}
+                        onChange={(val) => setCryptoItem(val as CryptoCurrency)}
+                        options={[
+                            { label: 'HIVE', value: 'HIVE' },
+                            { label: 'HBD', value: 'HBD' }
+                        ]}
+                    />
+                    
+                    <span className="text-[var(--text-secondary)] font-bold hidden md:block">with</span>
+
+                    <CustomSelect 
+                        value={fiat}
+                        onChange={(val) => {
+                            setFiat(val as FiatCurrency);
+                            localStorage.setItem('p2p_preferred_fiat', val);
+                            setPaymentMethod('All Payments');
+                        }}
+                        options={[
+                            { label: 'USD', value: 'USD' },
+                            { label: 'NGN', value: 'NGN' },
+                            { label: 'MXN', value: 'MXN' },
+                            { label: 'GHS', value: 'GHS' },
+                            { label: 'EUR', value: 'EUR' },
+                            { label: 'GBP', value: 'GBP' }
+                        ]}
+                    />
+
+                    <div className="w-[1px] h-8 bg-[var(--border-color)] mx-2 hidden md:block"></div>
+
+                    <CustomSelect 
+                        value={paymentMethod}
+                        onChange={setPaymentMethod}
+                        options={[
+                            { label: 'All Payments', value: 'All Payments' },
+                            ...(PAYMENT_METHODS_BY_FIAT[fiat] || []).map(method => ({ label: method, value: method }))
+                        ]}
+                    />
+                </div>
+            </div>
+
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-sm overflow-hidden min-h-[400px]">
+                {loading ? (
+                    <div className="flex items-center justify-center p-20 text-[var(--text-secondary)] font-bold animate-pulse">
+                        Scanning Escrow Networks...
+                    </div>
+                ) : ads.length === 0 ? (
+                    <div className="text-center p-20">
+                        <span className="text-6xl block mb-6 opacity-50">📂</span>
+                        <h3 className="text-2xl font-bold text-[var(--text-primary)] mb-2">No Ads Found</h3>
+                        <p className="text-[var(--text-secondary)] max-w-sm mx-auto">There are currently no active makers matching your requested parameters. Try checking another fiat pairing.</p>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="text-[var(--text-secondary)] bg-[var(--bg-canvas)] border-b border-[var(--border-color)]">
+                                    <th className="text-left py-4 px-6 font-bold uppercase tracking-wider text-xs whitespace-nowrap">Advertisers (Completion rate)</th>
+                                    <th className="text-left py-4 px-6 font-bold uppercase tracking-wider text-xs">Price</th>
+                                    <th className="text-left py-4 px-6 font-bold uppercase tracking-wider text-xs">Limit/Available</th>
+                                    <th className="text-left py-4 px-6 font-bold uppercase tracking-wider text-xs">Payment Method</th>
+                                    <th className="text-right py-4 px-6 font-bold uppercase tracking-wider text-xs">Trade</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--border-color)]/50">
+                                {ads.map((ad, i) => (
+                                    <P2PAdRow key={`ad-${i}`} ad={ad} userAction={action} onSelect={() => setSelectedAd(ad)} />
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {selectedAd && (
+                <P2POrderModal 
+                    isOpen={true}
+                    onClose={() => setSelectedAd(null)}
+                    ad={selectedAd}
+                    userAction={action}
+                />
+            )}
+        </div>
+    );
+}
+
+function P2PAdRow({ ad, userAction, onSelect }: { ad: P2PAd, userAction: TradeType, onSelect: () => void }) {
+    const isBuy = userAction === 'BUY';
+    const activeUsername = localStorage.getItem('hive_user');
+    const isMyAd = ad.maker.username === activeUsername;
+
+    return (
+        <tr className="hover:bg-[var(--bg-canvas)] transition-all">
+            <td className="py-6 px-6">
+                <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 bg-gradient-to-tr from-[var(--primary-color)] to-purple-500 rounded-full flex items-center justify-center text-white font-black text-lg shadow-md uppercase">
+                        {ad.maker.username[0]}
+                    </div>
+                    <div>
+                        <div className="font-black text-[var(--text-primary)] text-base mb-1">{ad.maker.username}</div>
+                        <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)] font-bold tracking-wider">
+                            <span>{ad.maker.totalTrades} orders</span>
+                            <span className="w-1 h-1 rounded-full bg-[var(--text-secondary)]"></span>
+                            <span>{ad.maker.completionRate}% completion</span>
+                        </div>
+                    </div>
+                </div>
+            </td>
+            
+            <td className="py-6 px-6">
+                <div className="text-xl font-black text-[var(--text-primary)] tracking-tight">
+                    {ad.price.toLocaleString(undefined, { minimumFractionDigits: 2 })} <span className="text-sm font-bold text-[var(--text-secondary)]">{ad.fiat}</span>
+                </div>
+            </td>
+            
+            <td className="py-6 px-6 space-y-1 min-w-[200px]">
+                <div className="flex items-center justify-between gap-4">
+                    <span className="text-xs text-[var(--text-secondary)] uppercase tracking-wider font-bold">Available</span>
+                    <div className="text-right flex flex-col items-end">
+                        <span className="text-sm font-bold text-[var(--text-primary)]">{ad.availableCrypto.toLocaleString(undefined, { maximumFractionDigits: 3 })} {ad.crypto}</span>
+                        <span className="text-[10px] font-bold text-[var(--text-secondary)]">≈ {(ad.availableCrypto * ad.price).toLocaleString(undefined, { maximumFractionDigits: 2 })} {ad.fiat}</span>
+                    </div>
+                </div>
+                <div className="flex items-center justify-between gap-4 mt-2">
+                    <span className="text-xs text-[var(--text-secondary)] uppercase tracking-wider font-bold">Limit</span>
+                    <span className="text-sm font-bold text-[var(--text-primary)]">{ad.minOrderFiat.toLocaleString(undefined, { maximumFractionDigits: 2 })} - {ad.maxOrderFiat.toLocaleString(undefined, { maximumFractionDigits: 2 })} {ad.fiat}</span>
+                </div>
+            </td>
+
+            <td className="py-6 px-6">
+                <div className="flex flex-wrap gap-2">
+                    {ad.paymentMethods.map((pm, i) => (
+                        <span key={i} className="px-3 py-1 bg-[var(--primary-color)]/10 text-[var(--primary-color)] border border-[var(--primary-color)]/30 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                            {pm}
+                        </span>
+                    ))}
+                </div>
+            </td>
+
+            <td className="py-6 px-6 text-right">
+                {isMyAd ? (
+                    <button 
+                        disabled
+                        className="px-8 py-3 rounded-xl font-black text-sm text-[var(--text-secondary)] bg-[var(--bg-canvas)] border border-[var(--border-color)] tracking-wider uppercase opacity-70 cursor-not-allowed"
+                    >
+                        Your Ad
+                    </button>
+                ) : (
+                    <button 
+                        onClick={onSelect}
+                        className={`px-8 py-3 rounded-xl font-black text-sm text-white shadow-lg tracking-wider uppercase transition-all hover:scale-105 active:scale-95 ${isBuy ? 'bg-green-500 hover:bg-green-400' : 'bg-red-500 hover:bg-red-400'}`}
+                    >
+                        {isBuy ? `Buy ${ad.crypto}` : `Sell ${ad.crypto}`}
+                    </button>
+                )}
+            </td>
+        </tr>
+    );
+}
+
+function CustomSelect({ options, value, onChange }: { options: {label: string, value: string}[], value: string, onChange: (val: string) => void }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (ref.current && !ref.current.contains(event.target as Node)) {
+                setOpen(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [ref]);
+
+    return (
+        <div ref={ref} className="relative inline-block w-full md:w-auto z-40">
+            <button 
+                onClick={() => setOpen(!open)}
+                className="flex items-center justify-between min-w-[140px] bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary-color)] transition-colors text-sm font-bold text-[var(--text-primary)] cursor-pointer w-full hover:border-[var(--primary-color)]/50 box-border"
+            >
+                {options.find(o => o.value === value)?.label || value}
+                <ChevronDown className={`w-4 h-4 ml-3 text-[var(--text-secondary)] transition-transform ${open ? 'rotate-180 text-[var(--primary-color)]' : ''}`} />
+            </button>
+            
+            {open && (
+                <div className="absolute top-[calc(100%+8px)] left-0 w-full min-w-[140px] bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar flex flex-col">
+                        {options.map((opt) => (
+                            <button
+                                key={opt.value}
+                                onClick={() => {
+                                    onChange(opt.value);
+                                    setOpen(false);
+                                }}
+                                className={`w-full text-left px-4 py-3 text-sm font-bold transition-colors hover:bg-[var(--bg-canvas)] ${value === opt.value ? 'bg-[var(--primary-color)]/10 text-[var(--primary-color)]' : 'text-[var(--text-primary)]'}`}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
