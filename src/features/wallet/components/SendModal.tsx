@@ -245,6 +245,9 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                     to: destination,
                     amount: Number(amount),
                     type: 'send'
+                }, ({ qr }) => {
+                    const isMobileApp = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+                    if (isMobileApp) window.location.href = qr;
                 });
             } catch (hiveErr: any) {
                 // If the user hits cancel on the Keychain prompt, we stop here.
@@ -355,7 +358,7 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
 
     return (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-md w-full shadow-2xl relative">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-8 max-w-md w-full shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar">
                 <button
                     onClick={onClose}
                     className="absolute top-4 right-4 p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-canvas)] rounded-full transition-colors"
@@ -475,6 +478,7 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                                 type="number"
                                 value={amount}
                                 onChange={(e) => setAmount(e.target.value)}
+                                onWheel={(e) => (e.target as HTMLElement).blur()}
                                 placeholder="0.00"
                                 className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] focus:border-[var(--primary-color)] focus:ring-1 focus:ring-[var(--primary-color)] outline-none transition-all placeholder:opacity-30"
                             />

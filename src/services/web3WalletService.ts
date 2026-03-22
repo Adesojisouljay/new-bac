@@ -391,7 +391,11 @@ export const web3WalletService = {
     /**
      * Log a Web3 transaction to the Hive blockchain for permanent history.
      */
-    logTransactionToHive: async (username: string, data: { chain: string, to: string, amount: number, hash?: string, type: 'send' | 'deposit' }) => {
+    logTransactionToHive: async (
+        username: string, 
+        data: { chain: string, to: string, amount: number, hash?: string, type: 'send' | 'deposit' },
+        onChallenge?: (data: { qr: string; uuid: string }) => void
+    ) => {
         const { authService } = await import('../features/auth/services/authService');
         const logId = 'sovraniche_web3_tx';
         const payload = {
@@ -401,8 +405,8 @@ export const web3WalletService = {
             timestamp: Date.now()
         };
 
-        // We use Active key to force the Hive Keychain confirmation prompt
-        const response = await authService.broadcastJson(username, logId, payload, 'Active');
+        // We use Posting key because Mobile HiveAuth sessions are strictly negotiated at the Posting tier during login.
+        const response = await authService.broadcastJson(username, logId, payload, 'Posting', onChallenge);
         
         if (!response.success) {
             throw new Error(response.error || 'User cancelled Hive Keychain confirmation');

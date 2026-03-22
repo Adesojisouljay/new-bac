@@ -449,16 +449,28 @@ export const authService = {
         username: string,
         id: string,
         json: any,
-        keyType: 'Posting' | 'Active' = 'Posting'
+        keyType: 'Posting' | 'Active' = 'Posting',
+        onChallenge?: (data: { qr: string; uuid: string }) => void
     ): Promise<{ success: boolean; result?: any; error?: string }> => {
-        const method = localStorage.getItem('hive_auth_method') || 'keychain';
+        const storedMethod = localStorage.getItem('hive_auth_method') || 'keychain';
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+        let method = storedMethod;
+        if (method === 'keychain') {
+            const keychain = (window as any).hive_keychain;
+            if (!keychain) {
+                if (isMobile) method = 'hiveauth';
+                else return { success: false, error: 'Hive Keychain not installed' };
+            }
+        }
+
+        const cleanUsername = username.replace(/^@/, '').toLowerCase();
 
         if (method === 'keychain') {
             const keychain = (window as any).hive_keychain;
-            if (!keychain) return { success: false, error: 'Hive Keychain not installed' };
 
             return new Promise((resolve) => {
-                keychain.requestCustomJson(username, id, keyType, JSON.stringify(json), `Log ${id}`, (response: any) => {
+                keychain.requestCustomJson(cleanUsername, id, keyType, JSON.stringify(json), `Log ${id}`, (response: any) => {
                     if (response.success) resolve({ success: true, result: response.result });
                     else resolve({ success: false, error: response.message });
                 });
@@ -466,14 +478,14 @@ export const authService = {
         } else {
             return new Promise((resolve) => {
                 const op = ['custom_json', {
-                    required_auths: keyType === 'Active' ? [username] : [],
-                    required_posting_auths: keyType === 'Posting' ? [username] : [],
+                    required_auths: keyType === 'Active' ? [cleanUsername] : [],
+                    required_posting_auths: keyType === 'Posting' ? [cleanUsername] : [],
                     id,
                     json: JSON.stringify(json)
                 }];
 
                 const auth = {
-                    username,
+                    username: cleanUsername,
                     token: undefined,
                     expire: undefined,
                     key: HAS_STATIC_KEY
@@ -483,7 +495,7 @@ export const authService = {
                 if (storedSession) {
                     try {
                         const session = JSON.parse(storedSession);
-                        if (session.username === username) {
+                        if (session.username.replace(/^@/, '').toLowerCase() === cleanUsername) {
                             auth.token = session.token;
                             auth.expire = session.expire;
                             auth.key = session.key;
@@ -492,8 +504,15 @@ export const authService = {
                 }
 
                 import("hive-auth-wrapper").then(({ default: HAS }) => {
-                    HAS.broadcast(auth, keyType.toLowerCase() as any, [op], () => {
-                        // Handle QR challenge if needed
+                    HAS.broadcast(auth, keyType.toLowerCase() as any, [op], (evt: any) => {
+                        const qr_data = {
+                            account: cleanUsername,
+                            uuid: evt.uuid,
+                            key: auth.key,
+                            host: HAS_SERVER
+                        };
+                        const uri = `has://sign_req/${btoa(JSON.stringify(qr_data))}`;
+                        if (onChallenge) onChallenge({ qr: uri, uuid: evt.uuid });
                     })
                         .then((res: any) => {
                             resolve({ success: true, result: res.data });

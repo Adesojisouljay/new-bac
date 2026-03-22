@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { P2PService, TradeType, CryptoCurrency, FiatCurrency } from '../../../services/p2pService';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { NotificationService } from '../../../services/notifications';
-import { io, Socket } from 'socket.io-client';
+import { io } from 'socket.io-client';
 
 type Tab = 'ORDERS' | 'ADS' | 'CREATE';
 
