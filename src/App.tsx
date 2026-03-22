@@ -97,6 +97,7 @@ const AppContent = () => {
         <Route path="shorts" element={<ShortsFeed />} />
         <Route path="shorts/:shortPermlink" element={<ShortsFeed />} />
         <Route path="market" element={<Market />} />
+        <Route path="market/swap" element={<Market />} />
         <Route path="market/p2p" element={<Market />} />
         <Route path="market/p2p/dashboard" element={<P2PDashboard />} />
         <Route path="market/p2p/:orderId" element={<P2PTrade />} />
