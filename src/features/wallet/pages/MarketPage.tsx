@@ -468,7 +468,6 @@ export function P2PMarketLayout() {
     const [ads, setAds] = useState<P2PAd[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedAd, setSelectedAd] = useState<P2PAd | null>(null);
-    const { showNotification } = useNotification();
 
     useEffect(() => {
         loadAds();

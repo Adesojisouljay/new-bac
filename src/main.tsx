@@ -10,6 +10,13 @@ if (existingUser && accountManager.getAll().length === 0) {
   accountManager.add(existingUser, 'keychain');
 }
 
+// Global fix to prevent mouse-wheel scrolling from mutating <input type="number"> fields
+document.addEventListener('wheel', () => {
+  if (document.activeElement && document.activeElement.tagName === 'INPUT' && (document.activeElement as HTMLInputElement).type === 'number') {
+    (document.activeElement as HTMLElement).blur();
+  }
+}, { passive: false });
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

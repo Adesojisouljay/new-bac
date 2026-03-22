@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, AlertCircle, ShieldCheck, ArrowRightLeft, Plus, CheckCircle2 } from 'lucide-react';
 import { P2PService, P2PAd, TradeType } from '../../../services/p2pService';
