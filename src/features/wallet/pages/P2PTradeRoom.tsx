@@ -34,7 +34,8 @@ export default function P2PTradeRoom() {
             // Fallback empty UI render if failed
         });
 
-        const newSocket = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:4000');
+        // Match global Sovraniche WebSockets standard
+        const newSocket = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000');
         setSocket(newSocket);
 
         newSocket.on('connect', () => {

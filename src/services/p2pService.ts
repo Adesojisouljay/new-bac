@@ -41,7 +41,7 @@ const getMockReputation = (username: string): UserReputation => ({
     avgReleaseTimeMins: Math.floor(Math.random() * 10) + 1
 });
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+const API_URL = (import.meta.env.VITE_BACKEND_URL ? import.meta.env.VITE_BACKEND_URL + '/api' : 'http://localhost:4000/api');
 
 export class P2PService {
     /**

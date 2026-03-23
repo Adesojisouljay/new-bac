@@ -48,7 +48,8 @@ export default function P2PDashboard() {
         const username = localStorage.getItem('hive_user');
         if (!username) return;
 
-        const socketInstance = io(import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:4000', {
+        // Match global Sovraniche WebSockets standard
+        const socketInstance = io(import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000', {
             query: { username }
         });
 
