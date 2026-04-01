@@ -6,7 +6,6 @@ import { P2PService, P2PAd, TradeType, CryptoCurrency, FiatCurrency } from '../.
 import { transactionService } from '../services/transactionService';
 import { useNotification } from '../../../contexts/NotificationContext';
 import P2POrderModal from '../components/P2POrderModal';
-import SwapInterface from '../components/SwapInterface';
 
 export default function MarketPage() {
     const [ticker, setTicker] = useState<MarketTicker | null>(null);
@@ -19,8 +18,7 @@ export default function MarketPage() {
     const { showNotification, showConfirm } = useNotification();
     const navigate = useNavigate();
     const location = useLocation();
-    const isSwap = location.pathname.includes('/market/swap');
-    const isP2P = location.pathname.includes('/market/p2p') && !isSwap;
+    const isP2P = location.pathname.includes('/market/p2p');
     const username = localStorage.getItem('hive_user');
 
     const fetchData = async () => {
@@ -118,10 +116,10 @@ export default function MarketPage() {
                 <div className="flex space-x-6">
                     <button 
                         onClick={() => navigate('/market')}
-                        className={`pb-4 text-base font-bold transition-all relative ${!isP2P && !isSwap ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                        className={`pb-4 text-base font-bold transition-all relative ${!isP2P ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                     >
                         Internal Market
-                        {!isP2P && !isSwap && (
+                        {!isP2P && (
                             <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[var(--primary-color)] rounded-t-full shadow-[0_0_10px_var(--primary-color)]"></div>
                         )}
                     </button>
@@ -133,16 +131,6 @@ export default function MarketPage() {
                         <span className="ml-2 px-2 py-0.5 text-[10px] bg-red-500 text-white rounded-full animate-pulse">HOT</span>
                         {isP2P && (
                             <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[var(--primary-color)] rounded-t-full shadow-[0_0_10px_var(--primary-color)]"></div>
-                        )}
-                    </button>
-                    <button 
-                        onClick={() => navigate('/market/swap')}
-                        className={`pb-4 text-base font-bold transition-all relative ${isSwap ? 'text-purple-500' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
-                    >
-                        Instant Swap
-                        <span className="ml-2 px-2 py-0.5 text-[10px] bg-purple-500 text-white rounded-full animate-bounce">NEW</span>
-                        {isSwap && (
-                            <div className="absolute bottom-0 left-0 w-full h-[3px] bg-purple-500 rounded-t-full shadow-[0_0_10px_purple]"></div>
                         )}
                     </button>
                 </div>
@@ -157,7 +145,7 @@ export default function MarketPage() {
                 )}
             </div>
 
-            {!isP2P && !isSwap ? (
+            {!isP2P ? (
                 <>
                     {/* 2. Trading Forms */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -206,10 +194,8 @@ export default function MarketPage() {
                 </div>
             </div>
                 </>
-            ) : isP2P ? (
-                <P2PMarketLayout />
             ) : (
-                <SwapInterface />
+                <P2PMarketLayout />
             )}
         </div>
     );
