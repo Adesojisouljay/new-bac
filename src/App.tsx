@@ -10,8 +10,8 @@ const Settings = lazy(() => import('./features/settings/pages/SettingsPage'));
 const PostView = lazy(() => import('./features/feed/pages/PostViewPage'));
 const CreatePost = lazy(() => import('./features/feed/pages/CreatePostPage'));
 const Market = lazy(() => import('./features/wallet/pages/MarketPage'));
-const P2PDashboard = lazy(() => import('./features/wallet/pages/P2PDashboard'));
-const P2PTrade = lazy(() => import('./features/wallet/pages/P2PTradeRoom'));
+// const P2PDashboard = lazy(() => import('./features/wallet/pages/P2PDashboard'));
+// const P2PTrade = lazy(() => import('./features/wallet/pages/P2PTradeRoom'));
 const Notifications = lazy(() => import('./features/notifications/pages/NotificationsPage').then(m => ({ default: m.NotificationsPage })));
 const Governance = lazy(() => import('./features/governance/pages/GovernancePage').then(m => ({ default: m.GovernancePage })));
 const Messages = lazy(() => import('./features/messages/pages/MessagesPage').then(m => ({ default: m.MessagesPage })));
@@ -97,10 +97,10 @@ const AppContent = () => {
         <Route path="shorts" element={<ShortsFeed />} />
         <Route path="shorts/:shortPermlink" element={<ShortsFeed />} />
         <Route path="market" element={<Market />} />
-        <Route path="market/swap" element={<Market />} />
-        <Route path="market/p2p" element={<Market />} />
-        <Route path="market/p2p/dashboard" element={<P2PDashboard />} />
-        <Route path="market/p2p/:orderId" element={<P2PTrade />} />
+        {/* <Route path="market/swap" element={<Market />} /> */}
+        {/* <Route path="market/p2p" element={<Market />} /> */}
+        {/* <Route path="market/p2p/dashboard" element={<P2PDashboard />} /> */}
+        {/* <Route path="market/p2p/:orderId" element={<P2PTrade />} /> */}
         <Route path="notifications" element={<Notifications />} />
         <Route path="governance/:tab?" element={<Governance />} />
         <Route path="messages" element={<Messages />} />

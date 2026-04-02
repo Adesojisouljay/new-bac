@@ -156,6 +156,14 @@ export class P2PService {
     }
 
     /**
+     * Mark Escrow as Disputed securely on REST API
+     */
+    static async openDispute(id: string, reason: string) {
+        const { data } = await axios.put(`${API_URL}/p2p/orders/${id}/dispute`, { reason });
+        return data.data;
+    }
+
+    /**
      * Mark Escrow as Completed securely on REST API
      */
     static async completeOrder(id: string) {

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, AlertCircle, ShieldCheck, FileText, Send, CheckCircle2, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Clock, AlertCircle, ShieldCheck, FileText, Send, CheckCircle2, Copy, Check, Paperclip, Loader2 } from 'lucide-react';
 import { P2PService } from '../../../services/p2pService';
 import { useNotification } from '../../../contexts/NotificationContext';
 import { io, Socket } from 'socket.io-client';
+import { cloudinaryService } from '../../../services/cloudinaryService';
+import { useRef } from 'react';
 
 export default function P2PTradeRoom() {
     const { orderId } = useParams(); 
@@ -13,9 +15,19 @@ export default function P2PTradeRoom() {
     const [orderState, setOrderState] = useState<any>(null);
     const [timeLeft, setTimeLeft] = useState<string>('00:00');
     const [chatInput, setChatInput] = useState('');
-    const [messages, setMessages] = useState<{sender: string, text: string, time: string}[]>([]);
+    const [messages, setMessages] = useState<{sender: string, text: string, time: string, metadata?: any}[]>([]);
     const [socket, setSocket] = useState<Socket | null>(null);
     const [copied, setCopied] = useState(false);
+    
+    // Dispute Modal Architecture
+    const [showDisputeModal, setShowDisputeModal] = useState(false);
+    const [disputeReasonCategory, setDisputeReasonCategory] = useState('');
+    const [disputeCustomReason, setDisputeCustomReason] = useState('');
+
+    // Receipt Upload Architecture
+    const [isUploading, setIsUploading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
 
     // Initial Fetch & Websocket Join
     useEffect(() => {
@@ -27,7 +39,8 @@ export default function P2PTradeRoom() {
             setMessages(data.chatLog.map((log: any) => ({
                 sender: log.senderId || log.sender,
                 text: log.message || log.text,
-                time: new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                time: new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                metadata: log.metadata
             })));
         }).catch(err => {
             console.error(err);
@@ -45,7 +58,8 @@ export default function P2PTradeRoom() {
             setMessages(prev => [...prev, {
                 sender: msg.senderId || msg.sender,
                 text: msg.message || msg.text,
-                time: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                time: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                metadata: msg.metadata
             }]);
         });
 
@@ -90,6 +104,30 @@ export default function P2PTradeRoom() {
             message: chatInput
         });
         setChatInput('');
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !socket || !orderId) return;
+
+        setIsUploading(true);
+        try {
+            const uploadedUrl = await cloudinaryService.uploadFile(file, 'image');
+            const username = localStorage.getItem('hive_user') || 'adesojisouljay';
+            
+            socket.emit('p2p_chat_message', {
+                orderId,
+                senderId: username,
+                message: 'Attached Bank Receipt',
+                metadata: { type: 'image', url: uploadedUrl }
+            });
+        } catch (err: any) {
+            console.error('File Upload Protocol Failed:', err);
+            showNotification('Failed to securely upload receipt image.', 'error');
+        } finally {
+            setIsUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
     };
 
     const handleConfirmPayment = async () => {
@@ -156,6 +194,42 @@ export default function P2PTradeRoom() {
         }
     };
 
+    const handleOpenDispute = () => {
+        setDisputeReasonCategory('');
+        setDisputeCustomReason('');
+        setShowDisputeModal(true);
+    };
+
+    const submitDispute = async () => {
+        const finalReason = disputeReasonCategory === 'Other' ? disputeCustomReason.trim() : disputeReasonCategory;
+        
+        if (!finalReason) {
+            showNotification('Please provide a specific reason for opening this dispute.', 'error');
+            return;
+        }
+
+        try {
+            if (!orderId) return;
+            await P2PService.openDispute(orderId, finalReason);
+            setOrderState((prev: any) => ({ ...prev, status: 'DISPUTED' }));
+            
+            if (socket) {
+                const username = localStorage.getItem('hive_user') || 'adesojisouljay';
+                socket.emit('p2p_chat_message', {
+                    orderId,
+                    senderId: 'system',
+                    message: `🚨 SECURITY: @${username} has formally ESCALATED this contract to a manual Dispute. Reason: ${finalReason}`
+                });
+                socket.emit('p2p_order_status_update', { orderId, status: 'DISPUTED' });
+            }
+            showNotification('Dispute formally registered in the Master Control ledger.', 'warning');
+            setShowDisputeModal(false);
+        } catch (err: any) {
+            console.error(err);
+            showNotification('Dispute escalation failed.', 'error');
+        }
+    };
+
     if (!orderState) {
         return (
             <div className="flex h-[80vh] items-center justify-center">
@@ -168,7 +242,8 @@ export default function P2PTradeRoom() {
     }
 
     const isAwaiting = orderState.status === 'AWAITING_PAYMENT';
-    const isReleasing = orderState.status === 'RELEASING';
+    const isReleasing = orderState.status === 'RELEASING' || orderState.status === 'DISPUTED';
+    const canOpenDispute = orderState.status === 'RELEASING';
 
     const activeUser = localStorage.getItem('hive_user') || 'adesojisouljay';
     const isMaker = activeUser === orderState.makerId;
@@ -186,18 +261,20 @@ export default function P2PTradeRoom() {
             </button>
 
             {/* Status Header Banner */}
-            <div className={`rounded-3xl p-6 md:p-8 text-white shadow-xl mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 overflow-hidden relative ${isAwaiting ? 'bg-gradient-to-r from-orange-500 to-orange-400' : 'bg-gradient-to-r from-indigo-600 to-blue-500'}`}>
+            <div className={`rounded-3xl p-6 md:p-8 text-white shadow-xl mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 overflow-hidden relative ${isAwaiting ? 'bg-gradient-to-r from-orange-500 to-orange-400' : orderState.status === 'DISPUTED' ? 'bg-gradient-to-r from-red-600 to-red-500' : 'bg-gradient-to-r from-indigo-600 to-blue-500'}`}>
                 {/* Background decorative styling */}
                 <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 rounded-full bg-white opacity-10 blur-3xl mix-blend-overlay"></div>
                 
                 <div>
                     <h1 className="text-3xl font-black tracking-tight mb-2">
-                        {isAwaiting ? 'Awaiting Payment' : 'Releasing Assets'}
+                        {isAwaiting ? 'Awaiting Payment' : orderState.status === 'DISPUTED' ? 'Contract Disputed' : 'Releasing Assets'}
                     </h1>
                     <p className="text-white/80 font-bold text-sm md:text-base">
                         {isAwaiting 
                             ? `Please pay ${orderState?.makerId || 'the merchant'} within the time limit to secure the escrow.` 
-                            : 'Payment confirmed. The merchant is verifying your transfer to release the crypto.'}
+                            : orderState.status === 'DISPUTED' 
+                                ? 'Contract locked for Master Administration review. The merchant can still actively release the crypto if funds finally arrive.' 
+                                : 'Payment confirmed. The merchant is verifying your transfer to release the crypto.'}
                     </p>
                 </div>
 
@@ -247,6 +324,16 @@ export default function P2PTradeRoom() {
                                             ? 'bg-[var(--primary-color)] text-white rounded-tr-sm' 
                                             : 'bg-[var(--bg-canvas)] text-[var(--text-primary)] border border-[var(--border-color)] rounded-tl-sm'
                                         }`}>
+                                            {msg.metadata?.type === 'image' && msg.metadata?.url && (
+                                                <a href={msg.metadata.url} target="_blank" rel="noopener noreferrer">
+                                                    <img 
+                                                        src={msg.metadata.url} 
+                                                        alt="Receipt Attachment" 
+                                                        className="w-full max-w-[240px] rounded-lg mb-2 border border-white/20 shadow-sm cursor-zoom-in hover:opacity-90 transition-opacity"
+                                                        loading="lazy"
+                                                    />
+                                                </a>
+                                            )}
                                             <p className="text-sm font-medium leading-relaxed">{msg.text}</p>
                                             <span className={`text-[10px] font-bold mt-2 block ${isMe ? 'text-white/70' : 'text-[var(--text-secondary)]'}`}>
                                                 {msg.time}
@@ -259,17 +346,36 @@ export default function P2PTradeRoom() {
                     </div>
 
                     <div className="p-4 bg-[var(--bg-canvas)]/50 border-t border-[var(--border-color)]">
-                        <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                        <form onSubmit={handleSendMessage} className="flex items-center gap-2 relative">
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                onChange={handleFileUpload} 
+                                accept="image/*" 
+                                className="hidden" 
+                            />
+                            
+                            <button 
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isUploading || orderState.status === 'COMPLETED' || orderState.status === 'CANCELLED'}
+                                className="p-3 bg-[var(--bg-card)] border border-[var(--border-color)] text-[var(--text-secondary)] rounded-xl hover:text-[var(--primary-color)] hover:border-[var(--primary-color)] disabled:opacity-50 transition-colors shadow-sm"
+                                title="Attach Receipt Image"
+                            >
+                                {isUploading ? <Loader2 className="w-5 h-5 animate-spin text-[var(--primary-color)]" /> : <Paperclip className="w-5 h-5" />}
+                            </button>
+
                             <input 
                                 type="text"
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 placeholder="Type a message..."
-                                className="flex-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary-color)] transition-colors text-sm font-medium text-[var(--text-primary)]"
+                                disabled={orderState.status === 'COMPLETED' || orderState.status === 'CANCELLED'}
+                                className="flex-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary-color)] transition-colors text-sm font-medium text-[var(--text-primary)] disabled:opacity-50"
                             />
                             <button 
                                 type="submit" 
-                                disabled={!chatInput.trim()}
+                                disabled={!chatInput.trim() || orderState.status === 'COMPLETED' || orderState.status === 'CANCELLED'}
                                 className="p-3 bg-[var(--primary-color)] text-white rounded-xl hover:bg-[var(--primary-color)]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-md"
                             >
                                 <Send className="w-5 h-5" />
@@ -374,10 +480,16 @@ export default function P2PTradeRoom() {
                                 </button>
                             )}
 
-                            {isReleasing && isFiatSender && (
-                                <button className="w-full py-4 bg-transparent border-2 border-[var(--border-color)] text-[var(--text-primary)] rounded-xl font-bold uppercase tracking-wider hover:border-orange-500 hover:text-orange-500 transition-colors flex items-center justify-center gap-2">
+                            {canOpenDispute && isFiatSender && (
+                                <button onClick={handleOpenDispute} className="w-full py-4 bg-transparent border-2 border-[var(--border-color)] text-[var(--text-primary)] rounded-xl font-bold uppercase tracking-wider hover:border-orange-500 hover:text-orange-500 transition-colors flex items-center justify-center gap-2">
                                     <AlertCircle className="w-5 h-5" /> Open Dispute
                                 </button>
+                            )}
+
+                            {orderState.status === 'DISPUTED' && (
+                                 <div className="w-full py-4 bg-red-500/10 border-2 border-red-500/30 text-red-500 rounded-xl font-black uppercase tracking-widest flex items-center justify-center gap-2 cursor-default text-center">
+                                    <AlertCircle className="w-5 h-5" /> Under Administrative Arbitration
+                                </div>
                             )}
 
                             {orderState.status === 'COMPLETED' && (
@@ -403,6 +515,61 @@ export default function P2PTradeRoom() {
                     </div>
                 </div>
             </div>
+
+            {/* Logical Dispute Creation Modal */}
+            {showDisputeModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animation-fade-in">
+                    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-3xl p-6 lg:p-8 w-full max-w-lg shadow-2xl relative">
+                        <button onClick={() => setShowDisputeModal(false)} className="absolute top-6 right-6 text-[var(--text-secondary)] hover:text-red-500 transition-colors">
+                            <AlertCircle className="w-6 h-6 transform rotate-45" />
+                        </button>
+                        
+                        <h2 className="text-2xl font-black text-red-500 flex items-center gap-3 mb-2">
+                            <AlertCircle className="w-7 h-7" /> Open Dispute
+                        </h2>
+                        <p className="text-[var(--text-secondary)] font-medium mb-6">Filing a dispute will instantly flag this order for rigorous administrative review and lock all connected escrow assets indefinitely.</p>
+
+                        <div className="space-y-5">
+                            <div>
+                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-2 uppercase tracking-wide">Select Reason</label>
+                                <select 
+                                    className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-3.5 outline-none focus:border-red-500 transition-colors text-[var(--text-primary)] font-medium"
+                                    value={disputeReasonCategory}
+                                    onChange={(e) => setDisputeReasonCategory(e.target.value)}
+                                >
+                                    <option value="" disabled>Choose a logical dispute category...</option>
+                                    <option value="I paid the merchant but they refuse to release the crypto.">I paid the merchant but they refuse to release the crypto.</option>
+                                    <option value="The buyer falsely marked the order as paid without sending funds.">The buyer falsely marked the order as paid without sending funds.</option>
+                                    <option value="The buyer sent an incorrect or partial payment amount.">The buyer sent an incorrect or partial payment amount.</option>
+                                    <option value="Suspected Fraud / Fake Bank Receipt.">Suspected Fraud / Fake Bank Receipt.</option>
+                                    <option value="Other">Other (Type custom reason)</option>
+                                </select>
+                            </div>
+
+                            {disputeReasonCategory === 'Other' && (
+                                <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-2 uppercase tracking-wide">Enter Custom Details</label>
+                                    <textarea 
+                                        className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-3 outline-none focus:border-red-500 transition-colors text-[var(--text-primary)] text-sm resize-none h-28"
+                                        placeholder="Clearly explain mathematically what went wrong in this operation..."
+                                        value={disputeCustomReason}
+                                        onChange={(e) => setDisputeCustomReason(e.target.value)}
+                                    />
+                                </div>
+                            )}
+
+                            <button 
+                                disabled={!disputeReasonCategory || (disputeReasonCategory === 'Other' && !disputeCustomReason.trim())}
+                                onClick={submitDispute}
+                                className="w-full mt-4 py-4 bg-red-500 hover:bg-red-600 text-white rounded-xl font-black uppercase tracking-widest shadow-lg shadow-red-500/20 hover:scale-[1.02] transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                            >
+                                Submit Escalation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }

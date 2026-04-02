@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, ArrowUpDown, Settings, AlertCircle, RefreshCw, ArrowLeft } from 'lucide-react';
+import { ChevronDown, ArrowUpDown, Settings, AlertCircle, RefreshCw, ArrowLeft, Copy, Check, ExternalLink } from 'lucide-react';
 import { useNotification } from '../../../contexts/NotificationContext';
 
 const SUPPORTED_COINS = [
     { symbol: 'HIVE', name: 'Hive', icon: 'https://assets.coingecko.com/coins/images/10840/standard/logo_transparent_4x.png' },
     { symbol: 'HBD', name: 'Hive Dollar', icon: 'https://assets.coingecko.com/coins/images/11494/standard/HBD.png' },
-    { symbol: 'USDT', name: 'Tether', icon: 'https://assets.coingecko.com/coins/images/325/standard/Tether.png' },
+    { symbol: 'USDT_TRC20', name: 'USDT (TRC20)', icon: 'https://assets.coingecko.com/coins/images/325/standard/Tether.png' },
+    { symbol: 'USDT_BEP20', name: 'USDT (BEP20)', icon: 'https://assets.coingecko.com/coins/images/325/standard/Tether.png' },
+    { symbol: 'USDT_ERC20', name: 'USDT (ERC20)', icon: 'https://assets.coingecko.com/coins/images/325/standard/Tether.png' },
     { symbol: 'BTC', name: 'Bitcoin', icon: 'https://assets.coingecko.com/coins/images/1/standard/bitcoin.png' },
     { symbol: 'ETH', name: 'Ethereum', icon: 'https://assets.coingecko.com/coins/images/279/standard/ethereum.png' },
     { symbol: 'SOL', name: 'Solana', icon: 'https://assets.coingecko.com/coins/images/4128/standard/solana.png' },
@@ -19,12 +21,33 @@ export default function SwapInterface() {
     const [receiveCoin, setReceiveCoin] = useState(SUPPORTED_COINS[2]);
     const [payAmount, setPayAmount] = useState('');
     const [receiveAmount, setReceiveAmount] = useState('');
+    const [grossAmount, setGrossAmount] = useState('');
     const [isQuoting, setIsQuoting] = useState(false);
     const [exchangeRate, setExchangeRate] = useState<number | null>(null);
+    const [networkFee, setNetworkFee] = useState<string | null>(null);
+    const [platformFee, setPlatformFee] = useState<string | null>(null);
     const [destinationAddress, setDestinationAddress] = useState('');
     const [showModal, setShowModal] = useState(false);
     const [isInitiating, setIsInitiating] = useState(false);
     const [activeOrder, setActiveOrder] = useState<any>(null);
+    const [useCustomAddress, setUseCustomAddress] = useState(false);
+
+    const [swapStatus, setSwapStatus] = useState<string>('PENDING');
+
+    const [copiedAddress, setCopiedAddress] = useState(false);
+    const [copiedMemo, setCopiedMemo] = useState(false);
+
+    const handleCopy = (text: string | null | undefined, type: 'address' | 'memo') => {
+        if (!text) return;
+        navigator.clipboard.writeText(text);
+        if (type === 'address') {
+            setCopiedAddress(true);
+            setTimeout(() => setCopiedAddress(false), 2000);
+        } else {
+            setCopiedMemo(true);
+            setTimeout(() => setCopiedMemo(false), 2000);
+        }
+    };
 
     const handleInvert = () => {
         setPayCoin(receiveCoin);
@@ -36,7 +59,7 @@ export default function SwapInterface() {
     };
 
     // Auto-fill Destination Address for HIVE/HBD or Web3 Payouts
-    useEffect(() => {
+    const fillSovranicheAddress = () => {
         const username = localStorage.getItem('hive_user')?.replace(/^@/, '');
         if ((receiveCoin.symbol === 'HIVE' || receiveCoin.symbol === 'HBD') && username) {
             setDestinationAddress(username);
@@ -46,9 +69,11 @@ export default function SwapInterface() {
             if (publicAddresses) {
                 try {
                     const parsed = JSON.parse(publicAddresses);
-                    // Override stablecoin defaults to TRC20 for maximum fee efficiency
+                    // Override stablecoin and TRX defaults to the correct chain namespace
                     let mappedChain = receiveCoin.symbol;
-                    if (receiveCoin.symbol === 'USDT') mappedChain = 'TRON';
+                    if (receiveCoin.symbol === 'USDT_TRC20' || receiveCoin.symbol === 'TRX') mappedChain = 'TRON';
+                    if (receiveCoin.symbol === 'USDT_BEP20' || receiveCoin.symbol === 'BNB') mappedChain = 'BNB';
+                    if (receiveCoin.symbol === 'USDT_ERC20' || receiveCoin.symbol === 'ETH') mappedChain = 'ETH';
                     
                     if (parsed[mappedChain]?.address) {
                         setDestinationAddress(parsed[mappedChain].address);
@@ -64,7 +89,13 @@ export default function SwapInterface() {
         } else {
             setDestinationAddress('');
         }
-    }, [receiveCoin.symbol]);
+    };
+
+    useEffect(() => {
+        if (!useCustomAddress) {
+            fillSovranicheAddress();
+        }
+    }, [receiveCoin.symbol, useCustomAddress]);
 
     // Mock Backend Quote Fetcher (Debounced)
     useEffect(() => {
@@ -82,7 +113,10 @@ export default function SwapInterface() {
                 if (response.ok) {
                     // Update state with live Oracle values
                     setExchangeRate(parseFloat(data.exchangeRate));
+                    setGrossAmount(data.grossReceiveAmount);
                     setReceiveAmount(data.receiveAmount);
+                    setNetworkFee(data.networkFee);
+                    setPlatformFee(data.platformFeeAmount);
                 } else {
                     throw new Error(data.error || "Quote request rejected by backend");
                 }
@@ -135,6 +169,7 @@ export default function SwapInterface() {
 
             if (response.ok) {
                 setActiveOrder(data);
+                setSwapStatus(data.status || 'PENDING');
                 setShowModal(true);
             } else {
                 throw new Error(data.error || "Failed to initialize cryptographic swap channel");
@@ -144,6 +179,95 @@ export default function SwapInterface() {
             showNotification(error.message, "error");
         } finally {
             setIsInitiating(false);
+        }
+    };
+
+    // -------------------------------------------------------------
+    // Realtime API Payout Fetcher
+    // -------------------------------------------------------------
+    
+    const getExplorerUrl = (chain: string, hash: string) => {
+        if (chain === 'HIVE' || chain === 'HBD') return `https://hiveblocks.com/tx/${hash}`;
+        if (chain === 'BTC') return `https://mempool.space/tx/${hash}`;
+        if (chain === 'TRON' || chain === 'USDT' || chain === 'TRX') return `https://tronscan.org/#/transaction/${hash}`;
+        if (chain === 'SOL') return `https://solscan.io/tx/${hash}`;
+        if (chain === 'BNB') return `https://bscscan.com/tx/${hash}`;
+        if (chain === 'APTOS') return `https://explorer.aptoslabs.com/txn/${hash}`;
+        return `https://etherscan.io/tx/${hash}`;
+    };
+
+    useEffect(() => {
+        let interval: NodeJS.Timeout;
+
+        if (showModal && activeOrder?.orderId && swapStatus !== 'COMPLETED' && swapStatus !== 'FAILED_PAYOUT') {
+            const fetchOrderStatus = async () => {
+                try {
+                    const token = localStorage.getItem('breakaway_token');
+                    const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000';
+                    const response = await fetch(`${API_URL}/api/swap/order/${activeOrder.orderId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        setSwapStatus(data.status);
+                        // Inject fresh payload arrays (e.g., txHash data) safely
+                        if (data.status === 'COMPLETED' || data.status === 'FAILED_PAYOUT' || data.status === 'PROCESSING') {
+                            setActiveOrder(data);
+                        }
+                    }
+                } catch (e) {
+                     // Silently digest polling errors mathematically
+                }
+            };
+
+            interval = setInterval(fetchOrderStatus, 3000); // 3 Sec heartbeat
+        }
+
+        return () => clearInterval(interval);
+    }, [showModal, activeOrder?.orderId, swapStatus]);
+
+    const handlePayViaKeychain = () => {
+        const username = localStorage.getItem('hive_user')?.replace(/^@/, '');
+        if (!username) {
+            showNotification("Please log in to your wallet first.", "error");
+            return;
+        }
+
+        // @ts-ignore
+        if (window.hive_keychain) {
+            const toAccount = activeOrder?.depositAddress?.replace(/^@/, '') || "sovra.swap";
+            const memo = activeOrder?.depositMemo;
+            
+            // Hive mathematically mandates 3 decimals for operations
+            const parsedAmount = parseFloat(payAmount);
+            if (isNaN(parsedAmount) || parsedAmount <= 0) {
+                 showNotification("Invalid cryptographic amount detected.", "error");
+                 return;
+            }
+            const processedAmountStr = parsedAmount.toFixed(3);
+            
+            showNotification(`Opening Keychain to transfer ${processedAmountStr} ${payCoin.symbol}...`, "info");
+            
+            // @ts-ignore
+            window.hive_keychain.requestTransfer(
+                username,
+                toAccount,
+                processedAmountStr,
+                memo,
+                payCoin.symbol,
+                (response: any) => {
+                    if (response.success) {
+                        showNotification("Transfer initiated successfully! Scanning blockchain for internal confirmation...", "success");
+                    } else {
+                        showNotification(response.message || "Cryptographic transfer execution cancelled.", "error");
+                        console.error('Keychain Error:', response);
+                    }
+                },
+                true
+            );
+        } else {
+            showNotification("Hive Keychain extension structurally missing or locked", "error");
         }
     };
 
@@ -200,9 +324,9 @@ export default function SwapInterface() {
                         ) : (
                             <input
                                 type="text"
-                                value={receiveAmount}
+                                value={isQuoting ? '...' : grossAmount}
                                 readOnly
-                                placeholder="0"
+                                placeholder="0.00"
                                 className="bg-transparent text-4xl font-black text-[var(--text-primary)] focus:outline-none w-[60%] overflow-hidden text-ellipsis cursor-default opacity-80"
                             />
                         )}
@@ -218,23 +342,54 @@ export default function SwapInterface() {
                             <span className="text-[var(--text-primary)]">1 {payCoin.symbol} = {exchangeRate} {receiveCoin.symbol}</span>
                         </div>
                         <div className="flex items-center justify-between text-sm font-bold mt-2">
-                            <span className="text-[var(--text-secondary)]">Network Fee</span>
-                            <span className="text-purple-500">Free</span>
+                             <span className="text-[var(--text-secondary)]">Exchange Fee (3%)</span>
+                             <span className="text-[var(--text-primary)]">{platformFee} {receiveCoin.symbol}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm font-bold mt-2">
+                             <span className="text-[var(--text-secondary)]">Network Fee</span>
+                             <span className="text-purple-500">{parseFloat(networkFee || '0') > 0 ? `${networkFee} ${receiveCoin.symbol}` : 'Free (Sponsored)'}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-lg font-bold mt-4 border-t border-[var(--border-color)] pt-4">
+                             <span className="text-[var(--text-primary)]">Estimated Payout</span>
+                             <span className="text-green-500">{receiveAmount} {receiveCoin.symbol}</span>
                         </div>
                     </div>
                 )}
 
-                {/* Destination Address Input (Always Visible to allow alternative payouts) */}
+                {/* Destination Address Input (Visible Toggle to allow alternative payouts) */}
                 <div className="mt-4 px-2">
-                    <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase mb-2 ml-2">
-                        Destination {receiveCoin.symbol === 'HIVE' || receiveCoin.symbol === 'HBD' ? 'Hive Username' : `${receiveCoin.symbol} Address`}
-                    </label>
+                    <div className="flex items-center justify-between mb-2 ml-2">
+                        <label className="block text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
+                            Destination {receiveCoin.symbol === 'HIVE' || receiveCoin.symbol === 'HBD' ? 'Hive Username' : `${receiveCoin.symbol} Address`}
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                            <span className={`text-xs font-bold transition-colors ${useCustomAddress ? 'text-purple-500' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'}`}>
+                                Use External Address
+                            </span>
+                            <div className="relative">
+                                <input 
+                                    type="checkbox" 
+                                    className="sr-only"
+                                    checked={useCustomAddress}
+                                    onChange={() => {
+                                        setUseCustomAddress(!useCustomAddress);
+                                        if (!useCustomAddress) { // Switching to custom
+                                            setDestinationAddress('');
+                                        }
+                                    }}
+                                />
+                                <div className={`block w-8 h-4 rounded-full transition-colors ${useCustomAddress ? 'bg-purple-500' : 'bg-[var(--border-color)]'}`}></div>
+                                <div className={`absolute left-0.5 top-0.5 bg-white w-3 h-3 rounded-full transition-transform shadow-sm ${useCustomAddress ? 'transform translate-x-4' : ''}`}></div>
+                            </div>
+                        </label>
+                    </div>
                     <input
                         type="text"
                         value={destinationAddress}
+                        readOnly={!useCustomAddress}
                         onChange={(e) => setDestinationAddress(e.target.value.trim())}
                         placeholder={receiveCoin.symbol === 'HIVE' || receiveCoin.symbol === 'HBD' ? `Enter destination username` : `Enter destination wallet address`}
-                        className="w-full bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary-color)] transition-colors text-sm font-bold text-[var(--text-primary)]"
+                        className={`w-full border border-[var(--border-color)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary-color)] transition-colors text-sm font-bold bg-[var(--bg-canvas)] ${!useCustomAddress ? 'text-[var(--text-secondary)] cursor-not-allowed' : 'text-[var(--text-primary)]'}`}
                     />
                 </div>
 
@@ -289,44 +444,120 @@ export default function SwapInterface() {
                             <h3 className="text-xl font-black text-[var(--text-primary)]">Review Swap</h3>
                         </div>
 
-                        {/* Order Summary */}
+                        {/* Order Summary rendering computationally bound to Active execution stage */}
                         <div className="p-6 space-y-6">
-                            <div className="flex items-center justify-between border border-[var(--border-color)] rounded-xl p-4 bg-[var(--bg-canvas)]">
-                                <div className="text-center w-full">
-                                    <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1">You Send</p>
-                                    <p className="text-2xl font-black text-red-500">{parseFloat(payAmount).toLocaleString()} <span className="text-sm">{payCoin.symbol}</span></p>
-                                </div>
-                                <div className="px-4 text-[var(--border-color)]">➜</div>
-                                <div className="text-center w-full">
-                                    <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1">You Receive</p>
-                                    <p className="text-2xl font-black text-green-500">{parseFloat(receiveAmount).toLocaleString()} <span className="text-sm">{receiveCoin.symbol}</span></p>
-                                </div>
-                            </div>
 
-                            {/* Destination Warning */}
-                            {receiveCoin.symbol !== 'HIVE' && receiveCoin.symbol !== 'HBD' && (
-                                <div className="text-sm font-bold text-[var(--text-primary)] text-center bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
-                                    Payout goes to: <br/>
-                                    <span className="text-purple-500 font-mono text-xs break-all mt-1 block">{destinationAddress}</span>
+                            {swapStatus === 'COMPLETED' ? (
+                                <div className="text-center py-6 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500">
+                                     <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mb-6 shadow-[0_0_40px_rgba(34,197,94,0.4)] relative">
+                                         <Check className="w-12 h-12 text-white" />
+                                         <div className="absolute inset-0 rounded-full border-4 border-green-400 animate-ping opacity-20"></div>
+                                     </div>
+                                     <h3 className="text-3xl font-black text-[var(--text-primary)] mb-2">Swap Complete!</h3>
+                                     <p className="text-sm font-bold text-[var(--text-secondary)] mb-6 px-4 leading-relaxed">Your external cryptographic execution has been definitively forged into the destination blockchain.</p>
+                                     
+                                     <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] p-5 rounded-2xl w-full text-left shadow-inner">
+                                         <p className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider mb-1">Delivered Asset</p>
+                                         <p className="text-2xl font-black text-green-500 mb-4">{activeOrder?.amountToPayout ? parseFloat(activeOrder.amountToPayout).toLocaleString() : parseFloat(receiveAmount).toLocaleString()} {receiveCoin.symbol}</p>
+                                         
+                                         <p className="text-xs font-black text-[var(--text-secondary)] uppercase tracking-wider mb-1">Blockchain Hash</p>
+                                         <div className="flex items-stretch gap-2">
+                                             <p className="font-mono text-xs font-bold text-[var(--primary-color)] break-all bg-[var(--bg-card)] p-3 rounded-lg border border-[var(--border-color)] flex-1">
+                                                 {activeOrder?.txHashPayout || "Verified on-chain"}
+                                             </p>
+                                             {activeOrder?.txHashPayout && (
+                                                <a href={getExplorerUrl(receiveCoin.symbol, activeOrder.txHashPayout)} target="_blank" rel="noopener noreferrer" className="px-4 bg-[var(--bg-card)] hover:bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-lg transition-colors flex items-center justify-center text-[var(--text-secondary)] hover:text-[var(--primary-color)] shadow-sm">
+                                                    <ExternalLink size={18} />
+                                                </a>
+                                             )}
+                                         </div>
+                                     </div>
+                                     <button 
+                                         onClick={() => { setShowModal(false); setSwapStatus('PENDING'); setPayAmount(''); setReceiveAmount(''); }}
+                                         className="w-full mt-6 bg-[var(--bg-card)] hover:bg-[var(--bg-canvas)] border border-[var(--border-color)] text-[var(--text-primary)] font-black text-lg py-4 rounded-xl transition-all shadow-sm active:scale-95"
+                                     >
+                                        Execute Another Swap
+                                     </button>
                                 </div>
-                            )}
+                            ) : swapStatus === 'FAILED_PAYOUT' ? (
+                                <div className="text-center py-8">
+                                     <AlertCircle className="w-20 h-20 text-red-500 mx-auto mb-4" />
+                                     <h3 className="text-xl font-black text-[var(--text-primary)] mb-2">Payout Execution Failed</h3>
+                                     <p className="text-xs font-bold text-[var(--text-secondary)]">Your deposit was mathematically secured, but the automated outbound hot wallet lacked sufficient blockchain fees or liquidity to actively push your swap. Your Hive/HBD is cryptographically safe. Contact Master Admin with Order ID <b>{activeOrder?.orderId}</b>.</p>
+                                     <button onClick={() => setShowModal(false)} className="w-full mt-6 bg-red-500 text-white font-black py-4 rounded-xl">Discard Window</button>
+                                </div>
+                            ) : swapStatus === 'PROCESSING' || swapStatus === 'DEPOSIT_DETECTED' ? (
+                                <div className="text-center py-10 flex flex-col items-center animate-in fade-in">
+                                     <div className="relative mb-8">
+                                         <div className="w-24 h-24 border-8 border-[var(--bg-canvas)] rounded-full"></div>
+                                         <div className="w-24 h-24 border-8 border-purple-500 rounded-full border-t-transparent animate-spin abstract-center absolute top-0 left-0"></div>
+                                         <RefreshCw className="w-8 h-8 text-purple-500 absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+                                     </div>
+                                     <h3 className="text-2xl font-black text-[var(--text-primary)] mb-3">Processing Execution</h3>
+                                     <p className="text-sm font-bold text-[var(--text-secondary)] max-w-[280px] leading-relaxed">
+                                         {swapStatus === 'DEPOSIT_DETECTED' 
+                                            ? "Cryptographic deposit secured. Initiating cross-chain bridge arrays..."
+                                            : "Broadcasting payload sequence instantly to the destination blockchain network..."
+                                         }
+                                     </p>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="flex items-center justify-between border border-[var(--border-color)] rounded-xl p-4 bg-[var(--bg-canvas)]">
+                                        <div className="text-center w-full">
+                                            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1">You Send</p>
+                                            <p className="text-2xl font-black text-red-500">{parseFloat(payAmount).toLocaleString()} <span className="text-sm">{payCoin.symbol}</span></p>
+                                        </div>
+                                        <div className="px-4 text-[var(--border-color)]">➜</div>
+                                        <div className="text-center w-full">
+                                            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-1">You Receive</p>
+                                            <p className="text-2xl font-black text-green-500">{parseFloat(receiveAmount).toLocaleString()} <span className="text-sm">{receiveCoin.symbol}</span></p>
+                                        </div>
+                                    </div>
 
-                            {/* Deposit Instructions (Mocked for now) */}
-                            <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-6 text-center shadow-inner">
-                                <h4 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-4">Deposit Instructions</h4>
-                                
-                                {payCoin.symbol === 'HIVE' || payCoin.symbol === 'HBD' ? (
+                                    {/* Destination Warning */}
+                                    {receiveCoin.symbol !== 'HIVE' && receiveCoin.symbol !== 'HBD' && (
+                                        <div className="text-sm font-bold text-[var(--text-primary)] text-center bg-purple-500/10 border border-purple-500/30 rounded-xl p-4">
+                                            Payout goes to: <br/>
+                                            <span className="text-purple-500 font-mono text-xs break-all mt-1 block">{destinationAddress}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Deposit Instructions */}
+                                    <div className="bg-[var(--bg-canvas)] border border-[var(--border-color)] rounded-2xl p-6 text-center shadow-inner relative overflow-hidden">
+                                        
+                                        <h4 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-4 relative z-10">Deposit Instructions</h4>
+                                        
+                                        {payCoin.symbol === 'HIVE' || payCoin.symbol === 'HBD' ? (
                                     <>
                                         <p className="text-sm font-bold text-[var(--text-primary)] mb-2">Send precisely <strong className="text-red-500">{payAmount} {payCoin.symbol}</strong> to:</p>
-                                        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-3 font-mono font-black text-lg text-[var(--primary-color)] mb-3 select-all">
-                                            {activeOrder?.depositAddress || "@sovraniche.hot"}
-                                        </div>
-                                        <p className="text-xs font-bold text-[var(--text-secondary)] mb-1">With Memo:</p>
-                                        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-2 font-mono text-sm text-[var(--text-primary)] break-all select-all">
-                                            {activeOrder?.depositMemo}
-                                        </div>
+                                        <button 
+                                            onClick={() => handleCopy(activeOrder?.depositAddress || "@sovra.swap", 'address')}
+                                            className="w-full relative group bg-[var(--bg-card)] hover:bg-[var(--bg-card)]/80 border border-[var(--border-color)] hover:border-[var(--primary-color)]/50 rounded-lg p-3 mb-3 transition-colors text-left flex items-center justify-between"
+                                            title="Copy Deposit Address"
+                                        >
+                                            <span className="font-mono font-black text-lg text-[var(--primary-color)] select-all truncate">
+                                                {activeOrder?.depositAddress || "Generating Address..."}
+                                            </span>
+                                            {copiedAddress ? <Check className="w-5 h-5 text-green-500 shrink-0" /> : <Copy className="w-5 h-5 text-[var(--text-secondary)] group-hover:text-[var(--primary-color)] shrink-0 transition-colors" />}
+                                        </button>
                                         
-                                        <button className="w-full mt-6 bg-red-500 hover:bg-red-400 text-white font-black py-4 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
+                                        <p className="text-xs font-bold text-[var(--text-secondary)] mb-1">With Memo:</p>
+                                        <button 
+                                            onClick={() => handleCopy(activeOrder?.depositMemo, 'memo')}
+                                            className="w-full relative group bg-[var(--bg-card)] hover:bg-[var(--bg-card)]/80 border border-[var(--border-color)] hover:border-[var(--primary-color)]/50 rounded-lg p-2 mb-2 transition-colors text-left flex items-center justify-between"
+                                            title="Copy Deposit Memo"
+                                        >
+                                            <span className="font-mono text-sm text-[var(--text-primary)] break-all select-all pr-4">
+                                                {activeOrder?.depositMemo || "..."}
+                                            </span>
+                                            {copiedMemo ? <Check className="w-4 h-4 text-green-500 shrink-0" /> : <Copy className="w-4 h-4 text-[var(--text-secondary)] group-hover:text-[var(--primary-color)] shrink-0 transition-colors" />}
+                                        </button>
+                                        
+                                        <button 
+                                            onClick={handlePayViaKeychain}
+                                            className="w-full mt-6 bg-red-500 hover:bg-red-400 text-white font-black py-4 rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                                        >
                                             <img src="https://hive.io/images/hive-logo.svg" className="w-5 h-5 filter brightness-0 invert" alt="Hive" />
                                             Pay via Keychain
                                         </button>
@@ -341,22 +572,34 @@ export default function SwapInterface() {
                                         </div>
 
                                         <p className="text-[11px] font-bold text-[var(--text-secondary)] mb-1 uppercase tracking-wider">{payCoin.symbol} Deposit Network (TRC-20 / Native)</p>
-                                        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg p-4 font-mono text-xs font-black text-[var(--primary-color)] break-all mb-4 select-all shadow-inner">
-                                            {activeOrder?.depositAddress || "Awaiting Cryptographic Generation..."}
-                                        </div>
+                                        
+                                        <button 
+                                            onClick={() => handleCopy(activeOrder?.depositAddress, 'address')}
+                                            className="w-full relative group bg-[var(--bg-card)] hover:bg-[var(--bg-card)]/80 border border-[var(--border-color)] hover:border-[var(--primary-color)]/50 rounded-lg p-4 mb-4 shadow-inner transition-colors text-left flex items-center justify-between"
+                                            title="Copy Deposit Address"
+                                        >
+                                            <span className="font-mono text-xs font-black text-[var(--primary-color)] break-all select-all pr-4 line-clamp-2">
+                                                {activeOrder?.depositAddress || "Awaiting Cryptographic Generation..."}
+                                            </span>
+                                            {copiedAddress ? <Check className="w-5 h-5 text-green-500 shrink-0" /> : <Copy className="w-5 h-5 text-[var(--text-secondary)] group-hover:text-[var(--primary-color)] shrink-0 transition-colors" />}
+                                        </button>
 
-                                        <div className="flex items-center gap-2 justify-center bg-blue-500/10 text-blue-500 text-xs font-bold p-3 rounded-xl border border-blue-500/20 mt-6">
+                                        <div className="flex items-center gap-2 justify-center bg-blue-500/10 text-blue-500 text-xs font-bold p-3 rounded-xl border border-blue-500/20 mt-6 relative z-10">
                                             <RefreshCw className="w-4 h-4 animate-spin" /> Waiting to detect blockchain deposit...
                                         </div>
                                     </>
                                 )}
+                                {/* Optional Decorative Graphic mapping visually */}
+                                <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[var(--bg-card)] opacity-10 pointer-events-none z-0"></div>
                             </div>
-                        </div>
-                    </div>
+                        </>
+                    )}
                 </div>
-            )}
+            </div>
         </div>
-    );
+    )}
+</div>
+);
 }
 
 // -------------------------------------------------------------
