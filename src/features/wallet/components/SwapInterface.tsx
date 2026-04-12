@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ArrowUpDown, Settings, AlertCircle, RefreshCw, ArrowLeft, Copy, Check, ExternalLink } from 'lucide-react';
 import { useNotification } from '../../../contexts/NotificationContext';
 

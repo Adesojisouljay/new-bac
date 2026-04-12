@@ -166,7 +166,7 @@ export default function CreatePostPage() {
             {
                 name: "image",
                 action: () => {
-                    setShowMediaChoice(!showMediaChoice);
+                    setShowMediaChoice(prev => !prev);
                     setShowUrlInput(false);
                 },
                 className: "fa fa-image",
@@ -174,7 +174,7 @@ export default function CreatePostPage() {
             },
             "|", "guide"
         ] as any
-    }), [showMediaChoice]);
+    }), []);
 
     const handleMentionSelect = (username: string) => {
         if (!mdeInstance) return;
@@ -219,8 +219,48 @@ export default function CreatePostPage() {
             }
         };
 
+        const handleDrop = (instance: any, e: DragEvent) => {
+            const file = e.dataTransfer?.files[0];
+            if (file && file.type.startsWith('image/')) {
+                e.preventDefault();
+                if (file.size > 10 * 1024 * 1024) {
+                    showNotification('Image size should be less than 10MB', 'error');
+                    return;
+                }
+                const pos = instance.coordsChar({ left: e.clientX, top: e.clientY });
+                instance.setCursor(pos);
+                handleImageUpload(file);
+            }
+        };
+
+        const handlePaste = (instance: any, e: ClipboardEvent) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            for (let i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image') !== -1) {
+                    e.preventDefault();
+                    const file = items[i].getAsFile();
+                    if (file) {
+                        if (file.size > 10 * 1024 * 1024) {
+                            showNotification('Image size should be less than 10MB', 'error');
+                            return;
+                        }
+                        handleImageUpload(file);
+                    }
+                    break;
+                }
+            }
+        };
+
         cm.on('keyup', handleChange);
-        return () => cm.off('keyup', handleChange);
+        cm.on('drop', handleDrop);
+        cm.on('paste', handlePaste);
+
+        return () => {
+            cm.off('keyup', handleChange);
+            cm.off('drop', handleDrop);
+            cm.off('paste', handlePaste);
+        };
     }, [mdeInstance]);
 
     // Auto-save logic
