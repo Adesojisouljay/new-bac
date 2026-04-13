@@ -4,6 +4,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ReactMarkdown from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 
@@ -378,7 +379,17 @@ const HiveMarkdown: React.FC<HiveMarkdownProps> = ({ content, className = '', co
                 }
             `}} />
             <ReactMarkdown
-                rehypePlugins={[rehypeRaw]}
+                rehypePlugins={[
+                    rehypeRaw,
+                    [rehypeSanitize, {
+                        ...defaultSchema,
+                        tagNames: [...(defaultSchema.tagNames || []), 'center'],
+                        attributes: {
+                            ...defaultSchema.attributes,
+                            '*': [...(defaultSchema.attributes?.['*'] || []), 'className']
+                        }
+                    }]
+                ]}
                 remarkPlugins={[remarkGfm, remarkBreaks]}
                 components={mergedComponents}
             >
