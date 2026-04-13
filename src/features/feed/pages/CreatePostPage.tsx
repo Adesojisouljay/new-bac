@@ -233,7 +233,7 @@ export default function CreatePostPage() {
             }
         };
 
-        const handlePaste = (instance: any, e: ClipboardEvent) => {
+        const handlePaste = (_instance: any, e: ClipboardEvent) => {
             const items = e.clipboardData?.items;
             if (!items) return;
             for (let i = 0; i < items.length; i++) {
