@@ -133,6 +133,8 @@ export const NotificationService = {
         if (hash) {
             switch (c) {
                 case 'BTC': return `https://blockstream.info/tx/${hash}`;
+                case 'DOGE': return `https://blockchair.com/dogecoin/transaction/${hash}`;
+                case 'LTC': return `https://blockchair.com/litecoin/transaction/${hash}`;
                 case 'ETH': return `https://etherscan.io/tx/${hash}`;
                 case 'BASE': return `https://basescan.org/tx/${hash}`;
                 case 'POLYGON': return `https://polygonscan.com/tx/${hash}`;
@@ -150,6 +152,8 @@ export const NotificationService = {
         if (address) {
             switch (c) {
                 case 'BTC': return `https://blockstream.info/address/${address}`;
+                case 'DOGE': return `https://blockchair.com/dogecoin/address/${address}`;
+                case 'LTC': return `https://blockchair.com/litecoin/address/${address}`;
                 case 'ETH': return `https://etherscan.io/address/${address}`;
                 case 'BASE': return `https://basescan.org/address/${address}`;
                 case 'POLYGON': return `https://polygonscan.com/address/${address}`;

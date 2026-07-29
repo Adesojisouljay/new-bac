@@ -189,6 +189,8 @@ export default function SwapInterface() {
     const getExplorerUrl = (chain: string, hash: string) => {
         if (chain === 'HIVE' || chain === 'HBD') return `https://hiveblocks.com/tx/${hash}`;
         if (chain === 'BTC') return `https://mempool.space/tx/${hash}`;
+        if (chain === 'DOGE') return `https://blockchair.com/dogecoin/transaction/${hash}`;
+        if (chain === 'LTC') return `https://blockchair.com/litecoin/transaction/${hash}`;
         if (chain === 'TRON' || chain === 'USDT' || chain === 'TRX') return `https://tronscan.org/#/transaction/${hash}`;
         if (chain === 'SOL') return `https://solscan.io/tx/${hash}`;
         if (chain === 'BNB') return `https://bscscan.com/tx/${hash}`;

@@ -304,10 +304,24 @@ export const web3WalletService = {
      * POST /api/wallet/info  { wallets }
      */
     getWalletInfo: async (wallets: RawWallets): Promise<Web3WalletInfo[]> => {
+        // SECURITY PATCH: Sanitize payload to strictly prevent privateKey / mnemonic transmission
+        const safeWallets: Record<string, { address: string, imageUrl?: string }> = {};
+        
+        for (const [chain, data] of Object.entries(wallets)) {
+            if (chain === 'mnemonic') continue;
+            // Safely map only public identifiers
+            if (data && typeof data === 'object' && 'address' in data) {
+                safeWallets[chain] = { 
+                    address: data.address,
+                    imageUrl: data.imageUrl 
+                };
+            }
+        }
+
         const res = await fetch(`${WEB3_API_URL}/api/wallet/info`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallets }),
+            body: JSON.stringify({ wallets: safeWallets }),
         });
         if (!res.ok) {
             const text = await res.text();
@@ -375,18 +389,7 @@ export const web3WalletService = {
         return data.hash;
     },
 
-    /**
-     * Send transaction (Legacy / Utility based).
-     */
-    sendTransaction: async (chain: string, to: string, amount: number, wallet: any) => {
-        const res = await fetch(`${WEB3_API_URL}/api/wallet/send`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chain, to, amount, wallet }),
-        });
-        if (!res.ok) throw new Error(`Send failed (${res.status})`);
-        return res.json();
-    },
+
 
     /**
      * Log a Web3 transaction to the Hive blockchain for permanent history.
