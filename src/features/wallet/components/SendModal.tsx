@@ -29,6 +29,8 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
     const [amount, setAmount] = useState('');
     const [loading, setLoading] = useState(false);
     const [fee, setFee] = useState<number | null>(null);
+    const [isSponsored, setIsSponsored] = useState(false);
+    const [displayFee, setDisplayFee] = useState<number | null>(null);
     const [fetchingFee, setFetchingFee] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [txHash, setTxHash] = useState<string | null>(null);
@@ -82,7 +84,10 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                     const res = await web3WalletService.estimateFee(chain, address, destination, Number(amount));
                     if (res.success) {
                         const feeVal = typeof res.fee === 'object' ? res.fee.fee : res.fee;
+                        const details = res.details || {};
                         setFee(Number(feeVal));
+                        setIsSponsored(!!details.sponsored);
+                        setDisplayFee(details.displayFee !== undefined ? Number(details.displayFee) : Number(feeVal));
                     }
                 } catch (err) {
                     console.warn('Fee estimation failed');
@@ -349,12 +354,18 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
     } else if (chain === 'ARB' && fee !== null && arbitrumBalance < fee) {
         hasInsufficientNativeGas = true;
         insufficientGasMsg = `Transaction disabled: You do not have enough native ETH on Arbitrum to pay for the network fee (${fee.toFixed(6)} ETH). Please deposit more ETH.`;
-    } else if (chain === 'USDT_TRC20' && fee !== null && tronBalance < fee) {
-        hasInsufficientNativeGas = true;
-        insufficientGasMsg = `Transaction disabled: You do not have enough native TRON to pay for the network fee (${fee.toFixed(2)} TRX). Please deposit more TRX.`;
+    } else if (chain === 'USDT_TRC20' && (fee !== null || displayFee !== null)) {
+        const effectiveFee = displayFee ?? fee ?? 0;
+        if (!isSponsored && tronBalance < effectiveFee) {
+            hasInsufficientNativeGas = true;
+            insufficientGasMsg = `Transaction disabled: You do not have enough native TRON to pay for the network fee (${effectiveFee.toFixed(2)} TRX). Please deposit more TRX.`;
+        }
     }
 
     const isErc20Token = ['USDT_ERC20', 'USDT_BEP20', 'ARB', 'USDT_TRC20'].includes(chain);
+    
+    // Explicit mathematical boundary check for execution feasibility
+    const isInsufficientBalance = fee !== null && !isErc20Token && (Number(amount) + fee) > spendableBalance;
 
     return (
         <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
@@ -502,12 +513,14 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                                 {fetchingFee ? (
                                     <span className="text-[var(--text-secondary)] animate-pulse text-[10px]">Calculating...</span>
                                 ) : (
-                                    <span className="text-[var(--text-primary)] font-bold">
-                                        {fee !== null && typeof fee === 'number' ? fee.toFixed(6) : '--'} {isErc20Token ? (chain === 'USDT_BEP20' ? 'BNB' : chain === 'USDT_TRC20' ? 'TRX' : 'ETH') : chain}
+                                    <span className={`font-bold ${isSponsored ? 'text-green-500' : 'text-[var(--text-primary)]'}`}>
+                                        {(displayFee !== null || fee !== null) ? (displayFee ?? fee)?.toFixed(6) : '--'} 
+                                        {isErc20Token ? (chain === 'USDT_BEP20' ? ' BNB' : chain === 'USDT_TRC20' ? ' TRX' : ' ETH') : ` ${chain}`}
+                                        {isSponsored && <span className="ml-1.5 text-[10px] bg-green-500/10 px-1.5 py-0.5 rounded-md uppercase tracking-tighter">Sponsored</span>}
                                     </span>
                                 )}
                             </div>
-                            <div className="bg-[var(--primary-color)]/5 rounded-xl p-4 flex justify-between items-center mt-2 border border-[var(--primary-color)]/10">
+                             <div className="bg-[var(--primary-color)]/5 rounded-xl p-4 flex justify-between items-center mt-2 border border-[var(--primary-color)]/10">
                                 <div>
                                     <p className="text-lg font-bold text-[var(--text-primary)]">
                                         {Number(amount).toFixed(6)} {chain}
@@ -515,14 +528,14 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                                 </div>
                                 <div className="text-right">
                                     <p className="text-[10px] font-black uppercase tracking-widest text-[var(--text-secondary)]">Total Deduction</p>
-                                    <p className={`text-xs font-bold ${(fee !== null && !isErc20Token && (Number(amount) + fee) > balance) || Number(amount) > spendableBalance ? 'text-red-500' : 'text-[var(--text-secondary)]'}`}>
+                                    <p className={`text-xs font-bold ${isInsufficientBalance || Number(amount) > spendableBalance ? 'text-red-500' : 'text-[var(--text-secondary)]'}`}>
                                         {fee !== null ? (isErc20Token ? `${Number(amount).toFixed(6)} ${chain} + Gas` : `${(Number(amount) + fee).toFixed(6)} ${chain}`) : '--'}
                                     </p>
                                 </div>
                             </div>
-                            {fee !== null && !isErc20Token && (Number(amount) + fee) > balance && (
+                            {isInsufficientBalance && (
                                 <p className="text-[10px] text-red-500 font-bold text-center animate-pulse mt-1">
-                                    ⚠️ Total deduction exceeds your available balance
+                                    ⚠️ Total deduction ({fee !== null ? (Number(amount) + fee).toFixed(6) : ''} {chain}) logically exceeds your available balance
                                 </p>
                             )}
                         </div>
@@ -546,13 +559,13 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
 
                     <button
                         onClick={handleSend}
-                        disabled={loading || !to || !amount || hasInsufficientNativeGas || (!privateKey && !mnemonicStorage.getEncrypted(username))}
-                        className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none disabled:active:scale-100 ${(!privateKey && !hasInsufficientNativeGas) ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : (hasInsufficientNativeGas ? 'bg-red-500/50 cursor-not-allowed' : 'bg-green-600 shadow-green-600/25')}`}
+                        disabled={loading || !to || !amount || hasInsufficientNativeGas || isInsufficientBalance || (!privateKey && !mnemonicStorage.getEncrypted(username))}
+                        className={`w-full py-4 text-white font-bold rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-xl disabled:opacity-50 disabled:shadow-none disabled:active:scale-100 ${(!privateKey && !hasInsufficientNativeGas && !isInsufficientBalance) ? 'bg-[var(--primary-color)] shadow-[var(--primary-color)]/25' : ((hasInsufficientNativeGas || isInsufficientBalance) ? 'bg-red-500/50 cursor-not-allowed' : 'bg-green-600 shadow-green-600/25')}`}
                     >
                         {loading ? 'Processing...' : (
                             !mnemonicStorage.getEncrypted(username) ? 'Import Phrase to Send' : (!privateKey ? 'Confirm (Sign with Keychain)' : `Send ${amount} ${chain}`)
                         )}
-                        {!loading && !hasInsufficientNativeGas && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
+                        {!loading && !hasInsufficientNativeGas && !isInsufficientBalance && (privateKey ? <ShieldCheck size={18} /> : <Send size={16} />)}
                     </button>
                 </div>
             </div>

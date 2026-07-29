@@ -126,24 +126,20 @@ export default function MarketPage() {
                         )}
                     </button>
                     <button 
-                        onClick={() => navigate('/market/p2p')}
-                        className={`pb-4 text-base font-bold transition-all relative ${isP2P ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                        // onClick={() => navigate('/market/p2p')}
+                        disabled
+                        className="pb-4 text-base font-bold transition-all relative text-[var(--text-secondary)] cursor-not-allowed opacity-60"
                     >
                         P2P Trading
-                        <span className="ml-2 px-2 py-0.5 text-[10px] bg-red-500 text-white rounded-full animate-pulse">HOT</span>
-                        {isP2P && (
-                            <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[var(--primary-color)] rounded-t-full shadow-[0_0_10px_var(--primary-color)]"></div>
-                        )}
+                        <span className="ml-2 px-2 py-0.5 text-[10px] bg-gray-500 text-white rounded-full">COMING SOON</span>
                     </button>
                     <button 
-                        onClick={() => navigate('/market/swap')}
-                        className={`pb-4 text-base font-bold transition-all relative ${isSwap ? 'text-purple-500' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+                        // onClick={() => navigate('/market/swap')}
+                        disabled
+                        className="pb-4 text-base font-bold transition-all relative text-[var(--text-secondary)] cursor-not-allowed opacity-60"
                     >
                         Instant Swap
-                        <span className="ml-2 px-2 py-0.5 text-[10px] bg-purple-500 text-white rounded-full animate-bounce">NEW</span>
-                        {isSwap && (
-                            <div className="absolute bottom-0 left-0 w-full h-[3px] bg-purple-500 rounded-t-full shadow-[0_0_10px_purple]"></div>
-                        )}
+                        <span className="ml-2 px-2 py-0.5 text-[10px] bg-gray-500 text-white rounded-full">COMING SOON</span>
                     </button>
                 </div>
 
