@@ -413,8 +413,10 @@ export function PostCard({ post, viewerRole, onUnreblog }: PostCardProps) {
                                             >
                                                 <span className="text-2xl">🐝</span>
                                                 <div>
-                                                    <p className="text-sm font-bold text-[var(--text-primary)] group-hover/hive:text-[var(--primary-color)] transition-colors">HIVE / HBD</p>
-                                                    <p className="text-[10px] text-[var(--text-secondary)]">Send from your Hive wallet</p>
+                                                    <p className="text-sm font-bold text-[var(--text-primary)] group-hover/hive:text-[var(--primary-color)] transition-colors">
+                                                        {config?.nativeTokenTicker || 'HIVE / HBD'}
+                                                    </p>
+                                                    <p className="text-[10px] text-[var(--text-secondary)]">Send from your wallet</p>
                                                 </div>
                                             </button>
                                             <button

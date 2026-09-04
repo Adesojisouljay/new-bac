@@ -116,7 +116,9 @@ export function PointsWallet({ username }: PointsWalletProps) {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {/* Total Balance */}
                 <div className="sm:col-span-2 bg-gradient-to-br from-[var(--primary-color)] to-[var(--secondary-color)] rounded-2xl p-6 text-white shadow-lg">
-                    <p className="text-xs font-bold uppercase tracking-wider opacity-80 mb-1">Total Points Balance</p>
+                    <p className="text-xs font-bold uppercase tracking-wider opacity-80 mb-1">
+                        Total {config?.nativeTokenTicker || 'Points'} Balance
+                    </p>
                     <p className="text-5xl font-bold">{totalPoints.toLocaleString()}</p>
                     <p className="text-xs opacity-70 mt-2">{communityId} community</p>
                 </div>
@@ -135,7 +137,7 @@ export function PointsWallet({ username }: PointsWalletProps) {
                             : 'border border-[var(--border-color)] text-[var(--text-secondary)] opacity-50 cursor-not-allowed'
                             }`}
                     >
-                        {isClaiming ? 'Claiming...' : 'Claim Rewards'}
+                        {isClaiming ? 'Claiming...' : `Claim ${config?.nativeTokenTicker || 'Rewards'}`}
                     </button>
                 </div>
             </div>
@@ -151,8 +153,8 @@ export function PointsWallet({ username }: PointsWalletProps) {
             {!error && !pointsData && (
                 <div className="text-center py-12 text-[var(--text-secondary)]">
                     <div className="text-4xl mb-3">🎯</div>
-                    <p className="font-bold">No points yet</p>
-                    <p className="text-sm mt-1">Start posting, commenting, and logging in daily to earn points.</p>
+                    <p className="font-bold">No {config?.nativeTokenTicker || 'points'} yet</p>
+                    <p className="text-sm mt-1">Start posting, commenting, and logging in daily to earn {config?.nativeTokenTicker || 'points'}.</p>
                 </div>
             )}
 

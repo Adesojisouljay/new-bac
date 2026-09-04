@@ -134,12 +134,13 @@ export default function MarketPage() {
                         <span className="ml-2 px-2 py-0.5 text-[10px] bg-gray-500 text-white rounded-full">COMING SOON</span>
                     </button>
                     <button 
-                        // onClick={() => navigate('/market/swap')}
-                        disabled
-                        className="pb-4 text-base font-bold transition-all relative text-[var(--text-secondary)] cursor-not-allowed opacity-60"
+                        onClick={() => navigate('/market/swap')}
+                        className={`pb-4 text-base font-bold transition-all relative ${isSwap ? 'text-[var(--primary-color)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
                     >
                         Instant Swap
-                        <span className="ml-2 px-2 py-0.5 text-[10px] bg-gray-500 text-white rounded-full">COMING SOON</span>
+                        {isSwap && (
+                            <div className="absolute bottom-0 left-0 w-full h-[3px] bg-[var(--primary-color)] rounded-t-full shadow-[0_0_10px_var(--primary-color)]"></div>
+                        )}
                     </button>
                 </div>
 
