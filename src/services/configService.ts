@@ -12,6 +12,9 @@ export interface CommunityConfig {
     communityDescription?: string;
     communityDescriptionExtra?: string;
     isConfigured: boolean;
+    nativeTokenTicker?: string;
+    nativeTokenNetwork?: string;
+    nativeTokenAddress?: string;
 }
 
 class ConfigService {
