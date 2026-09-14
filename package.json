@@ -8,6 +8,7 @@
     "build": "tsc && NODE_OPTIONS=--max-old-space-size=4096 vite build && node scripts/zip-dist.js",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
+    "postinstall": "cp node_modules/monero-ts/dist/monero.worker.js public/ 2>/dev/null && cp node_modules/monero-ts/dist/monero.js public/ 2>/dev/null || true",
     "cap:sync": "npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios"
@@ -44,6 +45,7 @@
     "hive-auth-wrapper": "^1.0.0",
     "keychain-sdk": "^0.11.1",
     "lucide-react": "^0.575.0",
+    "monero-ts": "^0.11.15",
     "process": "^0.11.10",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",

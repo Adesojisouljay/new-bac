@@ -56,7 +56,21 @@ export const NotificationService = {
      */
     addLocalNotification: (username: string, msg: string, type: string = 'deposit', url: string = 'wallet', txHash?: string, chain?: string, address?: string) => {
         const key = `local_notifications_${username}`;
-        const existing = JSON.parse(localStorage.getItem(key) || '[]');
+        const existing: HiveNotification[] = JSON.parse(localStorage.getItem(key) || '[]');
+        
+        // Prevent adding duplicate notification if an identical one exists recently
+        const now = Date.now();
+        const isDuplicate = existing.some(n => {
+            if (txHash && n.txHash === txHash) return true;
+            if (n.msg === msg && n.chain === chain && n.type === type) {
+                const diff = Math.abs(now - new Date(n.date).getTime());
+                if (diff < 600000) return true; // Within 10 minutes
+            }
+            return false;
+        });
+
+        if (isDuplicate) return;
+
         const newNotif: HiveNotification = {
             id: `local_${Date.now()}`,
             type,
@@ -77,7 +91,38 @@ export const NotificationService = {
 
     getLocalNotifications: (username: string): HiveNotification[] => {
         const key = `local_notifications_${username}`;
-        return JSON.parse(localStorage.getItem(key) || '[]');
+        const raw = JSON.parse(localStorage.getItem(key) || '[]');
+        if (!Array.isArray(raw)) return [];
+
+        // Automatically clean up and remove duplicate notifications from localStorage
+        const deduplicated = raw.filter((v: HiveNotification, i: number, a: HiveNotification[]) => {
+            const firstById = a.findIndex(t => t.id === v.id) === i;
+            if (!firstById) return false;
+
+            if (v.txHash) {
+                return a.findIndex(t => t.txHash === v.txHash) === i;
+            }
+
+            const firstByMsg = a.findIndex(t =>
+                t.msg === v.msg &&
+                t.type === v.type &&
+                t.chain === v.chain &&
+                Math.abs(new Date(t.date).getTime() - new Date(v.date).getTime()) < 600000
+            ) === i;
+            return firstByMsg;
+        });
+
+        if (deduplicated.length !== raw.length) {
+            localStorage.setItem(key, JSON.stringify(deduplicated));
+        }
+
+        return deduplicated;
+    },
+
+    clearLocalNotifications: (username: string) => {
+        const key = `local_notifications_${username}`;
+        localStorage.removeItem(key);
+        window.dispatchEvent(new CustomEvent('local_notification_added'));
     },
 
     /**
@@ -146,6 +191,7 @@ export const NotificationService = {
                 case 'TRON':
                 case 'USDT_TRC20': return `https://tronscan.org/#/transaction/${hash}`;
                 case 'APTOS': return `https://explorer.aptoslabs.com/txn/${hash}`;
+                case 'XMR': return `https://monerohash.com/explorer/search?value=${hash}`;
                 default: return `https://etherscan.io/tx/${hash}`; // Generic EVM
             }
         }
@@ -165,6 +211,7 @@ export const NotificationService = {
                 case 'TRON':
                 case 'USDT_TRC20': return `https://tronscan.org/#/address/${address}`;
                 case 'APTOS': return `https://explorer.aptoslabs.com/account/${address}`;
+                case 'XMR': return `https://monerohash.com/explorer/search?value=${address}`;
                 default: return `https://etherscan.io/address/${address}`;
             }
         }

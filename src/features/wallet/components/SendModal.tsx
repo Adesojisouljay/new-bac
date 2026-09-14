@@ -36,8 +36,8 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
     const [txHash, setTxHash] = useState<string | null>(null);
     const { showNotification } = useNotification();
 
-    // Solana rent-exemption buffer (~0.0021 SOL)
-    const RENT_BUFFER = chain === 'SOL' ? 0.0021 : 0;
+    // Network reserve buffer (Rent for SOL, dynamic fee buffer for XMR)
+    const RENT_BUFFER = chain === 'SOL' ? 0.0021 : (chain === 'XMR' ? 0.0001 : 0);
     const spendableBalance = Math.max(0, balance - RENT_BUFFER);
 
     useEffect(() => {
@@ -238,6 +238,9 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                     sequenceNumber: params.sequenceNumber,
                     chainId: params.chainId
                 });
+            } else if (chain === 'XMR') {
+                // Monero uses RingCT / CLSAG decoy mixing and Bulletproofs constructed with the daemon
+                // Handled in Step 4 directly
             } else {
                 throw new Error(`Local signing for ${chain} not yet implemented`);
             }
@@ -261,8 +264,13 @@ export function SendModal({ username, chain, address, imageUrl, privateKey, bala
                 return; // Stop execution
             }
 
-            // 4. Broadcast the raw signed transaction
-            const hash = await web3WalletService.broadcastTransaction(chain, signedTx);
+            // 4. Broadcast the transaction
+            let hash = '';
+            if (chain === 'XMR') {
+                hash = await web3WalletService.sendXmrTransaction(currentPrivateKey, destination, Number(amount));
+            } else {
+                hash = await web3WalletService.broadcastTransaction(chain, signedTx);
+            }
 
             setTxHash(hash);
             showNotification(`Successfully sent ${amount} ${chain}`, 'success');

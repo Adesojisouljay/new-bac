@@ -25,9 +25,17 @@ export function Web3ActivityFeed({ username }: Web3ActivityFeedProps) {
                 // Then deduplicate by txHash if available (prefers local which has better amounts/meta)
                 if (v.txHash) {
                     const firstByHash = a.findIndex(t => t.txHash === v.txHash) === i;
-                    return firstByHash;
+                    if (!firstByHash) return false;
                 }
-                return true;
+
+                // Deduplicate identical notifications for the same chain & message within a 10-minute window
+                const firstByMsg = a.findIndex(t => 
+                    t.msg === v.msg && 
+                    t.type === v.type && 
+                    t.chain === v.chain &&
+                    Math.abs(new Date(t.date).getTime() - new Date(v.date).getTime()) < 600000
+                ) === i;
+                return firstByMsg;
             })
             .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 

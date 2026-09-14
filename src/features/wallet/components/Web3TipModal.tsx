@@ -25,11 +25,11 @@ const CHAIN_ACCENT: Record<string, string> = {
     BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', TRON: '#ef0027',
     BNB: '#f0b90b', APTOS: '#00bcd4', BASE: '#0052ff', POLYGON: '#8247e5',
     ARBITRUM: '#28a0f0', USDT_TRC20: '#26a17b', USDT_BEP20: '#26a17b', USDT_ERC20: '#26a17b',
-    TON: '#0088cc', DOGE: '#f6c342', LTC: '#345D9D', ARB: '#28a0f0',
+    TON: '#0088cc', DOGE: '#f6c342', LTC: '#345D9D', ARB: '#28a0f0', XMR: '#ff6600',
 };
 
 const INTEGRATED_CHAINS = [
-    'BTC', 'LTC', 'DOGE', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM',
+    'BTC', 'LTC', 'DOGE', 'ETH', 'SOL', 'TRON', 'BNB', 'APTOS', 'XMR', 'BASE', 'POLYGON', 'ARBITRUM',
     'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20', 'ARB'
 ];
 
