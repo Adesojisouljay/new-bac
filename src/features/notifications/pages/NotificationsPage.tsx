@@ -32,9 +32,17 @@ export function NotificationsPage() {
                 // Deduplicate by txHash (prefers local/hive logs over generic remote ones)
                 if (v.txHash) {
                     const firstByHash = a.findIndex(t => t.txHash === v.txHash) === i;
-                    return firstByHash;
+                    if (!firstByHash) return false;
                 }
-                return true;
+
+                // Deduplicate identical messages for the same coin/type within a 10-minute window
+                const firstByMsg = a.findIndex(t => 
+                    t.msg === v.msg && 
+                    t.type === v.type && 
+                    t.chain === v.chain &&
+                    Math.abs(new Date(t.date).getTime() - new Date(v.date).getTime()) < 600000
+                ) === i;
+                return firstByMsg;
             })
             .sort((a, b) =>
                 new Date(b.date).getTime() - new Date(a.date).getTime()

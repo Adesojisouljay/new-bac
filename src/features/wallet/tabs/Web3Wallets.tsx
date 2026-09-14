@@ -46,6 +46,7 @@ const CHAIN_ACCENT: Record<string, string> = {
     USDT_BEP20: '#26a17b',
     USDT_ERC20: '#26a17b',
     ARB: '#28a0f0',
+    XMR: '#ff6600',
 };
 
 interface Web3WalletsProps {
@@ -73,7 +74,46 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     const normalizedActiveUser = activeUser?.replace(/^@/, '').toLowerCase();
     const isOwner = normalizedActiveUser === username.replace(/^@/, '').toLowerCase();
     const previousBalancesRef = useRef<Record<string, number>>({});
+    const isInitialFetchRef = useRef<Record<string, boolean>>({});
+    const lastNotifiedDepositRef = useRef<Record<string, { amount: number; time: number }>>({});
+    const isFetchingRef = useRef<boolean>(false);
+    const fetchStartTimeRef = useRef<number>(0);
     const [needsSync, setNeedsSync] = useState(false);
+
+    // ── Client-side persistent balance cache (0ms instant display) ───────────
+    interface PersistedBalance {
+        balance: number | null;
+        usdValue: number | null;
+        price: number | null;
+        change24h: number | null;
+    }
+
+    const [cachedBalances, setCachedBalances] = useState<Record<string, PersistedBalance>>(() => {
+        try {
+            const raw = localStorage.getItem(`last_known_balances_${username}`);
+            return raw ? JSON.parse(raw) : {};
+        } catch {
+            return {};
+        }
+    });
+
+    const updateCachedBalances = useCallback((updates: Record<string, Partial<PersistedBalance>>) => {
+        setCachedBalances(prev => {
+            const next = { ...prev };
+            Object.entries(updates).forEach(([chain, val]) => {
+                if (!next[chain]) {
+                    next[chain] = { balance: null, usdValue: null, price: null, change24h: null };
+                }
+                next[chain] = { ...next[chain], ...val };
+            });
+            try {
+                localStorage.setItem(`last_known_balances_${username}`, JSON.stringify(next));
+            } catch (e) {
+                console.warn('[Web3Wallets] Failed to persist balances:', e);
+            }
+            return next;
+        });
+    }, [username]);
 
     const checkSync = useCallback(async (derived: RawWallets) => {
         const cleanUsername = username.replace(/^@/, '').toLowerCase();
@@ -120,55 +160,204 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         };
     }, []);
 
+    const [isScanningXmr, setIsScanningXmr] = useState(false);
+
     const fetchBalances = useCallback(async (wallets: RawWallets, isSilent = false) => {
+        const now = Date.now();
+        if (isFetchingRef.current && (now - fetchStartTimeRef.current) < 15000) {
+            console.log('[Web3Wallets] Balance fetch already in progress, skipping concurrent duplicate request.');
+            return;
+        }
+        isFetchingRef.current = true;
+        fetchStartTimeRef.current = now;
+
+        // Separate fast coins (BTC, ETH, SOL, EVMs, DOGE, LTC, etc.) from Monero (XMR)
+        const fastWallets: any = {};
+        let xmrData: any = null;
+
+        Object.entries(wallets).forEach(([chain, data]) => {
+            if (chain === 'mnemonic') return;
+            if (chain === 'XMR') {
+                xmrData = data;
+            } else {
+                fastWallets[chain] = data;
+            }
+        });
+
+        // ── Phase 1: Fast Chains (resolves in ~1-1.5s) ──────────────────────────
         if (!isSilent) setLoadingInfo(true);
         try {
-            const info = await web3WalletService.getWalletInfo(wallets);
+            if (Object.keys(fastWallets).length > 0) {
+                const info = await web3WalletService.getWalletInfo(fastWallets as RawWallets);
 
-            // 1. Check for deposits (keep this accurate!)
-            info.forEach(newCard => {
-                const prevBalance = previousBalancesRef.current[newCard.chain];
-                if (prevBalance !== undefined && newCard.balance > prevBalance) {
-                    const amount = newCard.balance - prevBalance;
-                    const msg = `Deposit Received: +${amount.toFixed(6)} ${newCard.chain}`;
-                    showNotification(msg, 'success');
-                    NotificationService.addLocalNotification(username, msg, 'deposit', 'wallet', undefined, newCard.chain, newCard.address);
-                }
-                // Update ref
-                previousBalancesRef.current[newCard.chain] = newCard.balance;
-            });
+                // 1. Check for deposits on fast coins with deduplication & baseline protection
+                info.forEach(newCard => {
+                    const prevBalance = previousBalancesRef.current[newCard.chain];
+                    const isFirstTime = !isInitialFetchRef.current[newCard.chain];
 
-            // 2. Merge new results with existing state to avoid flicker and maintain stale prices
-            setWalletInfo(prev => {
-                if (prev.length === 0) return info;
-                const next = [...prev];
-                info.forEach(latest => {
-                    const idx = next.findIndex(p => p.chain === latest.chain);
-                    if (idx === -1) {
-                        next.push(latest);
-                    } else {
-                        const old = next[idx];
+                    if (newCard.balance !== null) {
+                        // Only trigger deposit notification if:
+                        // - Not the initial baseline load for this coin
+                        // - We had a positive prior balance (prevBalance > 0), avoiding false triggers from 0 or RPC glitches
+                        // - New balance is strictly greater than previous balance
+                        if (!isFirstTime && prevBalance !== undefined && prevBalance > 0 && newCard.balance > prevBalance) {
+                            const amount = newCard.balance - prevBalance;
+                            const lastNotified = lastNotifiedDepositRef.current[newCard.chain];
+                            const now = Date.now();
 
-                        // Handle failed fetch (null balance) by keeping the old balance
-                        const balance = latest.balance !== null ? latest.balance : old.balance;
+                            // Deduplicate: Don't repeat identical notifications within 60 seconds
+                            if (!lastNotified || Math.abs(lastNotified.amount - amount) > 0.000001 || (now - lastNotified.time) > 60000) {
+                                lastNotifiedDepositRef.current[newCard.chain] = { amount, time: now };
+                                const msg = `Deposit Received: +${amount.toFixed(6)} ${newCard.chain}`;
+                                showNotification(msg, 'success');
+                                NotificationService.addLocalNotification(username, msg, 'deposit', 'wallet', undefined, newCard.chain, newCard.address);
+                            }
+                        }
 
-                        // Stale Price Preservation: If balance > 0 but new price is 0/null, keep the old price if we have it
-                        const oldPrice = old.price || 0;
-                        const latestPrice = latest.price || 0;
-                        const price = (balance !== null && balance > 0 && latestPrice <= 0 && oldPrice > 0) ? oldPrice : latestPrice;
-
-                        const usdValue = balance !== null ? balance * price : old.usdValue;
-                        const change24h = (latest.change24h === 0 && (old.change24h || 0) !== 0) ? old.change24h : latest.change24h;
-
-                        next[idx] = { ...latest, balance, price, usdValue, change24h };
+                        previousBalancesRef.current[newCard.chain] = newCard.balance;
+                        isInitialFetchRef.current[newCard.chain] = true;
                     }
                 });
-                return next;
-            });
+
+                // 2. Merge fast results immediately to render live balances & prices
+                setWalletInfo(prev => {
+                    if (prev.length === 0) return info;
+                    const next = [...prev];
+                    info.forEach(latest => {
+                        const idx = next.findIndex(p => p.chain === latest.chain);
+                        if (idx === -1) {
+                            next.push(latest);
+                        } else {
+                            const old = next[idx];
+                            const balance = latest.balance !== null ? latest.balance : old.balance;
+                            const oldPrice = old.price || 0;
+                            const latestPrice = latest.price || 0;
+                            const price = (balance !== null && balance > 0 && latestPrice <= 0 && oldPrice > 0) ? oldPrice : latestPrice;
+                            const usdValue = balance !== null ? balance * price : old.usdValue;
+                            const change24h = (latest.change24h === 0 && (old.change24h || 0) !== 0) ? old.change24h : latest.change24h;
+                            next[idx] = { ...latest, balance, price, usdValue, change24h };
+                        }
+                    });
+                    return next;
+                });
+
+                // Persist fast coin balances to local cache
+                const fastUpdates: Record<string, Partial<PersistedBalance>> = {};
+                info.forEach(c => {
+                    if (c.balance !== null) {
+                        fastUpdates[c.chain] = {
+                            balance: c.balance,
+                            usdValue: c.usdValue,
+                            price: c.price,
+                            change24h: c.change24h,
+                        };
+                    }
+                });
+                updateCachedBalances(fastUpdates);
+            }
         } catch (err: any) {
-            console.warn('Balance fetch failed (non-critical):', err.message);
+            console.warn('Fast balance fetch failed (non-critical):', err.message);
         } finally {
+            // UNBLOCK ALL OTHER COINS IMMEDIATELY! Fast coins are now displayed
             if (!isSilent) setLoadingInfo(false);
+        }
+
+        // ── Phase 2: Monero (XMR) Isolated Background Scan ─────────────────────
+        try {
+            if (xmrData && xmrData.address) {
+                setIsScanningXmr(true);
+                try {
+                    const xmrInfo = await web3WalletService.getWalletInfo({ XMR: xmrData } as any);
+                    const xmrCard = xmrInfo.find(w => w.chain === 'XMR');
+                    if (xmrCard && xmrCard.balance !== null) {
+                        const prevBalance = previousBalancesRef.current['XMR'];
+                        const isFirstTime = !isInitialFetchRef.current['XMR'];
+
+                        // 1. Process individual sequential incoming transfers if available
+                        const incoming = xmrCard.incomingTransfers || [];
+                        if (incoming.length > 0) {
+                            const processedKey = `processed_xmr_tx_${username}`;
+                            const processedHashes: string[] = JSON.parse(localStorage.getItem(processedKey) || '[]');
+
+                            incoming.forEach((transfer) => {
+                                const txHash = transfer.hash || `xmr_${transfer.amount}_${transfer.height || 0}`;
+                                if (!processedHashes.includes(txHash)) {
+                                    processedHashes.push(txHash);
+
+                                    // Only show toast notification if this is a live new arrival (not initial baseline load)
+                                    if (!isFirstTime) {
+                                        const msg = `Deposit Received: +${transfer.amount.toFixed(6)} XMR`;
+                                        showNotification(msg, 'success');
+                                    }
+
+                                    // Record the individual sequential deposit into local notifications with its real txHash
+                                    NotificationService.addLocalNotification(
+                                        username,
+                                        `Deposit Received: +${transfer.amount.toFixed(6)} XMR`,
+                                        'deposit',
+                                        'wallet',
+                                        transfer.hash || undefined,
+                                        'XMR',
+                                        xmrCard.address
+                                    );
+                                }
+                            });
+                            localStorage.setItem(processedKey, JSON.stringify(processedHashes.slice(-100)));
+                        } else if (!isFirstTime && prevBalance !== undefined && prevBalance > 0 && xmrCard.balance > prevBalance) {
+                            // Fallback if individual transfers list is unavailable
+                            const amount = xmrCard.balance - prevBalance;
+                            const lastNotified = lastNotifiedDepositRef.current['XMR'];
+                            const now = Date.now();
+
+                            if (!lastNotified || Math.abs(lastNotified.amount - amount) > 0.000001 || (now - lastNotified.time) > 60000) {
+                                lastNotifiedDepositRef.current['XMR'] = { amount, time: now };
+                                const msg = `Deposit Received: +${amount.toFixed(6)} XMR`;
+                                showNotification(msg, 'success');
+                                NotificationService.addLocalNotification(username, msg, 'deposit', 'wallet', undefined, 'XMR', xmrCard.address);
+                            }
+                        }
+
+                        previousBalancesRef.current['XMR'] = xmrCard.balance;
+                        isInitialFetchRef.current['XMR'] = true;
+
+                        setWalletInfo(prev => {
+                            const next = [...prev];
+                            const idx = next.findIndex(p => p.chain === 'XMR');
+                            if (idx === -1) {
+                                next.push(xmrCard);
+                            } else {
+                                const old = next[idx];
+                                const balance = xmrCard.balance !== null ? xmrCard.balance : old.balance;
+                                const oldPrice = old.price || 0;
+                                const latestPrice = xmrCard.price || 0;
+                                const price = (balance !== null && balance > 0 && latestPrice <= 0 && oldPrice > 0) ? oldPrice : latestPrice;
+                                const usdValue = balance !== null ? balance * price : old.usdValue;
+                                const change24h = (xmrCard.change24h === 0 && (old.change24h || 0) !== 0) ? old.change24h : xmrCard.change24h;
+                                next[idx] = { ...xmrCard, balance, price, usdValue, change24h };
+                            }
+                            return next;
+                        });
+
+                        // Persist confirmed XMR balance to local cache
+                        if (xmrCard.balance !== null) {
+                            updateCachedBalances({
+                                XMR: {
+                                    balance: xmrCard.balance,
+                                    usdValue: xmrCard.usdValue,
+                                    price: xmrCard.price,
+                                    change24h: xmrCard.change24h,
+                                }
+                            });
+                        }
+                    }
+                } catch (xmrErr: any) {
+                    console.warn('[Web3Wallets] Background XMR scan timed out or failed (other coins unaffected):', xmrErr.message);
+                } finally {
+                    setIsScanningXmr(false);
+                }
+            }
+        } finally {
+            isFetchingRef.current = false;
         }
     }, [showNotification, username]);
 
@@ -194,7 +383,11 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
             const publicCache: any = {};
             Object.entries(derived).forEach(([chain, data]) => {
                 if (chain !== 'mnemonic') {
-                    publicCache[chain] = { address: (data as any).address, imageUrl: (data as any).imageUrl };
+                    publicCache[chain] = { 
+                        address: (data as any).address, 
+                        imageUrl: (data as any).imageUrl,
+                        viewKey: (data as any).viewKey || (data as any).privateViewKey
+                    };
                 }
             });
             addressStorage.set(username, publicCache);
@@ -225,11 +418,34 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
         const handleWeb3Deposit = (data: any) => {
             console.log('[Socket] Web3 Deposit Notification:', data);
 
-            // Trigger a silent refresh to update UI with latest balances
-            // We reconstruct the mock wallets structure for fetchBalances
+            // Process sequential individual deposit event directly with its exact amount and hash
+            if (data && data.amount && data.chain) {
+                const numericAmount = parseFloat(data.amount);
+                if (numericAmount > 0) {
+                    const msg = `Deposit Received: +${numericAmount.toFixed(6)} ${data.chain}`;
+                    showNotification(msg, 'success');
+                    NotificationService.addLocalNotification(
+                        username,
+                        msg,
+                        'deposit',
+                        'wallet',
+                        data.hash || undefined,
+                        data.chain,
+                        data.address
+                    );
+                }
+            }
+
+            // Reconstruct wallet structure with viewKey for fetchBalances
+            const cachedAddresses = addressStorage.get(username);
             const currentWallets: any = { mnemonic: '' };
             walletInfo.forEach(w => {
-                currentWallets[w.chain] = { address: w.address, imageUrl: w.imageUrl };
+                currentWallets[w.chain] = { 
+                    address: w.address, 
+                    imageUrl: w.imageUrl,
+                    viewKey: (rawWallets as any)?.[w.chain]?.viewKey || (cachedAddresses as any)?.[w.chain]?.viewKey,
+                    privateKey: (rawWallets as any)?.[w.chain]?.privateKey
+                };
             });
 
             fetchBalances(currentWallets as RawWallets, true); // Silent refresh
@@ -276,6 +492,20 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                         const mnemonic = await decryptMnemonic(encryptedMnemonic, salt, storedSignature);
                         const derived = await web3WalletService.deriveAddresses(mnemonic);
                         console.log('[Web3Wallets] Auto-Unlock successful!');
+
+                        // Automatically update local address cache so new coins are permanently stored
+                        const publicCache: any = {};
+                        Object.entries(derived).forEach(([chain, data]) => {
+                            if (chain !== 'mnemonic' && data && typeof data === 'object') {
+                                publicCache[chain] = { 
+                                    address: (data as any).address, 
+                                    imageUrl: (data as any).imageUrl,
+                                    viewKey: (data as any).viewKey || (data as any).privateViewKey
+                                };
+                            }
+                        });
+                        addressStorage.set(username, publicCache);
+
                         setRawWallets(derived);
                         fetchBalances(derived);
                         checkSync(derived);
@@ -313,6 +543,16 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 if (combinedWallets['ETH']) {
                     const evmAddress = combinedWallets['ETH'].address;
                     if (!combinedWallets['ARB']) combinedWallets['ARB'] = { address: evmAddress, imageUrl: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/assets/0x912CE59144191C1204E64559FE8253a0e49E6548/logo.png' };
+                }
+
+                // Automatically include new supported chains (like XMR) in view-only mode
+                if (Object.keys(combinedWallets).length > 0) {
+                    if (!combinedWallets['XMR']) {
+                        combinedWallets['XMR'] = {
+                            address: '',
+                            imageUrl: 'https://assets.coingecko.com/coins/images/69/large/monero_logo.png'
+                        };
+                    }
                 }
 
                 const initialInfo: Web3WalletInfo[] = [];
@@ -638,23 +878,54 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
     // ─────────────────────────────────────────────────────────────────────────
     // Merge remote Hive metadata + fetched info
     // ─────────────────────────────────────────────────────────────────────────
-    const CHAIN_ORDER = ['BTC', 'ETH', 'SOL', 'SOL_USDT', 'TRON', 'BNB', 'DOGE', 'LTC', 'APTOS', 'BASE', 'POLYGON', 'ARBITRUM', 'ARB', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
+    const CHAIN_ORDER = ['BTC', 'ETH', 'SOL', 'SOL_USDT', 'TRON', 'BNB', 'DOGE', 'LTC', 'APTOS', 'XMR', 'BASE', 'POLYGON', 'ARBITRUM', 'ARB', 'USDT_TRC20', 'USDT_BEP20', 'USDT_ERC20'];
 
     const mergedCards = CHAIN_ORDER.map(chain => {
         const raw = rawWallets ? (rawWallets[chain] as any) : null;
         const info = walletInfo.find(w => w.chain === chain);
+        const cached = addressStorage.get(username)?.[chain];
+        const pers = cachedBalances[chain];
+        const defaultLogo = chain === 'XMR' ? 'https://assets.coingecko.com/coins/images/69/large/monero_logo.png' : '';
+
+        // Priority: live info balance -> persisted cached balance -> 0 (if unlocked) or null
+        const balance = (info?.balance !== null && info?.balance !== undefined)
+            ? info.balance
+            : (pers?.balance !== null && pers?.balance !== undefined)
+                ? pers.balance
+                : (raw?.address ? 0 : null);
+
+        const usdValue = (info?.usdValue !== null && info?.usdValue !== undefined)
+            ? info.usdValue
+            : (pers?.usdValue !== null && pers?.usdValue !== undefined)
+                ? pers.usdValue
+                : null;
+
+        const price = (info?.price !== null && info?.price !== undefined)
+            ? info.price
+            : (pers?.price !== null && pers?.price !== undefined)
+                ? pers.price
+                : null;
+
+        const change24h = (info?.change24h !== null && info?.change24h !== undefined)
+            ? info.change24h
+            : (pers?.change24h !== null && pers?.change24h !== undefined)
+                ? pers.change24h
+                : null;
+
         return {
             chain,
             address: raw?.address || info?.address || '',
-            imageUrl: raw?.imageUrl || info?.imageUrl || '',
-            balance: info?.balance ?? null,
-            usdValue: info?.usdValue ?? null,
-            price: info?.price ?? null,
-            change24h: info?.change24h ?? null
+            imageUrl: raw?.imageUrl || info?.imageUrl || defaultLogo,
+            viewKey: raw?.viewKey || (cached as any)?.viewKey,
+            privateKey: raw?.privateKey,
+            balance,
+            usdValue,
+            price,
+            change24h
         };
-    }).filter(c => c.address);
+    }).filter(c => c.address || c.imageUrl || c.chain === 'XMR');
 
-    const totalUsd = walletInfo.reduce((sum, w: any) => sum + (w.usdValue || 0), 0);
+    const totalUsd = mergedCards.reduce((sum, w: any) => sum + (w.usdValue || 0), 0);
 
     return (
         <div className="space-y-8">
@@ -677,13 +948,53 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                 </div>
 
                 {isOwner && (
-                    <div className="flex gap-2">
-                        {/* 1. VIEW-ONLY fallback: Secret phrase missing from this device - Only show Enable Access */}
-                        {!mnemonicStorage.getEncrypted(username) && walletInfo.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Refresh Balances Button */}
+                        <button
+                            onClick={() => {
+                                if (rawWallets) {
+                                    fetchBalances(rawWallets);
+                                } else {
+                                    const cachedAddresses = addressStorage.get(username);
+                                    const currentWallets: any = { mnemonic: '' };
+                                    walletInfo.forEach(w => {
+                                        currentWallets[w.chain] = { 
+                                            address: w.address, 
+                                            imageUrl: w.imageUrl,
+                                            viewKey: (cachedAddresses as any)?.[w.chain]?.viewKey
+                                        };
+                                    });
+                                    fetchBalances(currentWallets as RawWallets);
+                                }
+                                showNotification('Refreshing balances...', 'info');
+                            }}
+                            disabled={loadingInfo}
+                            className="px-4 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--bg-canvas)] border border-[var(--border-color)] hover:bg-[var(--bg-card)] text-[var(--text-primary)] transition-all rounded-xl flex items-center gap-2 shadow-sm"
+                            title="Refresh balances"
+                        >
+                            <svg className={`w-3.5 h-3.5 ${loadingInfo ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            {loadingInfo ? 'Scanning…' : 'Refresh'}
+                        </button>
+
+                        {/* Grant / Re-authorize Keychain Access Button */}
+                        {mnemonicStorage.getEncrypted(username) ? (
+                            <button
+                                onClick={() => handleUnlock()}
+                                className="px-5 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 active:scale-95 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20 flex items-center gap-2"
+                                title="Sign with Keychain to unlock or refresh all multi-chain derivations"
+                            >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                                {rawWallets ? 'Re-authorize Keychain' : 'Grant Keychain Access'}
+                            </button>
+                        ) : (
                             <button
                                 onClick={() => setShowImport(true)}
-                                className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20 flex items-center gap-2"
-                                title="Import your phrase to enable sending/signing"
+                                className="px-5 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20 flex items-center gap-2"
+                                title="Import your phrase to enable signing and full access"
                             >
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
@@ -692,43 +1003,30 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                             </button>
                         )}
 
-                        {/* 2. Phrase Present: Show Unlock (if locked) OR Remove (if unlocked) */}
-                        {mnemonicStorage.getEncrypted(username) && isOwner && (
-                            <>
-                                {!rawWallets ? (
-                                    <button
-                                        onClick={() => handleUnlock()}
-                                        className="flex-1 md:flex-none px-6 py-3 text-xs font-bold uppercase tracking-widest bg-[var(--primary-color)] text-white hover:brightness-110 active:scale-95 transition-all rounded-xl shadow-lg shadow-[var(--primary-color)]/20 flex items-center gap-2"
-                                    >
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                        </svg>
-                                        Grant Keychain Access
-                                    </button>
-                                ) : (
-                                    <div className="flex items-center gap-2">
-                                        {needsSync && (
-                                            <button
-                                                onClick={handleSync}
-                                                disabled={generating}
-                                                className="px-6 py-3 text-xs font-bold uppercase tracking-widest bg-amber-500 text-white hover:brightness-110 active:scale-95 transition-all rounded-xl shadow-lg shadow-amber-500/20 animate-pulse flex items-center gap-2"
-                                                title="New tokens found! Click to sync your Hive profile metadata"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                                </svg>
-                                                Sync to Hive
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={handleReset}
-                                            className="px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
-                                        >
-                                            Revoke Keychain Access
-                                        </button>
-                                    </div>
-                                )}
-                            </>
+                        {/* Sync to Hive Button */}
+                        {needsSync && rawWallets && (
+                            <button
+                                onClick={handleSync}
+                                disabled={generating}
+                                className="px-5 py-3 text-xs font-bold uppercase tracking-widest bg-amber-500 text-white hover:brightness-110 active:scale-95 transition-all rounded-xl shadow-lg shadow-amber-500/20 animate-pulse flex items-center gap-2"
+                                title="New tokens found! Click to sync your Hive profile metadata"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Sync to Hive
+                            </button>
+                        )}
+
+                        {/* Revoke Keychain Access Button */}
+                        {mnemonicStorage.getEncrypted(username) && (
+                            <button
+                                onClick={handleReset}
+                                className="px-4 py-3 text-xs font-bold uppercase tracking-widest text-red-500 hover:bg-red-500/5 transition-colors border border-red-500/20 rounded-xl"
+                                title="Revoke keychain access on this device"
+                            >
+                                Revoke Keychain Access
+                            </button>
                         )}
                     </div>
                 )}
@@ -800,7 +1098,17 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                                                 </div>
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <h4 className="font-bold text-[var(--text-primary)] text-sm md:text-base leading-tight truncate">{card.chain}</h4>
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="font-bold text-[var(--text-primary)] text-sm md:text-base leading-tight truncate">{card.chain}</h4>
+                                                    {card.chain === 'XMR' && isScanningXmr && (
+                                                        <span className="text-[10px] text-amber-500 font-bold animate-pulse flex items-center gap-1 bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                                            <svg className="w-2.5 h-2.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                            </svg>
+                                                            Syncing
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <p className="text-[10px] text-[var(--text-secondary)] font-medium uppercase tracking-tighter opacity-70 truncate">
                                                     {card.address ? `${card.address.slice(0, 6)}...${card.address.slice(-4)}` : 'Mainnet'}
                                                 </p>
@@ -809,7 +1117,13 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
 
                                         <div className="flex-1 w-full flex flex-col justify-center z-10 md:pl-4">
                                             <div className="text-lg md:text-xl font-black text-[var(--text-primary)] tracking-tight">
-                                                {loadingInfo ? <div className="h-6 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" /> : card.balance !== null ? `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}` : <span className="opacity-20">—</span>}
+                                                {(loadingInfo && card.balance === null) ? (
+                                                    <div className="h-6 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" />
+                                                ) : card.balance !== null ? (
+                                                    `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
+                                                ) : (
+                                                    <span className="opacity-20">—</span>
+                                                )}
                                             </div>
                                             {!loadingInfo && card.usdValue !== null && (
                                                 <div className="flex items-center gap-2 mt-0.5">
@@ -908,12 +1222,20 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                                                 Unlocked
                                             </div>
                                         )}
+                                        {card.chain === 'XMR' && isScanningXmr && (
+                                            <div className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-lg flex items-center gap-1 animate-pulse">
+                                                <svg className="w-2.5 h-2.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                                </svg>
+                                                Syncing
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Balance Info */}
                                     <div className="py-2 z-10">
                                         <div className="text-2xl font-black text-[var(--text-primary)] tracking-tight">
-                                            {loadingInfo ? (
+                                            {(loadingInfo && card.balance === null) ? (
                                                 <div className="h-8 w-24 bg-[var(--bg-canvas)] rounded-lg animate-pulse" />
                                             ) : card.balance !== null ? (
                                                 `${card.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}`
@@ -1008,6 +1330,9 @@ export function Web3Wallets({ username }: Web3WalletsProps) {
                         address={qrTarget.address}
                         chain={qrTarget.chain}
                         imageUrl={qrTarget.imageUrl}
+                        viewKey={qrTarget.viewKey || (rawWallets as any)?.[qrTarget.chain]?.viewKey || (addressStorage.get(username)?.[qrTarget.chain] as any)?.viewKey}
+                        privateKey={qrTarget.privateKey || (rawWallets as any)?.[qrTarget.chain]?.privateKey}
+                        onUnlock={() => handleUnlock(qrTarget.chain)}
                         onClose={() => setQrTarget(null)}
                     />
                 )

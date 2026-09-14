@@ -1,4 +1,5 @@
-const WEB3_API_URL = import.meta.env.VITE_WEB3_WALLET_API_URL || 'http://localhost:4001';
+const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+const WEB3_API_URL = import.meta.env.VITE_WEB3_WALLET_API_URL || (isLocal ? 'http://localhost:4001' : 'https://web3api.breakaway.community');
 import { deriveAllWallets } from './derivationService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -7,6 +8,7 @@ export interface RawWallet {
     address: string;
     publicKey?: string;
     privateKey?: string; // Strictly in-memory
+    viewKey?: string;
     imageUrl: string;
 }
 
@@ -18,6 +20,7 @@ export interface RawWallets {
     TRON: RawWallet;
     BNB: RawWallet;
     APTOS: RawWallet;
+    XMR?: RawWallet;
     BASE?: RawWallet;
     POLYGON?: RawWallet;
     ARBITRUM?: RawWallet;
@@ -32,11 +35,14 @@ export interface Web3WalletInfo {
     symbol: string;
     address: string;
     publicKey?: string;
+    viewKey?: string;
+    privateKey?: string;
     imageUrl: string;
     balance: number;
     price: number | null;
     change24h: number | null;
     usdValue: number | null;
+    incomingTransfers?: Array<{ amount: number; hash: string | null; isConfirmed: boolean; height: number | null }>;
 }
 
 const ENCRYPTED_MNEMONIC_KEY = 'web3_mnemonic_enc';
@@ -224,6 +230,7 @@ export const web3WalletService = {
             SOL_USDT: `${ICON_BASE}/325/large/tether.png`,
             DOGE: `${ICON_BASE}/5/large/dogecoin.png`,
             LTC: `${ICON_BASE}/2/large/litecoin.png`,
+            XMR: `${ICON_BASE}/69/large/monero_logo.png`,
         };
 
         const rawWallets: any = { mnemonic };
@@ -232,9 +239,48 @@ export const web3WalletService = {
                 address: data.address,
                 publicKey: data.publicKey,
                 privateKey: data.privateKey,
+                viewKey: (data as any).viewKey || (data as any).privateViewKey,
                 imageUrl: ICONS[chain] || ''
             };
         }
+
+        // Auto-merge any backend-supported chains (like XMR)
+        const endpoints = isLocal
+            ? ['http://localhost:4001/api/wallet/address', `${WEB3_API_URL}/api/wallet/address`]
+            : [`${WEB3_API_URL}/api/wallet/address`, 'http://localhost:4001/api/wallet/address'];
+
+        for (const ep of endpoints) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 6000);
+                const res = await fetch(ep, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mnemonic }),
+                    signal: controller.signal,
+                });
+                clearTimeout(timeoutId);
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.wallets) {
+                        for (const [chain, val] of Object.entries(data.wallets)) {
+                            if (chain !== 'mnemonic' && val && typeof val === 'object') {
+                                if (!rawWallets[chain] || !(rawWallets[chain] as any).address) {
+                                    rawWallets[chain] = val;
+                                }
+                            }
+                        }
+                        if (rawWallets.XMR && (rawWallets.XMR as any).address) {
+                            break;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Non-critical, try next endpoint
+            }
+        }
+
         return rawWallets as RawWallets;
     },
 
@@ -242,7 +288,6 @@ export const web3WalletService = {
      * Derive a single wallet address for a specific chain from a mnemonic LOCALLY.
      */
     deriveSingleAddress: async (mnemonic: string, chain: string): Promise<RawWallet> => {
-        const derived = await import('./derivationService').then(m => m.deriveWallet(mnemonic, chain as any));
         const ICON_BASE = 'https://assets.coingecko.com/coins/images';
         const ICONS: Record<string, string> = {
             BTC: `${ICON_BASE}/1/large/bitcoin.png`,
@@ -261,12 +306,44 @@ export const web3WalletService = {
             SOL_USDT: `${ICON_BASE}/325/large/tether.png`,
             DOGE: `${ICON_BASE}/5/large/dogecoin.png`,
             LTC: `${ICON_BASE}/2/large/litecoin.png`,
+            XMR: `${ICON_BASE}/69/large/monero_logo.png`,
         };
 
+        if (chain === 'XMR') {
+            const endpoints = isLocal
+                ? ['http://localhost:4001/api/wallet/address', `${WEB3_API_URL}/api/wallet/address`]
+                : [`${WEB3_API_URL}/api/wallet/address`, 'http://localhost:4001/api/wallet/address'];
+            for (const ep of endpoints) {
+                try {
+                    const res = await fetch(ep, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mnemonic }),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success && data.wallets && data.wallets.XMR) {
+                            return {
+                                address: data.wallets.XMR.address,
+                                publicKey: data.wallets.XMR.publicKey,
+                                privateKey: data.wallets.XMR.privateKey,
+                                viewKey: data.wallets.XMR.viewKey || data.wallets.XMR.privateViewKey,
+                                imageUrl: data.wallets.XMR.imageUrl || ICONS.XMR
+                            };
+                        }
+                    }
+                } catch (e) {
+                    // Try next endpoint
+                }
+            }
+        }
+
+        const derived = await import('./derivationService').then(m => m.deriveWallet(mnemonic, chain as any));
         return {
             address: derived.address,
             publicKey: derived.publicKey,
             privateKey: derived.privateKey,
+            viewKey: (derived as any).viewKey,
             imageUrl: ICONS[chain] || ''
         };
     },
@@ -299,38 +376,50 @@ export const web3WalletService = {
      * Fetch balances + USD prices for all derived wallets.
      * POST /api/wallet/info  { wallets }
      */
-    /**
-     * Fetch balances + USD prices for all derived wallets.
-     * POST /api/wallet/info  { wallets }
-     */
     getWalletInfo: async (wallets: RawWallets): Promise<Web3WalletInfo[]> => {
-        // SECURITY PATCH: Sanitize payload to strictly prevent privateKey / mnemonic transmission
-        const safeWallets: Record<string, { address: string, imageUrl?: string }> = {};
+        // Sanitize payload to strictly prevent privateKey transmission, except for XMR key image balance reconciliation
+        const safeWallets: Record<string, { address: string; imageUrl?: string; viewKey?: string; privateKey?: string }> = {};
         
         for (const [chain, data] of Object.entries(wallets)) {
             if (chain === 'mnemonic') continue;
-            // Safely map only public identifiers
             if (data && typeof data === 'object' && 'address' in data) {
                 safeWallets[chain] = { 
-                    address: data.address,
-                    imageUrl: data.imageUrl 
+                    address: data.address, 
+                    imageUrl: data.imageUrl,
+                    viewKey: chain === 'XMR' ? ((data as any).viewKey || (data as any).privateViewKey) : undefined,
+                    privateKey: chain === 'XMR' ? ((data as any).privateKey || (data as any).privateSpendKey) : undefined,
                 };
             }
         }
 
-        const res = await fetch(`${WEB3_API_URL}/api/wallet/info`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ wallets: safeWallets }),
-        });
-        if (!res.ok) {
-            const text = await res.text();
-            console.error(`Wallet info fetch failed (${res.status}):`, text);
-            throw new Error(`Wallet info fetch failed (${res.status})`);
+        const endpoints = Array.from(new Set(isLocal
+            ? ['http://localhost:4001/api/wallet/info', `${WEB3_API_URL}/api/wallet/info`]
+            : [`${WEB3_API_URL}/api/wallet/info`, 'http://localhost:4001/api/wallet/info']));
+
+        for (const ep of endpoints) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
+                const res = await fetch(ep, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ wallets: safeWallets }),
+                    signal: controller.signal,
+                });
+                clearTimeout(timeoutId);
+
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success && data.walletInfo) {
+                        return data.walletInfo as Web3WalletInfo[];
+                    }
+                }
+            } catch (e) {
+                // Try next endpoint
+            }
         }
-        const data = await res.json();
-        if (!data.success) throw new Error(data.message || 'Wallet info fetch failed');
-        return data.walletInfo as Web3WalletInfo[];
+
+        throw new Error('Wallet info fetch failed from all available endpoints');
     },
 
     /**
@@ -387,6 +476,42 @@ export const web3WalletService = {
 
         if (!data?.success) throw new Error(data?.message || 'Broadcast failed');
         return data.hash;
+    },
+
+    /**
+     * Send Monero transaction via daemon-connected wallet.
+     * Uses private spend key to construct ring signatures, bulletproofs, and relay.
+     */
+    sendXmrTransaction: async (privateSpendKey: string, to: string, amount: number): Promise<string> => {
+        const endpoints = Array.from(new Set(isLocal
+            ? ['http://localhost:4001/api/wallet/send', `${WEB3_API_URL}/api/wallet/send`]
+            : [`${WEB3_API_URL}/api/wallet/send`, 'http://localhost:4001/api/wallet/send']));
+
+        let lastError = 'Failed to send Monero transaction';
+        for (const ep of endpoints) {
+            try {
+                const res = await fetch(ep, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chain: 'XMR',
+                        to,
+                        amount,
+                        wallet: { privateKey: privateSpendKey }
+                    }),
+                });
+                const data = await res.json().catch(() => null);
+                if (res.ok && data?.success && data?.transaction?.hash) {
+                    return data.transaction.hash;
+                }
+                if (data?.message) {
+                    lastError = data.message;
+                }
+            } catch (e: any) {
+                lastError = e.message || lastError;
+            }
+        }
+        throw new Error(lastError);
     },
 
 

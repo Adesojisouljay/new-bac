@@ -16,6 +16,7 @@ export interface DerivedWallet {
     address: string;
     privateKey: string;
     publicKey: string;
+    viewKey?: string;
 }
 
 export const CHAIN_PATHS = {
